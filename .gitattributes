@@ -1,0 +1,9 @@
+# Normalize line endings so scripts and toolchain files work in Linux/WSL2.
+* text=auto eol=lf
+*.otf binary
+*.ttf binary
+*.woff binary
+*.woff2 binary
+*.png binary
+*.jpg binary
+*.ico binary

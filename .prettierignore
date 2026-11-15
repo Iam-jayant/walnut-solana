@@ -1,0 +1,10 @@
+.kiro/
+semantic-review/
+node_modules/
+target/
+build/
+dist/
+.next/
+.anchor/
+test-ledger/
+pnpm-lock.yaml

@@ -1,0 +1,47 @@
+# Rust / Anchor / Arcium build output
+target/
+**/*.rs.bk
+.anchor/
+test-ledger/
+.surfpool/
+/build/
+artifacts/
+encrypted-ixs/arcis_temp_target/
+encrypted-ixs/src/main.rs
+
+# Node / pnpm / Next.js
+node_modules/
+.pnpm-store/
+.yarn/
+dist/
+.next/
+out/
+coverage/
+*.tsbuildinfo
+.turbo/
+
+# Environment files and secrets (keep only checked-in examples)
+.env
+.env.*
+!.env.example
+*.env
+secrets/
+*.pem
+*.key
+*.p12
+
+# Solana keypairs (program, wallet, keeper, auditor)
+*keypair*.json
+*-keypair.json
+id.json
+wallet*.json
+keys/
+.config/solana/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/*
+!.vscode/extensions.json
