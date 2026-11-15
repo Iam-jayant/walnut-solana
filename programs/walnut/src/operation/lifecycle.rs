@@ -55,9 +55,7 @@ pub enum CallbackOutcome {
 
 /// Returns whether `account` is write-locked by `intent`.
 fn locked_by_intent(account: &ProtectedAccount, intent: &OperationIntent) -> bool {
-    account
-        .lock
-        .matches(&intent.key, intent.computation_offset)
+    account.lock.matches(&intent.key, intent.computation_offset)
 }
 
 /// Releases every Lock owned by `intent`; leaves all other Locks untouched.
@@ -461,8 +459,10 @@ mod tests {
             };
 
             let bumped = a.generation.value() != before;
-            let should_bump =
-                matches!(outcome, CallbackOutcome::Applied | CallbackOutcome::Abandoned);
+            let should_bump = matches!(
+                outcome,
+                CallbackOutcome::Applied | CallbackOutcome::Abandoned
+            );
             assert_eq!(bumped, should_bump);
             if bumped {
                 assert_eq!(a.generation.value(), before + 1);

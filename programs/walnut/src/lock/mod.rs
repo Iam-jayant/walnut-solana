@@ -105,7 +105,10 @@ mod tests {
         let mut lock = Lock::unlocked();
         lock.acquire(key(1), 7, 100).unwrap();
         assert!(lock.is_active());
-        assert_eq!(lock.acquire(key(2), 8, 200), Err(CoordinationError::LockHeld));
+        assert_eq!(
+            lock.acquire(key(2), 8, 200),
+            Err(CoordinationError::LockHeld)
+        );
         // The original owner is untouched.
         assert!(lock.matches(&key(1), 7));
     }

@@ -194,7 +194,10 @@ mod tests {
         assert_eq!(intent.status, IntentStatus::Applied);
         // A second transition of any kind is rejected and leaves status intact.
         assert_eq!(intent.mark_zero(), Err(CoordinationError::IntentNotQueued));
-        assert_eq!(intent.mark_failed(), Err(CoordinationError::IntentNotQueued));
+        assert_eq!(
+            intent.mark_failed(),
+            Err(CoordinationError::IntentNotQueued)
+        );
         assert_eq!(intent.status, IntentStatus::Applied);
     }
 }
