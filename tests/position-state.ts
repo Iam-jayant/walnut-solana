@@ -309,8 +309,8 @@ async function fetchAndDecrypt(
     acct.state.nonce.toArrayLike(Buffer, "le", 16),
   );
   recordNonce(nonceBytes);
-  const ciphertexts = acct.state.ciphertexts.map((c: number[]) =>
-    Uint8Array.from(c),
+  const ciphertexts: number[][] = acct.state.ciphertexts.map((c: number[]) =>
+    Array.from(c),
   );
   expect(ciphertexts.length).to.equal(FIELD_COUNT);
   return cipher.decrypt(ciphertexts, nonceBytes);
