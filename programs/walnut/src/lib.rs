@@ -37,12 +37,14 @@ pub mod state;
 pub mod position;
 
 use errors::ErrorCode;
-use events::{PositionStateStored, SumEvent};
+use events::{LiquidationReceiptsEmitted, PositionStateStored, SumEvent, ViewingKeyRotated};
 use position::{EncryptedPositionState, SpikePosition, POSITION_SECRET_FIELDS};
 
 const COMP_DEF_OFFSET_ADD_TOGETHER: u32 = comp_def_offset("add_together");
 const COMP_DEF_OFFSET_INIT_POSITION: u32 = comp_def_offset("init_position");
 const COMP_DEF_OFFSET_APPLY_POSITION_DELTA: u32 = comp_def_offset("apply_position_delta");
+const COMP_DEF_OFFSET_LIQUIDATION_RECEIPTS: u32 = comp_def_offset("liquidation_receipts");
+const COMP_DEF_OFFSET_ROTATE_VIEWING_KEY: u32 = comp_def_offset("rotate_viewing_key");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -325,6 +327,205 @@ pub mod walnut {
         });
         Ok(())
     }
+
+    // ---- Task 2.3: two-owner output and Viewing Key rotation --------------
+
+    /// Registers the `liquidation_receipts` computation definition with the MXE.
+    pub fn init_liquidation_receipts_comp_def(
+        ctx: Context<InitLiquidationReceiptsCompDef>,
+    ) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Queues `liquidation_receipts`: one computation that reads a borrower and
+    /// a liquidator encrypted input and seals an independent encrypted Receipt
+    /// to each owner's Viewing Key. The callback emits both ciphertext groups so
+    /// each owner decrypts only their own Receipt (Requirement 2.3).
+    // Arcium queue instructions take ciphertexts + pubkey + nonce per owner; two
+    // owners exceed clippy's 7-arg default. Grouping would fight the ArgBuilder shape.
+    #[allow(clippy::too_many_arguments)]
+    pub fn liquidation_receipts(
+        ctx: Context<LiquidationReceipts>,
+        computation_offset: u64,
+        borrower_ciphertexts: [[u8; 32]; 2],
+        borrower_pub_key: [u8; 32],
+        borrower_nonce: u128,
+        liquidator_ciphertexts: [[u8; 32]; 2],
+        liquidator_pub_key: [u8; 32],
+        liquidator_nonce: u128,
+    ) -> Result<()> {
+        // Argument order must match `liquidation_receipts(borrower: Enc<Shared,
+        // ReceiptInput>, liquidator: Enc<Shared, ReceiptInput>)`: each owner's
+        // pubkey, nonce, then its two ciphertexts (amount, aux) in order.
+        let args = ArgBuilder::new()
+            .x25519_pubkey(borrower_pub_key)
+            .plaintext_u128(borrower_nonce)
+            .encrypted_u64(borrower_ciphertexts[0])
+            .encrypted_u64(borrower_ciphertexts[1])
+            .x25519_pubkey(liquidator_pub_key)
+            .plaintext_u128(liquidator_nonce)
+            .encrypted_u64(liquidator_ciphertexts[0])
+            .encrypted_u64(liquidator_ciphertexts[1])
+            .build();
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![LiquidationReceiptsCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &[],
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the two-owner output and emits each owner's encrypted Receipt.
+    /// The generated output wraps the returned tuple as `field_0`, whose
+    /// `field_0` is the borrower's `SharedEncryptedStruct<2>` and `field_1` is
+    /// the liquidator's, each carrying its own effective key and nonce.
+    #[arcium_callback(encrypted_ix = "liquidation_receipts")]
+    pub fn liquidation_receipts_callback(
+        ctx: Context<LiquidationReceiptsCallback>,
+        output: SignedComputationOutputs<LiquidationReceiptsOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(LiquidationReceiptsOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::AbortedComputation.into()),
+        };
+
+        emit!(LiquidationReceiptsEmitted {
+            borrower_key: o.field_0.encryption_key,
+            borrower_nonce: o.field_0.nonce.to_le_bytes(),
+            borrower_ciphertexts: o.field_0.ciphertexts,
+            liquidator_key: o.field_1.encryption_key,
+            liquidator_nonce: o.field_1.nonce.to_le_bytes(),
+            liquidator_ciphertexts: o.field_1.ciphertexts,
+        });
+        Ok(())
+    }
+
+    /// Registers the `rotate_viewing_key` computation definition with the MXE.
+    pub fn init_rotate_viewing_key_comp_def(
+        ctx: Context<InitRotateViewingKeyCompDef>,
+    ) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Queues `rotate_viewing_key`: reads the Position payload stored under the
+    /// current Viewing Key and re-encrypts it to `new_pub_key`. The Position PDA
+    /// is seeded by the owner, so only the owner's signature can rotate the key
+    /// (Requirement 5.11). `probe_ciphertext` is a throwaway value encrypted
+    /// under the new key that only carries the new key into the circuit.
+    pub fn rotate_viewing_key(
+        ctx: Context<RotateViewingKey>,
+        computation_offset: u64,
+        new_pub_key: [u8; 32],
+        probe_nonce: u128,
+        probe_ciphertext: [u8; 32],
+    ) -> Result<()> {
+        // Copy the stored payload out before queueing so no borrow is held.
+        let position_key = ctx.accounts.position.key();
+        let state_pubkey = ctx.accounts.position.viewing_pubkey;
+        let state_nonce = ctx.accounts.position.state.nonce;
+        let state_ciphertexts = ctx.accounts.position.state.ciphertexts;
+
+        // Argument order must match `rotate_viewing_key(state: Enc<Shared,
+        // PositionSecret>, new_key: Enc<Shared, u64>)`: the old-key state
+        // (pubkey, nonce, five ciphertexts) first, then the new-key probe
+        // (pubkey, nonce, one ciphertext).
+        let args = ArgBuilder::new()
+            .x25519_pubkey(state_pubkey)
+            .plaintext_u128(state_nonce)
+            .encrypted_u64(state_ciphertexts[0])
+            .encrypted_u64(state_ciphertexts[1])
+            .encrypted_u64(state_ciphertexts[2])
+            .encrypted_u128(state_ciphertexts[3])
+            .encrypted_u128(state_ciphertexts[4])
+            .x25519_pubkey(new_pub_key)
+            .plaintext_u128(probe_nonce)
+            .encrypted_u64(probe_ciphertext)
+            .build();
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![RotateViewingKeyCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &[CallbackAccount {
+                    pubkey: position_key,
+                    is_writable: true,
+                }],
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Atomically re-encrypts the Position to the new Viewing Key, writes the
+    /// new public key, and increments `viewing_key_epoch` (Requirement 5.11).
+    /// After this callback the stored payload decrypts under the new key only.
+    #[arcium_callback(encrypted_ix = "rotate_viewing_key")]
+    pub fn rotate_viewing_key_callback(
+        ctx: Context<RotateViewingKeyCallback>,
+        output: SignedComputationOutputs<RotateViewingKeyOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(RotateViewingKeyOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::AbortedComputation.into()),
+        };
+
+        let position_key = ctx.accounts.position.key();
+        let old_pubkey = ctx.accounts.position.viewing_pubkey;
+        let old_epoch = ctx.accounts.position.viewing_key_epoch;
+        let new_epoch = old_epoch
+            .checked_add(1)
+            .ok_or(ErrorCode::AbortedComputation)?;
+
+        ctx.accounts.position.viewing_pubkey = o.encryption_key;
+        ctx.accounts.position.viewing_key_epoch = new_epoch;
+        ctx.accounts.position.state = EncryptedPositionState {
+            nonce: o.nonce,
+            ciphertexts: o.ciphertexts,
+        };
+        let revision = ctx
+            .accounts
+            .position
+            .revision
+            .checked_add(1)
+            .ok_or(ErrorCode::AbortedComputation)?;
+        ctx.accounts.position.revision = revision;
+
+        emit!(ViewingKeyRotated {
+            position: position_key,
+            old_epoch,
+            new_epoch,
+            old_pubkey,
+            new_pubkey: o.encryption_key,
+            new_nonce: o.nonce.to_le_bytes(),
+        });
+        Ok(())
+    }
 }
 
 #[queue_computation_accounts("add_together", payer)]
@@ -562,6 +763,172 @@ pub struct InitPositionCompDef<'info> {
 #[init_computation_definition_accounts("apply_position_delta", payer)]
 #[derive(Accounts)]
 pub struct ApplyPositionDeltaCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- Task 2.3: two-owner output accounts ----------------------------------
+
+#[queue_computation_accounts("liquidation_receipts", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64)]
+pub struct LiquidationReceipts<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_LIQUIDATION_RECEIPTS))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("liquidation_receipts")]
+#[derive(Accounts)]
+pub struct LiquidationReceiptsCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_LIQUIDATION_RECEIPTS))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+}
+
+#[init_computation_definition_accounts("liquidation_receipts", payer)]
+#[derive(Accounts)]
+pub struct InitLiquidationReceiptsCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- Task 2.3: Viewing Key rotation accounts ------------------------------
+
+#[queue_computation_accounts("rotate_viewing_key", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64)]
+pub struct RotateViewingKey<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_ROTATE_VIEWING_KEY))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    // Seeded by the payer: only the Position owner can sign a rotation.
+    #[account(
+        seeds = [POSITION_SEED, payer.key().as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, SpikePosition>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("rotate_viewing_key")]
+#[derive(Accounts)]
+pub struct RotateViewingKeyCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_ROTATE_VIEWING_KEY))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [POSITION_SEED, position.owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, SpikePosition>>,
+}
+
+#[init_computation_definition_accounts("rotate_viewing_key", payer)]
+#[derive(Accounts)]
+pub struct InitRotateViewingKeyCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]

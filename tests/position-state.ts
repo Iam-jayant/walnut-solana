@@ -267,6 +267,16 @@ describe("Walnut Task 2.2: persistent encrypted Position state", () => {
       getArciumProgramId(),
     )[0];
 
+    // The computation definitions are shared with the Task 2.3 test and the
+    // test files run in one process, so skip initialization if another test
+    // already registered this computation definition.
+    const existing = await (
+      provider as anchor.AnchorProvider
+    ).connection.getAccountInfo(compDefPDA);
+    if (existing) {
+      return "already-initialized";
+    }
+
     const arciumProgram = getArciumProgram(provider as anchor.AnchorProvider);
     const mxeAccount = getMXEAccAddress(program.programId);
     const mxeAcc = await arciumProgram.account.mxeAccount.fetch(mxeAccount);
