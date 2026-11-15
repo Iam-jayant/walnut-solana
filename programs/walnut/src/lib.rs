@@ -20,6 +20,14 @@ use arcium_anchor::prelude::*;
 pub mod errors;
 pub mod events;
 
+// Coordination scaffolding proven by the Task 2.1 Arcium feasibility gate.
+// These modules carry no financial state; they only exercise the generation /
+// Lock / Operation Intent lifecycle. The design reserves the directories
+// `state/`, `lock/`, `operation/`, `instructions/`, `math/`, and `oracle/`.
+pub mod lock;
+pub mod operation;
+pub mod state;
+
 use errors::ErrorCode;
 use events::SumEvent;
 
