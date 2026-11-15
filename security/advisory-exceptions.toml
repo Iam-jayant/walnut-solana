@@ -1,0 +1,92 @@
+# Committed exceptions to the dependency-advisory policy (Requirement 1.5).
+#
+# CI fails on every RustSec vulnerability reported by cargo-audit and on every
+# high or critical advisory reported by pnpm audit, unless an entry below
+# covers it. scripts/advisories.mjs enforces these rules for each entry:
+#
+#   id         RUSTSEC-YYYY-NNNN, GHSA-xxxx-xxxx-xxxx, or CVE-YYYY-NNNN.
+#              Matches the advisory ID or any of its aliases.
+#   ecosystem  "cargo" or "npm".
+#   package    Affected crate or npm package name; must match the advisory.
+#   reason     Why the advisory is not exploitable here or cannot be fixed yet,
+#              and what removes the exception. At least 40 characters.
+#   owner      GitHub handle of the person accountable for the exception.
+#   added      Date the exception was added (YYYY-MM-DD, UTC).
+#   expires    Last day the exception is valid (YYYY-MM-DD, UTC). At most
+#              90 days after "added". Expired entries fail CI; renew by
+#              re-reviewing the advisory and moving both dates.
+#
+# Only [[exception]] tables with double-quoted string values are accepted.
+# See docs/CI.md#advisory-exceptions.
+
+# serialize-javascript 6.0.2 is pulled in by mocha 10 (via ts-mocha), the
+# Anchor/Arcium localnet test runner. It is never bundled into the SDK, keeper,
+# or Web App.
+
+[[exception]]
+id = "GHSA-5c6j-r48x-rmvq"
+ecosystem = "npm"
+package = "serialize-javascript"
+reason = "Dev-only: reached through mocha's parallel-mode worker serializer, which only serializes results of our own local test runs. Not shipped in the SDK, keeper, or Web App. Remove when mocha/ts-mocha ship serialize-javascript >= 7.1.3."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"
+
+# toml 3.0.0 is a dependency of @anchor-lang/core 1.0.2, which is pinned exactly
+# because arcium-anchor 0.16.0 requires anchor-lang =1.0.2. @anchor-lang/core
+# only calls toml.parse() in workspace.js, on the repository's own Anchor.toml,
+# when tests use anchor.workspace. It never parses network or user input.
+
+[[exception]]
+id = "GHSA-82x6-q7mm-w9cf"
+ecosystem = "npm"
+package = "toml"
+reason = "Only reached by @anchor-lang/core workspace.js parsing the repository's own Anchor.toml in tests; no untrusted TOML is parsed. Pinned by the Arcium 0.16.0 / Anchor 1.0.2 coordination. Remove when @anchor-lang/core ships toml > 5.0.0 or we stop using anchor.workspace."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"
+
+[[exception]]
+id = "GHSA-v5mp-jgw5-2x6j"
+ecosystem = "npm"
+package = "toml"
+reason = "Only reached by @anchor-lang/core workspace.js parsing the repository's own Anchor.toml in tests; no untrusted TOML is parsed. Pinned by the Arcium 0.16.0 / Anchor 1.0.2 coordination. Remove when @anchor-lang/core ships toml > 5.0.0 or we stop using anchor.workspace."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"
+
+[[exception]]
+id = "GHSA-4qx8-w7c3-pj3p"
+ecosystem = "npm"
+package = "toml"
+reason = "Only reached by @anchor-lang/core workspace.js parsing the repository's own Anchor.toml in tests; no untrusted TOML is parsed. Pinned by the Arcium 0.16.0 / Anchor 1.0.2 coordination. Remove when @anchor-lang/core ships toml > 5.0.0 or we stop using anchor.workspace."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"
+
+[[exception]]
+id = "GHSA-9j65-hcg3-gc64"
+ecosystem = "npm"
+package = "toml"
+reason = "Only reached by @anchor-lang/core workspace.js parsing the repository's own Anchor.toml in tests; no untrusted TOML is parsed. Pinned by the Arcium 0.16.0 / Anchor 1.0.2 coordination. Remove when @anchor-lang/core ships toml > 5.0.0 or we stop using anchor.workspace."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"
+
+[[exception]]
+id = "GHSA-9qmh-m7c6-f92p"
+ecosystem = "npm"
+package = "toml"
+reason = "Only reached by @anchor-lang/core workspace.js parsing the repository's own Anchor.toml in tests; no untrusted TOML is parsed. Pinned by the Arcium 0.16.0 / Anchor 1.0.2 coordination. Remove when @anchor-lang/core ships toml > 5.0.0 or we stop using anchor.workspace."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"
+
+[[exception]]
+id = "GHSA-h895-cgqg-jf52"
+ecosystem = "npm"
+package = "toml"
+reason = "Only reached by @anchor-lang/core workspace.js parsing the repository's own Anchor.toml in tests; no untrusted TOML is parsed. Pinned by the Arcium 0.16.0 / Anchor 1.0.2 coordination. Remove when @anchor-lang/core ships toml > 5.0.0 or we stop using anchor.workspace."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"

@@ -1,0 +1,235 @@
+# Walnut-Solana CI (Task 1.3, Requirement 1.4 and 1.5).
+#
+# Every tool version comes from toolchain.versions through
+# scripts/ci/read-versions.sh. Do not hard-code toolchain versions here.
+# Job layout, local equivalents, and the advisory-exception process are in
+# docs/CI.md.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # Daily: catches new advisories and expiring exceptions without a code change.
+    - cron: "17 5 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  ARCIUM_NO_UPDATE_CHECK: "1"
+  # CI-only scanner pins (not part of the coordinated toolchain).
+  CARGO_AUDIT_VERSION: "0.23.0"
+  GITLEAKS_VERSION: "8.30.1"
+  GITLEAKS_SHA256: "551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb"
+
+jobs:
+  js:
+    name: JS checks (format, lint, types, unit, property, fixtures, exceptions)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read toolchain.versions
+        id: versions
+        run: |
+          bash scripts/ci/read-versions.sh > "$RUNNER_TEMP/versions.env"
+          cat "$RUNNER_TEMP/versions.env" | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.versions.outputs.NODE_VERSION }}
+
+      # Node 25+ does not bundle Corepack.
+      - name: Install pnpm
+        run: npm install -g "pnpm@${PNPM_VERSION}"
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.versions.outputs.PNPM_VERSION }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-${{ steps.versions.outputs.PNPM_VERSION }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check repository pins against toolchain.versions
+        run: bash scripts/check-toolchain.sh --files-only
+
+      - name: Advisory exceptions are justified, owned, and unexpired
+        run: pnpm check:advisories
+
+      - name: Prettier
+        run: pnpm format:check
+
+      - name: ESLint
+        run: pnpm lint
+
+      - name: TypeScript type-check (workspace packages)
+        run: pnpm typecheck
+
+      - name: Unit tests
+        run: pnpm test:unit
+
+      - name: Property tests (TypeScript)
+        run: pnpm test:property
+
+      - name: Fixture-import check
+        run: pnpm check:fixtures
+
+  rust-arcium:
+    name: Rust + Arcium (rustfmt, build, clippy, tests, localnet)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    env:
+      PROPTEST_CASES: "1024"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read toolchain.versions
+        id: versions
+        run: |
+          bash scripts/ci/read-versions.sh > "$RUNNER_TEMP/versions.env"
+          cat "$RUNNER_TEMP/versions.env" | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_ENV"
+
+      - name: Install system packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential pkg-config libssl-dev libudev-dev
+
+      # rust-toolchain.toml selects RUST_VERSION inside the repository. The
+      # Anchor IDL build runs `cargo +stable`, so stable must exist as well.
+      - name: Install Rust toolchains
+        run: |
+          rustup toolchain install "$RUST_VERSION" --profile minimal --component rustfmt,clippy
+          rustup toolchain install stable --profile minimal
+          rustc --version
+          cargo +stable --version
+
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+      # Caches ~/.cargo/registry, ~/.cargo/git, and target/. Binaries in
+      # ~/.cargo/bin are left to setup-arcium's own caches.
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          cache-bin: "false"
+          shared-key: rust-arcium
+
+      # Installs Node, the Solana CLI (cached with platform-tools in
+      # ~/.cache/solana), Anchor (cached), arcup, Arcium, and the Arx node image,
+      # and creates ~/.config/solana/id.json.
+      - uses: arcium-hq/setup-arcium@3834867d347723c7a1fa0fa691b1cb2a980c5b70 # v0.15.0
+        with:
+          runner-arch-os: x86_64_linux
+          arcium-version: ${{ steps.versions.outputs.ARCIUM_VERSION }}
+          anchor-version: ${{ steps.versions.outputs.ANCHOR_VERSION }}
+          solana-cli-version: ${{ steps.versions.outputs.SOLANA_CLI_VERSION }}
+          node-version: ${{ steps.versions.outputs.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install -g "pnpm@${PNPM_VERSION}"
+
+      - name: Locate pnpm store
+        id: pnpm-store
+        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ steps.pnpm-store.outputs.path }}
+          key: pnpm-store-${{ runner.os }}-${{ steps.versions.outputs.PNPM_VERSION }}-${{ hashFiles('pnpm-lock.yaml') }}
+          restore-keys: pnpm-store-${{ runner.os }}-${{ steps.versions.outputs.PNPM_VERSION }}-
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Check installed toolchain against toolchain.versions
+        run: bash scripts/check-toolchain.sh
+
+      - name: Build Anchor program and Arcis circuits
+        run: arcium build
+
+      # Runs after `arcium build`: the program's callback types are generated
+      # from the compiled circuit interfaces in build/.
+      - name: Clippy (warnings denied)
+        run: pnpm lint:rust
+
+      - name: Rust unit tests
+        run: pnpm test:rust
+
+      - name: Rust property tests
+        run: pnpm test:rust:property
+
+      - name: TypeScript type-check (Anchor tests, needs target/types)
+        run: pnpm typecheck:tests
+
+      - name: Transaction-size tests
+        run: pnpm test:tx-size
+
+      # prlimit must run in the same shell as arcium test.
+      - name: Local Arcium tests
+        run: |
+          sudo prlimit --pid $$ --nofile=1048576:1048576
+          arcium test
+
+  audit:
+    name: Dependency audit (cargo audit, pnpm audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Read toolchain.versions
+        id: versions
+        run: |
+          bash scripts/ci/read-versions.sh > "$RUNNER_TEMP/versions.env"
+          cat "$RUNNER_TEMP/versions.env" | tee -a "$GITHUB_OUTPUT" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: ${{ steps.versions.outputs.NODE_VERSION }}
+
+      - name: Install pnpm
+        run: npm install -g "pnpm@${PNPM_VERSION}"
+
+      # Prebuilt, checksum-verified cargo-audit binary.
+      - uses: taiki-e/install-action@ab49d3c64680143e184118bed66a46419fc15519 # v2.90.5
+        with:
+          tool: cargo-audit@${{ env.CARGO_AUDIT_VERSION }}
+
+      - name: Audit and apply advisory exceptions
+        run: bash scripts/audit.sh
+
+  secrets:
+    name: Secret scan (gitleaks)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Install gitleaks
+        run: |
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl -sSfL -o "$RUNNER_TEMP/$archive" \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/$archive"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/$archive" | sha256sum --check --strict
+          tar -xzf "$RUNNER_TEMP/$archive" -C "$RUNNER_TEMP" gitleaks
+          sudo install -m 0755 "$RUNNER_TEMP/gitleaks" /usr/local/bin/gitleaks
+          gitleaks version
+
+      - name: Scan full git history
+        run: gitleaks git --redact --verbose --exit-code 1 .
