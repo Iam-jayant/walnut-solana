@@ -94,7 +94,10 @@ describe("Walnut Task 2.2: persistent encrypted Position state", () => {
     // every delta, and decrypts every stored revision.
     const viewingPrivateKey = x25519.utils.randomSecretKey();
     const viewingPublicKey = x25519.getPublicKey(viewingPrivateKey);
-    const sharedSecret = x25519.getSharedSecret(viewingPrivateKey, mxePublicKey);
+    const sharedSecret = x25519.getSharedSecret(
+      viewingPrivateKey,
+      mxePublicKey,
+    );
     const cipher = new RescueCipher(sharedSecret);
 
     const positionPda = PublicKey.findProgramAddressSync(
@@ -330,7 +333,9 @@ async function getMXEPublicKeyWithRetry(
       await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
     }
   }
-  throw new Error(`Failed to fetch MXE public key after ${maxRetries} attempts`);
+  throw new Error(
+    `Failed to fetch MXE public key after ${maxRetries} attempts`,
+  );
 }
 
 function readKpJson(path: string): anchor.web3.Keypair {
