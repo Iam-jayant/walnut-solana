@@ -8,6 +8,12 @@
 //! Module directories reserved by the design: `state/`, `instructions/`,
 //! `math/`, `oracle/`, `operation/`, `lock/`.
 
+// Clippy's `diverging_sub_expression` is a false-positive in the code generated
+// by the Arcium `#[arcium_program]` macro. The lint is reported at the module
+// declaration (crate-root scope), so it must be allowed crate-wide here rather
+// than with an attribute on the module.
+#![allow(clippy::diverging_sub_expression)]
+
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
 
@@ -22,8 +28,6 @@ const COMP_DEF_OFFSET_ADD_TOGETHER: u32 = comp_def_offset("add_together");
 declare_id!("5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea");
 
 #[arcium_program]
-// Suppress a clippy false-positive in Arcium/Anchor macro-generated code.
-#[allow(clippy::diverging_sub_expression)]
 pub mod walnut {
     use super::*;
 
