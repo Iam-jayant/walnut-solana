@@ -9,4 +9,12 @@ pub mod intent;
 pub mod lifecycle;
 
 pub use intent::{IntentStatus, OperationIntent, OperationKind};
-pub use lifecycle::{abandon, on_static_failure, on_success, queue, CallbackOutcome};
+pub use lifecycle::{
+    abandon, on_callback_tx_failure, on_static_failure, on_success, queue, CallbackOutcome,
+};
+
+// The failure-matrix tests (Task 2.4) assert the state-machine behaviour of
+// every coordination/callback invariant in the Requirement 2.4 matrix. They are
+// pure Rust so they run in CI without a localnet or MPC round trip.
+#[cfg(test)]
+mod failure_matrix;

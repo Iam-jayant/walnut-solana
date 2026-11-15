@@ -36,6 +36,15 @@ pub struct LiquidationReceiptsEmitted {
     pub liquidator_ciphertexts: [[u8; 32]; 2],
 }
 
+/// Emitted by the Task 2.4 `oversized_output` success callback. In practice the
+/// computation fails with `OutputTooLarge` before this callback runs, so the
+/// event is the negative control: the localnet test asserts it is NOT observed.
+/// Only the output nonce is carried; the oversized ciphertexts are ignored.
+#[event]
+pub struct OversizedOutputEmitted {
+    pub nonce: [u8; 16],
+}
+
 /// Emitted by the Task 2.3 `rotate_viewing_key` callback when a Position is
 /// re-encrypted to a new Viewing Key. Commits the old and new key epochs and
 /// public keys (Requirement 5.11). The re-encrypted payload stays in the

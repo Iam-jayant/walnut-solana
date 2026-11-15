@@ -40,6 +40,12 @@ use arcis::*;
 ///   supplied as a throwaway `Enc<Shared, u64>` input purely so the circuit
 ///   can seal to `new_key.owner`; the probe plaintext is discarded.
 ///
+/// Task 2.4 adds one failure-matrix circuit:
+///
+/// * `oversized_output` returns a 48-field encrypted array so the sealed output
+///   cannot fit a single callback transaction, forcing the `OutputTooLarge`
+///   failure path (Requirement 2.4). It carries no financial logic.
+///
 /// Nonce note for ADR-0003: the MXE derives each output nonce as the owning
 /// input's nonce + 1 (Arcium encryption docs). Clients therefore MUST pick a
 /// fresh random 16-byte nonce per encryption and never pick sequential nonces
@@ -185,5 +191,23 @@ mod circuits {
         let s = state.to_arcis();
         let _ = new_key.to_arcis();
         new_key.owner.from_arcis(s)
+    }
+
+    // ---- Task 2.4: deliberately oversized output --------------------------
+
+    /// Produces an output large enough that the node cannot build the callback
+    /// inside Solana's single-transaction limit, so the computation fails with
+    /// `OutputTooLarge` (Requirement 2.4). The logic is trivial on purpose: the
+    /// point is the output *size*, not the computation. One encrypted scalar is
+    /// replicated across 48 fields, so the sealed output carries 48 32-byte
+    /// ciphertexts (1,536 bytes) which, with the callback's signatures and
+    /// accounts, cannot fit in 1,232 bytes.
+    ///
+    /// This is feasibility-gate scaffolding only; no production circuit returns
+    /// an output this large.
+    #[instruction]
+    pub fn oversized_output(input: Enc<Shared, u64>) -> Enc<Shared, [u64; 48]> {
+        let v = input.to_arcis();
+        input.owner.from_arcis([v; 48])
     }
 }

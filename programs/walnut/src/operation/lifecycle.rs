@@ -22,11 +22,21 @@
 //! | Failed    | unchanged           | released       |
 //! | Abandoned | bumped              | released       |
 //!
+//! A failing callback transaction (`LeftQueuedForRecovery`) writes nothing and
+//! releases no Lock: the Intent stays `Queued`.
+//!
 //! A callback for an already-terminal Intent (duplicate, late, or
-//! already-resolved) is a no-op that changes no financial state. Invalid or
-//! unauthenticated output is not modelled here because it leaves the Intent
-//! queued for timeout recovery (Requirement 3.6); the caller simply does not
-//! invoke a handler.
+//! already-resolved) is a no-op that changes no financial state
+//! ([`CallbackOutcome::TerminalNoop`]).
+//!
+//! A callback transaction that *fails to execute* -- invalid or unauthenticated
+//! signed output, a missing or wrong custom callback account, a failed callback
+//! CPI (for example a token transfer), or callback compute-unit exhaustion --
+//! commits nothing. On Solana the whole callback transaction reverts
+//! atomically, so no status change, generation bump, Lock release, or financial
+//! write survives. The Intent stays `Queued` and only timeout recovery
+//! (abandonment, once the Lock expires) resolves it (Requirement 3.6).
+//! [`on_callback_tx_failure`] models this shared outcome.
 //!
 //! All of this is pure Rust with no financial fields, so it is fully
 //! CI-testable without a localnet or MPC round trip.
@@ -51,6 +61,11 @@ pub enum CallbackOutcome {
     Abandoned,
     /// Callback for an already-terminal Intent; nothing happened.
     TerminalNoop,
+    /// The callback transaction failed to execute (invalid/unauthenticated
+    /// output, missing or wrong custom account, failed callback CPI, or
+    /// compute-unit exhaustion). Nothing was committed; the Intent stays
+    /// `Queued` for timeout recovery.
+    LeftQueuedForRecovery,
 }
 
 /// Returns whether `account` is write-locked by `intent`.
@@ -173,6 +188,27 @@ pub fn on_static_failure(
     intent.mark_failed()?;
     release_matching_locks(intent, accounts);
     Ok(CallbackOutcome::Failed)
+}
+
+/// A callback transaction that fails to execute.
+///
+/// Covers every failing callback transaction that is NOT an authenticated
+/// static failure: invalid or unauthenticated signed output, a missing or wrong
+/// custom callback account, a failed callback CPI (such as a token transfer),
+/// and callback compute-unit exhaustion. On Solana such a transaction reverts
+/// atomically, so this is a read-only no-op: the Intent stays `Queued` and every
+/// Lock it owns stays held. Only timeout recovery (abandonment after Lock
+/// expiry) can then resolve the Intent (Requirement 3.6).
+///
+/// It takes shared references precisely because it must not mutate anything; the
+/// signature documents that a failed callback leaves all coordination state
+/// exactly as the queue path left it.
+pub fn on_callback_tx_failure(
+    intent: &OperationIntent,
+    accounts: &[&ProtectedAccount],
+) -> CallbackOutcome {
+    let _ = (intent, accounts);
+    CallbackOutcome::LeftQueuedForRecovery
 }
 
 /// Permissionless abandonment after Lock expiry.

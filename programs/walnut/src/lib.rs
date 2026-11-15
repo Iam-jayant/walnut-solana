@@ -37,7 +37,10 @@ pub mod state;
 pub mod position;
 
 use errors::ErrorCode;
-use events::{LiquidationReceiptsEmitted, PositionStateStored, SumEvent, ViewingKeyRotated};
+use events::{
+    LiquidationReceiptsEmitted, OversizedOutputEmitted, PositionStateStored, SumEvent,
+    ViewingKeyRotated,
+};
 use position::{EncryptedPositionState, SpikePosition, POSITION_SECRET_FIELDS};
 
 const COMP_DEF_OFFSET_ADD_TOGETHER: u32 = comp_def_offset("add_together");
@@ -45,6 +48,7 @@ const COMP_DEF_OFFSET_INIT_POSITION: u32 = comp_def_offset("init_position");
 const COMP_DEF_OFFSET_APPLY_POSITION_DELTA: u32 = comp_def_offset("apply_position_delta");
 const COMP_DEF_OFFSET_LIQUIDATION_RECEIPTS: u32 = comp_def_offset("liquidation_receipts");
 const COMP_DEF_OFFSET_ROTATE_VIEWING_KEY: u32 = comp_def_offset("rotate_viewing_key");
+const COMP_DEF_OFFSET_OVERSIZED_OUTPUT: u32 = comp_def_offset("oversized_output");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -113,6 +117,119 @@ pub mod walnut {
 
         emit!(SumEvent {
             sum: o.ciphertexts[0],
+            nonce: o.nonce.to_le_bytes(),
+        });
+        Ok(())
+    }
+
+    // ---- Task 2.4: callback compute-unit exhaustion -----------------------
+
+    /// Queues `add_together` (reusing its circuit, accounts, and callback) but
+    /// with a caller-supplied `callback_cu_limit`. A deliberately tiny non-zero
+    /// limit makes the callback run out of compute units and the callback
+    /// transaction abort, so nothing is committed (Requirement 2.4,
+    /// compute-unit exhaustion). A `callback_cu_limit` of `0` would instead let
+    /// Arcium derive the limit from simulation and retry on exhaustion, so the
+    /// test must pass a small fixed value such as `1`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn add_together_bounded_cu(
+        ctx: Context<AddTogether>,
+        computation_offset: u64,
+        ciphertext_0: [u8; 32],
+        ciphertext_1: [u8; 32],
+        pub_key: [u8; 32],
+        nonce: u128,
+        callback_cu_limit: u64,
+    ) -> Result<()> {
+        let args = ArgBuilder::new()
+            .x25519_pubkey(pub_key)
+            .plaintext_u128(nonce)
+            .encrypted_u8(ciphertext_0)
+            .encrypted_u8(ciphertext_1)
+            .build();
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![AddTogetherCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &[],
+            )?],
+            1,
+            0,
+            // A fixed, non-zero limit: Arcium does not retry it on exhaustion.
+            callback_cu_limit as u32,
+        )?;
+        Ok(())
+    }
+
+    // ---- Task 2.4: OutputTooLarge -----------------------------------------
+
+    /// Registers the `oversized_output` computation definition with the MXE.
+    pub fn init_oversized_output_comp_def(ctx: Context<InitOversizedOutputCompDef>) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Queues `oversized_output`: one encrypted `u64` input, a 48-field output.
+    /// The sealed output is too large for the node to fit in a single callback
+    /// transaction, so the computation fails with `OutputTooLarge` and the
+    /// success callback below never runs (Requirement 2.4).
+    pub fn oversized_output(
+        ctx: Context<OversizedOutput>,
+        computation_offset: u64,
+        ciphertext: [u8; 32],
+        pub_key: [u8; 32],
+        nonce: u128,
+    ) -> Result<()> {
+        // Argument order must match `oversized_output(input: Enc<Shared, u64>)`:
+        // pubkey, nonce, then the single ciphertext.
+        let args = ArgBuilder::new()
+            .x25519_pubkey(pub_key)
+            .plaintext_u128(nonce)
+            .encrypted_u64(ciphertext)
+            .build();
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![OversizedOutputCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &[],
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Success callback for `oversized_output`. It is expected never to run
+    /// because the computation fails with `OutputTooLarge`; the localnet test
+    /// asserts `OversizedOutputEmitted` is not observed. The oversized
+    /// ciphertexts are ignored; only the nonce is relayed.
+    #[arcium_callback(encrypted_ix = "oversized_output")]
+    pub fn oversized_output_callback(
+        ctx: Context<OversizedOutputCallback>,
+        output: SignedComputationOutputs<OversizedOutputOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(OversizedOutputOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::AbortedComputation.into()),
+        };
+
+        emit!(OversizedOutputEmitted {
             nonce: o.nonce.to_le_bytes(),
         });
         Ok(())
@@ -929,6 +1046,83 @@ pub struct RotateViewingKeyCallback<'info> {
 #[init_computation_definition_accounts("rotate_viewing_key", payer)]
 #[derive(Accounts)]
 pub struct InitRotateViewingKeyCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- Task 2.4: OutputTooLarge accounts ------------------------------------
+
+#[queue_computation_accounts("oversized_output", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64)]
+pub struct OversizedOutput<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_OVERSIZED_OUTPUT))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("oversized_output")]
+#[derive(Accounts)]
+pub struct OversizedOutputCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_OVERSIZED_OUTPUT))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+}
+
+#[init_computation_definition_accounts("oversized_output", payer)]
+#[derive(Accounts)]
+pub struct InitOversizedOutputCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]
