@@ -144,6 +144,17 @@ describe("Walnut scaffold: add_together", () => {
       getArciumProgramId(),
     )[0];
 
+    // The add_together computation definition is a program-wide singleton
+    // shared with tests/failure-matrix.ts, and all test files run in one
+    // process, so skip both the init instruction and the circuit upload if
+    // another test already registered it.
+    const existing = await (
+      provider as anchor.AnchorProvider
+    ).connection.getAccountInfo(compDefPDA);
+    if (existing) {
+      return "already-initialized";
+    }
+
     const arciumProgram = getArciumProgram(provider as anchor.AnchorProvider);
     const mxeAccount = getMXEAccAddress(program.programId);
     const mxeAcc = await arciumProgram.account.mxeAccount.fetch(mxeAccount);
