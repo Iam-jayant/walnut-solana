@@ -1,0 +1,62 @@
+{
+  "name": "walnut-solana",
+  "private": true,
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": "26.13.1",
+    "pnpm": "9.15.9"
+  },
+  "pnpm": {
+    "overrides": {
+      "@anchor-lang/core": "1.0.2",
+      "@anchor-lang/borsh": "1.0.2",
+      "@anchor-lang/errors": "1.0.2",
+      "@arcium-hq/client": "0.16.0"
+    }
+  },
+  "scripts": {
+    "check:toolchain": "bash scripts/check-toolchain.sh",
+    "check:fixtures": "node scripts/check-fixture-imports.mjs",
+    "check:advisories": "node scripts/advisories.mjs check",
+    "audit:deps": "bash scripts/audit.sh",
+    "build": "arcium build",
+    "build:ts": "pnpm -r --if-present build",
+    "test": "arcium test",
+    "test:ts": "pnpm -r --if-present test",
+    "test:scripts": "node --test \"scripts/tests/*.test.mjs\"",
+    "test:unit": "pnpm run test:scripts && node scripts/run-suite.mjs test",
+    "test:property": "node scripts/run-suite.mjs test:property",
+    "test:tx-size": "node scripts/run-suite.mjs test:tx-size",
+    "test:rust": "cargo test --workspace --locked -- --skip prop_",
+    "test:rust:property": "cargo test --workspace --locked -- prop_",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "typecheck:tests": "tsc -p tsconfig.json --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "lint:rust": "cargo clippy --workspace --all-targets --locked -- -D warnings",
+    "format": "prettier --write \"**/*.{ts,tsx,js,mjs,cjs,json,md,yaml,yml}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,mjs,cjs,json,md,yaml,yml}\"",
+    "format:rust:check": "cargo fmt --all -- --check",
+    "clean": "pnpm -r --if-present clean"
+  },
+  "dependencies": {
+    "@anchor-lang/core": "1.0.2",
+    "@arcium-hq/client": "0.16.0",
+    "@solana/web3.js": "^1.95.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/bn.js": "^5.1.0",
+    "@types/chai": "^4.3.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "^24.0.0",
+    "chai": "^4.5.0",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "mocha": "^10.0.0",
+    "prettier": "^3.0.0",
+    "ts-mocha": "^10.0.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.72.2"
+  }
+}

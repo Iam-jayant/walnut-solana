@@ -1,0 +1,6 @@
+{
+  "name": "@walnut/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Walnut-Solana Web App (Next.js App Router; built in Task 15)"
+}

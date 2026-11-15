@@ -1,0 +1,13 @@
+{
+  "name": "@walnut/keeper",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Permissionless keeper for Walnut-Solana (rate epochs, health checks, recovery)",
+  "type": "module",
+  "main": "./dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
+  }
+}
