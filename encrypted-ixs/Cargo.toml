@@ -1,0 +1,9 @@
+[package]
+name = "encrypted-ixs"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Exact pin must match ARCIUM_VERSION in toolchain.versions.
+[dependencies]
+arcis = "=0.16.0"
