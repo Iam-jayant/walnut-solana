@@ -1,0 +1,17 @@
+{
+  "network": "devnet",
+  "solanaCluster": "devnet",
+  "description": "Public devnet Network Profile. Contains only public configuration: the Arcium cluster offset, the default free RPC, and the deployed Walnut program id. No private endpoint, key, or paid provider is referenced. See docs/DEVNET_DEPLOY.md for the deploy and benchmark runbook.",
+  "rpc": {
+    "default": "https://api.devnet.solana.com",
+    "note": "Free, keyless public devnet RPC. Rate-limited; a large program deploy may need retries or any standard Solana JSON-RPC alternative. Override with ANCHOR_PROVIDER_URL / the --rpc flag. No paid RPC is required."
+  },
+  "arcium": {
+    "clusterOffset": 456,
+    "note": "Shared Arcium devnet cluster offset. Cluster PDAs (cluster, computation, mempool, executing pool) derive from this offset; MXE and comp-def PDAs derive from the program id."
+  },
+  "program": {
+    "walnut": "5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea",
+    "note": "Matches declare_id! in programs/walnut/src/lib.rs and the Anchor.toml [programs.localnet] id. Deploying with the persisted target/deploy/walnut-keypair.json keeps the devnet program id identical to the declared id."
+  }
+}

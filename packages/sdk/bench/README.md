@@ -74,6 +74,26 @@ rent as you go.
 
 Run from the repository root. Flags after `--` are forwarded to the harness.
 
+### One-time comp-def provisioning (shared deployment)
+
+On a shared cluster (e.g. devnet) register the benchmark computation definitions
+once, then run the benchmarks with `--no-init-compdefs`:
+
+```bash
+# Devnet is the default RPC + Arcium.toml [clusters.devnet] offset 456.
+pnpm --filter @walnut/sdk bench:init-devnet
+
+# Then run benchmarks without re-checking the definitions each time.
+pnpm --filter @walnut/sdk bench:latency -- --runs 50 --reclaim --no-init-compdefs
+```
+
+`bench:init-devnet` registers `add_together`, `init_position`, and
+`apply_position_delta` idempotently (already-provisioned definitions are left
+untouched) and confirms the MXE public key is fetchable (keygen finalized). It
+is equivalent to the inline `--init-compdefs` setup that the benchmarks run by
+default; use whichever is convenient. See `docs/DEVNET_DEPLOY.md` for the full
+deploy-then-benchmark runbook.
+
 ### Latency, fees, CU, failure rate, throughput (≥ 50 runs)
 
 ```bash

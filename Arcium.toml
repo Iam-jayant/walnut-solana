@@ -15,8 +15,13 @@ backends = ["Cerberus"]
 # RPC URLs and wallets are configured in Anchor.toml [provider].
 # Offsets are recorded per network in config/networks/ once selected.
 #
-# [clusters.devnet]
-# offset = 0
-#
+# Devnet uses the shared Arcium devnet cluster (offset 456). Clients, tests, and
+# the benchmark harness derive cluster PDAs from this offset; the MXE and comp
+# def PDAs derive from the program id, not the offset. See docs/DEVNET_DEPLOY.md.
+[clusters.devnet]
+offset = 456
+
+# Mainnet uses the shared Arcium mainnet cluster (offset 2026). Kept commented
+# until mainnet deployment (Task 17/18) so it cannot affect devnet or CI.
 # [clusters.mainnet]
-# offset = 0
+# offset = 2026
