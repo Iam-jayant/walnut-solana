@@ -90,3 +90,18 @@ reason = "Only reached by @anchor-lang/core workspace.js parsing the repository'
 owner = "Iam-jayant"
 added = "2026-11-15"
 expires = "2027-01-15"
+# crypto-bigint is a transitive crate pulled in two ways: 0.6.0-rc.6 via
+# arcium-primitives 0.8.6 / elliptic-curve 0.14.0-rc.1 (the Arcium MPC crypto
+# stack) and 0.5.5 via elliptic-curve 0.13.8 (the Solana/RustCrypto stack).
+# Both versions are pinned by the Arcium 0.16.0 toolchain and cannot be bumped
+# independently; the upstream fix is still unreleased. One entry covers both
+# because the policy matcher ignores version.
+
+[[exception]]
+id = "RUSTSEC-2026-0387"
+ecosystem = "cargo"
+package = "crypto-bigint"
+reason = "Timing-variability side channel (RUSTSEC-2026-0387) in a transitive dependency: crypto-bigint 0.6.0-rc.6 via arcium-primitives/elliptic-curve (Arcium MPC stack) and 0.5.5 via elliptic-curve 0.13.8 (Solana stack). Both are pinned by the Arcium 0.16.0 toolchain and cannot be upgraded independently; the upstream fix is unreleased. Remove when the dependency tree ships a patched crypto-bigint."
+owner = "Iam-jayant"
+added = "2026-11-15"
+expires = "2027-01-15"

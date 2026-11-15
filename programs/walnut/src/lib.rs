@@ -22,6 +22,8 @@ const COMP_DEF_OFFSET_ADD_TOGETHER: u32 = comp_def_offset("add_together");
 declare_id!("5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea");
 
 #[arcium_program]
+// Suppress a clippy false-positive in Arcium/Anchor macro-generated code.
+#[allow(clippy::diverging_sub_expression)]
 pub mod walnut {
     use super::*;
 
