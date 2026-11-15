@@ -17,8 +17,12 @@
   ],
   "scripts": {
     "build": "tsc -p tsconfig.json",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tx-size.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.tx-size.json && tsc -p tsconfig.bench.json",
     "test:tx-size": "node tx-size/measure.ts",
+    "bench": "node bench/run.ts",
+    "bench:latency": "node bench/run.ts latency",
+    "bench:contention": "node bench/run.ts contention",
+    "bench:selftest": "node --test bench/stats.test.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   }
 }

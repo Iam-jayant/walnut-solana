@@ -1,0 +1,4 @@
+# Benchmark artifacts are generated locally and linked into ADR-0003; they are
+# not committed. Keep the directory, ignore its JSON output.
+*
+!.gitignore
