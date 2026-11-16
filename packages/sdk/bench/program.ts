@@ -125,8 +125,22 @@ export async function ensureCompDef(
     getArciumProgramId(),
   )[0];
 
+  const circuitPath = path.join(repoRoot, "build", `${circuitName}.arcis`);
   const existing = await provider.connection.getAccountInfo(compDefPda);
-  if (existing) return "exists";
+  if (existing) {
+    // The comp def may exist while its circuit upload was interrupted
+    // (the queue then fails with ComputationDefinitionNotCompleted).
+    // uploadCircuit skips raw circuit accounts that are already complete,
+    // so re-running it resumes the upload and is a no-op when finished.
+    await uploadCircuit(
+      provider,
+      circuitName,
+      programId,
+      fs.readFileSync(circuitPath),
+      true,
+    );
+    return "exists";
+  }
 
   const arciumProgram = getArciumProgram(provider);
   const mxeAccount = getMXEAccAddress(programId);
@@ -145,7 +159,6 @@ export async function ensureCompDef(
     .signers([payer])
     .rpc({ preflightCommitment: "confirmed", commitment: "confirmed" });
 
-  const circuitPath = path.join(repoRoot, "build", `${circuitName}.arcis`);
   const rawCircuit = fs.readFileSync(circuitPath);
   await uploadCircuit(provider, circuitName, programId, rawCircuit, true);
   return "created";

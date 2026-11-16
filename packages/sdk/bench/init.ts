@@ -60,9 +60,11 @@ async function main(): Promise<void> {
   );
 }
 
-main().catch((err: unknown) => {
-  const message =
-    err instanceof Error ? (err.stack ?? err.message) : String(err);
-  console.error(`Comp-def init failed: ${message}`);
-  process.exit(1);
-});
+main()
+  .then(() => process.exit(0))
+  .catch((err: unknown) => {
+    const message =
+      err instanceof Error ? (err.stack ?? err.message) : String(err);
+    console.error(`Comp-def init failed: ${message}`);
+    process.exit(1);
+  });

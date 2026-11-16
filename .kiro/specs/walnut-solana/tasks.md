@@ -66,7 +66,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
 
 ## Tasks
 
-- [ ] 1. Repository, toolchain, and baseline controls
+- [x] 1. Repository, toolchain, and baseline controls
 
   - [x] 1.1 Initialize the repository
     - Initialize Git and set the approved remote.
@@ -98,34 +98,34 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - State that Walnut uses MPC, not FHE.
     - Record public and encrypted fields.
 
-  - [-] 1.5 Baseline checkpoint
+  - [x] 1.5 Baseline checkpoint
     - Run the Arcium hello-world test locally and in CI.
     - Verify no paid provider is required.
     - Verify secrets and keypairs are ignored.
     - Commit and push the scaffold.
 
-- [ ] 2. Blocking Arcium feasibility and transaction-envelope gate
+- [x] 2. Blocking Arcium feasibility and transaction-envelope gate
 
-  - [ ] 2.1 Implement test-only generations, Locks, and Operation Intents
+  - [x] 2.1 Implement test-only generations, Locks, and Operation Intents
     - Add minimal account structures and state transitions.
     - Add success, static failure, expiry, and abandonment handlers.
     - Do not add financial logic.
 
-  - [ ] 2.2 Prove persistent encrypted Position state
+  - [x] 2.2 Prove persistent encrypted Position state
     - Compile the exact account-backed encrypted-input API against the pinned release.
     - Store the complete proposed Position payload.
     - Read it in later computations.
     - Update fields in randomized orders.
     - Decrypt every result locally.
 
-  - [ ] 2.3 Prove nonce and ownership safety
+  - [x] 2.3 Prove nonce and ownership safety
     - Test two users and a computation that outputs to both owners.
     - Record effective key identities and nonces.
     - Assert no key/nonce pair repeats.
     - Test Viewing Key rotation.
     - If one shared Position payload fails, test `Enc<Mxe>` plus owner-authorized view.
 
-  - [ ] 2.4 Exercise the complete failure matrix
+  - [x] 2.4 Exercise the complete failure matrix
     - Success callback.
     - Circuit failure and static failure callback.
     - Invalid signed output.
@@ -140,19 +140,19 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Finalized-rent claim.
     - Expired-fee reclaim.
 
-  - [ ] 2.5 Build transaction-envelope prototypes
+  - [x] 2.5 Build transaction-envelope prototypes
     - Serialize realistic queue and callback transactions for Position initialization, shield, unshield, supply, withdraw supply, borrow, repay, reserve withdrawal, utilization-band update, health, two-Position liquidation with two encrypted Receipt outputs, Absorb with pre-created Recovery Claim, Recovery Claim settlement, disclosure, and key rotation.
     - Include actual Arcium standard accounts and all custom accounts.
     - Simulate callback compute units.
     - Require less than 1,232 bytes and target no more than 1,150 bytes.
 
-  - [ ] 2.6 Benchmark the platform
+  - [x] 2.6 Benchmark the platform
     - Measure p50 and p95 callback latency over at least 50 devnet runs.
     - Measure fees, callback compute units, failure rate, and accepted operations per minute.
     - Test 10 concurrent writers with retry and abandonment.
     - Test sustained Pool-like contention.
 
-  - [ ] 2.7 Write ADR-0003 and stop/go decision
+  - [x] 2.7 Write ADR-0003 and stop/go decision
     - Record exact APIs, encryption layout, nonce evidence, transaction sizes, callback behavior, fees, latency, and throughput.
     - Select `Enc<Shared>` local reads or the `Enc<Mxe>` fallback.
     - Update requirements and design if measurements differ.
@@ -804,7 +804,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Health and partial liquidation with controlled test Positions.
     - Disclosure.
     - Reconcile every vault and encrypted allocation.
-
+  
   - [ ] 18.4 Open capped beta
     - Display beta status and caps.
     - Monitor continuously.

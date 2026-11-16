@@ -74,6 +74,114 @@
         "executionId": "62424136-3505-4bfc-a390-a7a26ae58c37",
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794738011627
+      },
+      {
+        "executionId": "f145e7af-55e6-496d-8c2b-c6265522577a",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794748944356
+      }
+    ],
+    "1. Repository, toolchain, and baseline controls": [
+      {
+        "executionId": "f145e7af-55e6-496d-8c2b-c6265522577a",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794748944439
+      }
+    ],
+    "2.1 Implement test-only generations, Locks, and Operation Intents": [
+      {
+        "executionId": "f145e7af-55e6-496d-8c2b-c6265522577a",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794748963315
+      },
+      {
+        "executionId": "5c1933b3-523c-494d-849c-1045fe840c45",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794752013570
+      }
+    ],
+    "2.2 Prove persistent encrypted Position state": [
+      {
+        "executionId": "5c1933b3-523c-494d-849c-1045fe840c45",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794752025935
+      },
+      {
+        "executionId": "c1505549-b62d-4de1-8e96-5f74bc7a37d3",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794755518621
+      }
+    ],
+    "2.3 Prove nonce and ownership safety": [
+      {
+        "executionId": "c1505549-b62d-4de1-8e96-5f74bc7a37d3",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794755537607
+      },
+      {
+        "executionId": "947a89cc-c972-4089-851a-c1a16f42eeb8",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794758378471
+      }
+    ],
+    "2.4 Exercise the complete failure matrix": [
+      {
+        "executionId": "947a89cc-c972-4089-851a-c1a16f42eeb8",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794758386838
+      },
+      {
+        "executionId": "09305a39-b9da-462a-8672-ff0e2fa4bb83",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794761041868
+      }
+    ],
+    "2.5 Build transaction-envelope prototypes": [
+      {
+        "executionId": "09305a39-b9da-462a-8672-ff0e2fa4bb83",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794761050909
+      },
+      {
+        "executionId": "274ebba0-26ed-408a-a0c6-834246d6bafb",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794763408174
+      }
+    ],
+    "2.6 Benchmark the platform": [
+      {
+        "executionId": "274ebba0-26ed-408a-a0c6-834246d6bafb",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794763422506
+      },
+      {
+        "executionId": "e3c0d82b-c797-4092-9a2d-f5878074c813",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794768353829
+      },
+      {
+        "executionId": "8ab40045-0438-4143-8185-9f407e7ae32f",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794851182854
+      }
+    ],
+    "2.7 Write ADR-0003 and stop/go decision": [
+      {
+        "executionId": "e3c0d82b-c797-4092-9a2d-f5878074c813",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794768353975
+      },
+      {
+        "executionId": "8ab40045-0438-4143-8185-9f407e7ae32f",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794851460323
+      }
+    ],
+    "2. Blocking Arcium feasibility and transaction-envelope gate": [
+      {
+        "executionId": "8ab40045-0438-4143-8185-9f407e7ae32f",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794851460435
       }
     ]
   }

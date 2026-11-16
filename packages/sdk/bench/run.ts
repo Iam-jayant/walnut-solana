@@ -33,9 +33,14 @@ async function main(): Promise<void> {
   }
 }
 
-main().catch((err: unknown) => {
-  const message =
-    err instanceof Error ? (err.stack ?? err.message) : String(err);
-  console.error(`Benchmark failed: ${message}`);
-  process.exit(1);
-});
+main()
+  .then(() => {
+    // Open websocket subscriptions keep Node alive after the run; exit explicitly.
+    process.exit(0);
+  })
+  .catch((err: unknown) => {
+    const message =
+      err instanceof Error ? (err.stack ?? err.message) : String(err);
+    console.error(`Benchmark failed: ${message}`);
+    process.exit(1);
+  });
