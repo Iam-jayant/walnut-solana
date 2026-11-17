@@ -105,3 +105,18 @@ reason = "Timing-variability side channel (RUSTSEC-2026-0387) in a transitive de
 owner = "Iam-jayant"
 added = "2026-11-15"
 expires = "2027-01-15"
+
+# picomatch 2.3.2 and 4.0.7 have a ReDoS advisory with no patched release yet
+# (every published version up to 4.0.7 is affected). Both copies are
+# dev-only: 2.3.2 comes from mocha's chokidar file watcher and 4.0.7 from
+# typescript-eslint's tinyglobby. Neither is bundled into the SDK, keeper, or
+# Web App, and both only match patterns written in this repository.
+
+[[exception]]
+id = "GHSA-fc5q-39xc-vjpf"
+ecosystem = "npm"
+package = "picomatch"
+reason = "Dev-only ReDoS with no patched release: reached through mocha's chokidar watcher and typescript-eslint's tinyglobby, which only match glob patterns from this repository's own configuration, never untrusted input. Not shipped in the SDK, keeper, or Web App. Remove when a patched picomatch is published and the toolchain picks it up."
+owner = "Iam-jayant"
+added = "2026-11-17"
+expires = "2027-01-15"

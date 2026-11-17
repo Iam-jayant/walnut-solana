@@ -1,0 +1,75 @@
+@import "tailwindcss";
+
+/*
+ * Walnut design tokens (Task 15.1).
+ *
+ * The palette is fixed by the task (#FFD209, #000000, #2D2D2D, #F4F4F4,
+ * #FFFFFF). The type scale, spacing rhythm, radii, and motion are a styling
+ * baseline modeled on zama.org's structure; only styling is reused — all copy,
+ * the logo, and imagery are Walnut's own. The same values are documented in
+ * docs/design-tokens.md. Tailwind v4 reads these `@theme` variables and
+ * generates the matching utilities (bg-walnut-yellow, text-display, etc.).
+ */
+@theme {
+  /* ---- Palette ---- */
+  --color-walnut-yellow: #ffd209;
+  --color-walnut-black: #000000;
+  --color-walnut-ink: #2d2d2d;
+  --color-walnut-mist: #f4f4f4;
+  --color-walnut-white: #ffffff;
+
+  /* ---- Typefaces ---- */
+  /* `--font-telegraf` is injected by next/font/local in app/layout.tsx. */
+  --font-sans:
+    var(--font-telegraf), ui-sans-serif, system-ui, -apple-system, "Segoe UI",
+    sans-serif;
+  --font-mono:
+    ui-monospace, "SF Mono", "JetBrains Mono", "Fira Code", monospace;
+
+  /* ---- Type scale (clamped for 360–1920px fluid sizing) ---- */
+  --text-display: clamp(2.75rem, 1.5rem + 5vw, 5.5rem);
+  --text-display--line-height: 1.02;
+  --text-display--letter-spacing: -0.03em;
+  --text-h1: clamp(2.25rem, 1.4rem + 3.2vw, 3.75rem);
+  --text-h1--line-height: 1.05;
+  --text-h1--letter-spacing: -0.02em;
+  --text-h2: clamp(1.75rem, 1.2rem + 1.8vw, 2.5rem);
+  --text-h2--line-height: 1.1;
+  --text-h2--letter-spacing: -0.015em;
+  --text-h3: clamp(1.375rem, 1.1rem + 0.9vw, 1.75rem);
+  --text-h3--line-height: 1.2;
+  --text-lead: clamp(1.125rem, 1rem + 0.4vw, 1.375rem);
+  --text-lead--line-height: 1.5;
+  --text-body: 1rem;
+  --text-body--line-height: 1.6;
+  --text-small: 0.875rem;
+  --text-small--line-height: 1.5;
+  --text-caption: 0.75rem;
+  --text-caption--line-height: 1.4;
+  --text-caption--letter-spacing: 0.04em;
+
+  /* ---- Radii ---- */
+  --radius-card: 1.25rem;
+  --radius-pill: 9999px;
+
+  /* ---- Layout ---- */
+  --container-page: 80rem; /* 1280px content max-width */
+
+  /* ---- Motion ---- */
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-base: 250ms;
+  --duration-slow: 400ms;
+}
+
+/* Honor the OS "reduce motion" preference globally (Requirement 15.7). */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
