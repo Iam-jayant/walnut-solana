@@ -327,15 +327,15 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Decision Expiry.
     - Localnet signed-update fixture and real devnet update.
 
-- [ ] 7. Borrow Index, encrypted NAV, and Pool accounting
+- [x] 7. Borrow Index, encrypted NAV, and Pool accounting
 
-  - [-] 7.1 Implement fixed-point primitives
+  - [x] 7.1 Implement fixed-point primitives
     - WAD multiplication and division.
     - Floor and ceil variants.
     - Checked conversions.
     - Rust/Arcis/TypeScript equivalence tests.
 
-  - [ ] 7.2 Implement rate model, index projection, and utilization-band computation
+  - [x] 7.2 Implement rate model, index projection, and utilization-band computation
     - Bounded kinked rate.
     - Accounting Borrow Index and timestamp.
     - Projected risk index through Decision Expiry.
@@ -345,7 +345,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Use upper band edge conservatively.
     - Borrow Index monotonicity.
 
-  - [ ] 7.3 Implement encrypted Pool interest checkpoint
+  - [x] 7.3 Implement encrypted Pool interest checkpoint
     - Make it the first circuit step for supply, withdrawal, borrow, repay, reserve withdrawal, partial liquidation, and Absorb.
     - Old and current debt values at the accounting index.
     - Borrower interest.
@@ -353,14 +353,14 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Accounted Borrow Index.
     - Encrypted supplier equity.
 
-  - [ ] 7.4 Implement Pool/index serialization
+  - [x] 7.4 Implement Pool/index serialization
     - Every Pool-financial-state mutation queue accrues accounting index and Locks Pool.
     - Keep accounting and projected risk indexes distinct.
     - No independent accounting-index mutation while Pool is locked.
     - Read-only utilization update neither checkpoints nor locks; it stales if Pool/index/rate generation changes.
     - Abandonment invalidates old output.
 
-  - [ ] 7.5 Implement reserve withdrawal
+  - [x] 7.5 Implement reserve withdrawal
     - Public all-or-zero request.
     - Interest checkpoint before approval.
     - Approve only when the full request is no greater than encrypted Cash and Reserves.
@@ -369,7 +369,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Bind requested amount, destination, mint, token program, owner, and authority in Intent commitments.
     - Supplier-equity neutrality.
 
-  - [ ] 7.6 Pool property tests
+  - [x] 7.6 Pool property tests
     - Rate continuity and monotonicity.
     - Interest split.
     - NAV identity.
@@ -378,7 +378,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Long elapsed time.
     - All rounding limits.
 
-  - [ ] 7.7 Pool accounting checkpoint
+  - [x] 7.7 Pool accounting checkpoint
     - Differential tests against the reference model.
     - Adversarial index/queue/callback interleavings.
     - Do not begin supply or borrowing until this passes.

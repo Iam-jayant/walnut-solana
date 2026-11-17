@@ -472,6 +472,72 @@
         "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794931607365
+      },
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794934150099
+      }
+    ],
+    "7.2 Implement rate model, index projection, and utilization-band computation": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794934150258
+      }
+    ],
+    "7.3 Implement encrypted Pool interest checkpoint": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794934150355
+      }
+    ],
+    "7.4 Implement Pool/index serialization": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794934160586
+      },
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794937382578
+      }
+    ],
+    "7.5 Implement reserve withdrawal": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794937382727
+      }
+    ],
+    "7.6 Pool property tests": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794937382863
+      }
+    ],
+    "7.7 Pool accounting checkpoint": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794937382960
+      }
+    ],
+    "7. Borrow Index, encrypted NAV, and Pool accounting": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794937383024
+      }
+    ],
+    "8.1 Implement first-supplier rules": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794937394382
       }
     ]
   }
