@@ -29,6 +29,7 @@
 pub mod checkpoint;
 pub mod fixed;
 pub mod rate;
+pub mod supply;
 
 // Task 7.6: Pool accounting property tests over the real math.
 #[cfg(test)]

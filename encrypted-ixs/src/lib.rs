@@ -693,6 +693,146 @@ mod circuits {
             requested.reveal(),
         )
     }
+    // ---- Task 8: supply and withdraw supply ------------------------------------
+    /// Supply or withdraw-supply over the decrypted Pool and Position
+    /// (plaintext twin: `programs/walnut/src/math/supply.rs::supply_flow`).
+    ///
+    /// FIRST the interest checkpoint, THEN all-or-zero:
+    /// supply (`requested` = USDC units) mints `requested * 1_000` shares into
+    /// a canonically empty Pool (Cash, Debt Shares, Reserves all zero and
+    /// `claims_clear`), else `floor(requested * total_shares / equity)`, and
+    /// requires `equity + requested <= supply_cap`. Withdraw (`requested` =
+    /// shares) pays `floor(requested * equity / total_shares)` and needs the
+    /// owner's shares and full Cash coverage. Everything stays inside the
+    /// `u64`/`2^63` domain so no product wraps; every operand of a dead branch
+    /// is clamped to zero. A refusal returns BOTH inputs unchanged.
+    /// Returns `(pool, position, applied)`.
+    pub fn supply_flow_values(
+        pool: PoolSecret,
+        position: PositionSecret,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        is_withdraw: bool,
+        requested: u128,
+        supply_cap: u64,
+        claims_clear: bool,
+    ) -> (PoolSecret, PositionSecret, bool) {
+        let max_value: u128 = 18_446_744_073_709_551_615;
+        let max_shares: u128 = 9_223_372_036_854_775_808;
+        let scale: u128 = 1_000;
+        let (cp, equity, ck_ok) =
+            checkpoint_pool(pool, accounted_index, accounting_index, reserve_factor_bps);
+        let domain = ck_ok
+            && equity <= max_value
+            && cp.cash_usdc <= max_value
+            && cp.total_supply_shares <= max_shares
+            && requested > 0
+            && requested <= max_value;
+        let r = if domain { requested } else { 0 };
+        let eq = if domain { equity } else { 0 };
+        let ts = if domain { cp.total_supply_shares } else { 0 };
+        let cash = if domain { cp.cash_usdc } else { 0 };
+        let free = position.free_usdc as u128;
+        let empty = ts == 0;
+        let canonical = cp.cash_usdc == 0
+            && cp.total_debt_shares == 0
+            && cp.reserves_usdc == 0
+            && claims_clear;
+        // Supply.
+        let safe_eq = if eq == 0 { 1 } else { eq };
+        let minted = if empty { r * scale } else { (r * ts) / safe_eq };
+        let supply_ok = domain
+            && !is_withdraw
+            && r <= free
+            && eq + r <= supply_cap as u128
+            && minted > 0
+            && ts + minted <= max_shares
+            && ((empty && canonical) || (!empty && eq > 0));
+        // Withdraw.
+        let safe_ts = if empty { 1 } else { ts };
+        let claim = (r * eq) / safe_ts;
+        let withdraw_ok = domain
+            && is_withdraw
+            && !empty
+            && r <= position.supply_shares_usdc
+            && r <= ts
+            && claim > 0
+            && claim <= cash
+            && free + claim <= max_value;
+        let applied = supply_ok || withdraw_ok;
+        let add_cash = if supply_ok { r } else { 0 };
+        let sub_cash = if withdraw_ok { claim } else { 0 };
+        let add_shares = if supply_ok { minted } else { 0 };
+        let sub_shares = if withdraw_ok { r } else { 0 };
+        let pool_out = PoolSecret {
+            cash_usdc: if applied {
+                cp.cash_usdc + add_cash - sub_cash
+            } else {
+                pool.cash_usdc
+            },
+            total_supply_shares: if applied {
+                cp.total_supply_shares + add_shares - sub_shares
+            } else {
+                pool.total_supply_shares
+            },
+            total_debt_shares: pool.total_debt_shares,
+            reserves_usdc: if applied {
+                cp.reserves_usdc
+            } else {
+                pool.reserves_usdc
+            },
+        };
+        let new_free = free - add_cash + sub_cash;
+        let position_out = PositionSecret {
+            free_sol: position.free_sol,
+            free_usdc: new_free as u64,
+            collateral_sol: position.collateral_sol,
+            supply_shares_usdc: position.supply_shares_usdc + add_shares - sub_shares,
+            debt_shares_usdc: position.debt_shares_usdc,
+        };
+        (pool_out, position_out, applied)
+    }
+    /// Supply or withdraw supply: Pool (`Enc<Mxe>`), Position (`Enc<Shared>`),
+    /// the bare `Shared` Position output owner, the public indexes and reserve
+    /// factor, the public `is_withdraw` flag and request, the public supply
+    /// cap, and the public recovery-claims-clear flag. Returns the Pool
+    /// payload, the Position payload, the applied flag, and the request echo
+    /// (the callback needs it to rebuild the Intent's input commitment when
+    /// the request resolves Zero).
+    #[instruction]
+    pub fn supply_flow(
+        pool: Enc<Mxe, PoolSecret>,
+        position: Enc<Shared, PositionSecret>,
+        owner: Shared,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        is_withdraw: bool,
+        requested: u128,
+        supply_cap: u64,
+        claims_clear: bool,
+    ) -> (Enc<Mxe, PoolSecret>, Enc<Shared, PositionSecret>, bool, u128) {
+        let p = pool.to_arcis();
+        let s = position.to_arcis();
+        let (np, ns, applied) = supply_flow_values(
+            p,
+            s,
+            accounted_index,
+            accounting_index,
+            reserve_factor_bps,
+            is_withdraw,
+            requested,
+            supply_cap,
+            claims_clear,
+        );
+        (
+            Mxe::get().from_arcis(np),
+            owner.from_arcis(ns),
+            applied.reveal(),
+            requested.reveal(),
+        )
+    }
 }
 
 #[cfg(test)]

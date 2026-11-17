@@ -6,3 +6,4 @@ export * from "./balance.ts";
 export * from "./fixed.ts";
 export * from "./rate.ts";
 export * from "./checkpoint.ts";
+export * from "./supply.ts";
