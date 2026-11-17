@@ -1,0 +1,8 @@
+# Historical gitleaks findings that are test fixtures, not secrets.
+# Commit 565d75a added two arbitrary base58 public-key strings to
+# packages/sdk/test/network-profile.test.ts (lines 19 and 20). They are valid
+# but meaningless addresses used as unit-test inputs. The file now derives them
+# at runtime, but gitleaks scans the whole history, so the old commit is
+# allowlisted by fingerprint instead of rewriting pushed history.
+565d75a2570df3375162abbbd4cc0b1beeb700ab:packages/sdk/test/network-profile.test.ts:generic-api-key:19
+565d75a2570df3375162abbbd4cc0b1beeb700ab:packages/sdk/test/network-profile.test.ts:generic-api-key:20

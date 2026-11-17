@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { fileURLToPath } from "node:url";
 import { getArciumProgramId } from "@arcium-hq/client";
+import { PublicKey } from "@solana/web3.js";
 import {
   loadNetworkProfile,
   MAINNET_USDC_MINT,
@@ -16,8 +17,9 @@ const DEVNET_PATH = fileURLToPath(
   new URL("../../../config/networks/devnet.json", import.meta.url),
 );
 const WALNUT = "5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea";
-const KEY_A = "4vJ9JU1bJJE96FWSJKvHsmmFADCg4gpZQff4P3bkLKi";
-const KEY_B = "8qbHbw2BbbTHBW1sbeqakYXVKRQM8Ne7pLK7m6CVfeR";
+// Arbitrary valid addresses derived at runtime, so no high-entropy literal sits in the repo.
+const KEY_A = new PublicKey(new Uint8Array(32).fill(1)).toBase58();
+const KEY_B = new PublicKey(new Uint8Array(32).fill(2)).toBase58();
 const FEED_SOL = "0x" + "ab".repeat(32);
 const FEED_USDC = "cd".repeat(32);
 
