@@ -1,0 +1,203 @@
+# Golden vectors for the balance layer (Task 5.6).
+#
+# One file, two readers: the Rust model-based checkpoint
+# (programs/walnut/src/state/balance_checkpoint.rs) drives the REAL production
+# rules with every scenario, and the TypeScript reference model
+# (packages/reference-model) replays the same scenarios. Both must reach the
+# same balances, vault totals, and statuses.
+#
+# Grammar (one item per line; blank lines and # comments are ignored):
+#   scenario <name>        start a fresh world: no Position, empty vaults
+#   init                   owner initializes the Position (queues the zero state)
+#   retry_init             owner retries a failed initialization
+#   shield <sol|usdc> <n>  owner shields n base units (queues the credit)
+#   unshield <sol|usdc> <n>  owner unshields n base units (queues the debit)
+#   rotate <k>             owner rotates the Viewing Key to key id k (1..)
+#   retry_shield <first|last>  owner retries that Pending Shield
+#   refund <first|last>    owner refunds that Pending Shield
+#   credit                 the honest callback of the newest queued Intent
+#                          (also a duplicate, when that Intent is terminal)
+#   expire                 time passes Decision Expiry, then the honest callback
+#   stale                  another write moves the Position generation, then the
+#                          honest callback
+#   unauth                 an unauthenticated callback (always rejected)
+#   old                    the honest callback of the very first Intent
+#   abandon                time passes Lock expiry, then anyone abandons
+#   pause_shield | unpause_shield | pause_unshield | unpause_unshield
+#   advance <n>            n slots pass
+#   !<step>                the step must be rejected
+#   expect free <sol> <usdc>     decrypted free balances (Position Active)
+#   expect vault <sol> <usdc>    vault token totals
+#   expect out <sol> <usdc>      total approved unshields
+#   expect epoch <n> | expect key <k>
+#   expect shield <i> <deposited|credited|refunded>
+
+scenario shield_credit_unshield_exact
+init
+credit
+shield sol 100
+credit
+expect free 100 0
+expect vault 100 0
+expect shield 0 credited
+unshield sol 100
+credit
+expect free 0 0
+expect vault 0 0
+expect out 100 0
+
+scenario oversized_unshield_returns_zero
+init
+credit
+shield usdc 50
+credit
+unshield usdc 51
+credit
+expect free 0 50
+expect vault 0 50
+expect out 0 0
+unshield usdc 18446744073709551615
+credit
+expect free 0 50
+expect vault 0 50
+unshield usdc 50
+credit
+expect free 0 0
+expect vault 0 0
+expect out 0 50
+!unshield usdc 0
+
+scenario overflowing_credit_stays_deposited_then_refunds
+init
+credit
+shield sol 18446744073709551615
+credit
+shield sol 1
+credit
+expect free 18446744073709551615 0
+expect vault 18446744073709551616 0
+expect shield 0 credited
+expect shield 1 deposited
+refund last
+expect shield 1 refunded
+expect vault 18446744073709551615 0
+!refund last
+expect free 18446744073709551615 0
+
+scenario failed_shield_is_retryable_and_credits_once
+init
+credit
+shield usdc 40
+expire
+expect free 0 0
+expect vault 0 40
+expect shield 0 deposited
+retry_shield last
+credit
+expect free 0 40
+expect vault 0 40
+expect shield 0 credited
+!refund last
+!retry_shield last
+
+scenario stale_unauthenticated_and_abandoned_shield
+init
+credit
+shield sol 10
+stale
+expect free 0 0
+expect shield 0 deposited
+retry_shield last
+!unauth
+abandon
+expect free 0 0
+expect vault 10 0
+retry_shield last
+credit
+expect free 10 0
+expect vault 10 0
+expect shield 0 credited
+
+scenario duplicate_and_old_callbacks_are_inert
+init
+credit
+shield sol 5
+credit
+credit
+old
+expect free 5 0
+expect vault 5 0
+expect shield 0 credited
+
+scenario rotation_keeps_balances_and_bumps_epoch
+init
+credit
+shield sol 33
+credit
+rotate 2
+credit
+expect epoch 1
+expect key 2
+expect free 33 0
+!rotate 2
+rotate 1
+expire
+expect epoch 1
+expect key 2
+rotate 1
+credit
+expect epoch 2
+expect key 1
+expect free 33 0
+expect vault 33 0
+
+scenario pause_blocks_only_new_shield_and_unshield
+init
+credit
+shield usdc 9
+expire
+pause_shield
+pause_unshield
+!shield sol 1
+!unshield usdc 1
+retry_shield last
+credit
+expect free 0 9
+rotate 2
+credit
+expect epoch 1
+unpause_shield
+unpause_unshield
+shield sol 1
+credit
+expect free 1 9
+unshield usdc 9
+credit
+expect free 1 0
+expect out 0 9
+
+scenario refund_stays_available_under_pause
+init
+credit
+shield sol 20
+expire
+pause_shield
+pause_unshield
+refund last
+expect vault 0 0
+expect shield 0 refunded
+!retry_shield last
+
+scenario failed_initialization_is_retryable
+init
+expire
+!shield sol 1
+retry_init
+abandon
+retry_init
+credit
+expect free 0 0
+expect vault 0 0
+shield sol 3
+credit
+expect free 3 0

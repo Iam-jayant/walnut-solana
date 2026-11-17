@@ -1,4 +1,5 @@
 // @walnut/reference-model: plaintext model of balances, Pool accounting,
 // health, and liquidation used for previews and differential tests.
-// Scaffold only.
-export {};
+// The balance layer (Task 5.6) is in `balance.ts`; Pool accounting, health,
+// and liquidation follow with their tasks.
+export * from "./balance.ts";

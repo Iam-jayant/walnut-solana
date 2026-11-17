@@ -238,15 +238,15 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Cap boundaries.
     - Liquidation bonus/threshold cross-bound.
 
-- [ ] 5. Position, Viewing Key, shield, and unshield
+- [x] 5. Position, Viewing Key, shield, and unshield
 
-  - [ ] 5.1 Implement Position initialization
+  - [x] 5.1 Implement Position initialization
     - `Initializing`, `Active`, and recoverable failed states.
     - Owner and Viewing Key registration.
     - Encrypted zero-state computation.
     - Retry and owner close path.
 
-  - [ ] 5.2 Implement unique Pending Shield PDAs
+  - [x] 5.2 Implement unique Pending Shield PDAs
     - Owner, Position, source, asset, amount, sequence, status, attempt sequence, active Intent/offset, and captured generation.
     - `Deposited -> Credited | Refunded` only.
     - Retry requires a terminal prior attempt and installs a new attempt sequence and Intent.
@@ -254,19 +254,19 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Old attempt callbacks are no-ops.
     - No overwrite or replay.
 
-  - [ ] 5.3 Implement SOL and USDC shield
+  - [x] 5.3 Implement SOL and USDC shield
     - Wrap SOL to wSOL in the user transaction.
     - Transfer exact public amount into the vault.
     - Queue encrypted credit.
     - Retry and refund after terminal failure or abandonment.
 
-  - [ ] 5.4 Implement unshield
+  - [x] 5.4 Implement unshield
     - Circuit approves requested public amount or zero.
     - Callback transfers SPL tokens with vault PDA authority.
     - SOL path returns wSOL.
     - Add separate owner-signed unwrap builder.
 
-  - [ ] 5.5 Implement local view and key rotation
+  - [x] 5.5 Implement local view and key rotation
     - Store `viewing_key_epoch`, starting at zero.
     - Derive the Viewing Key from program, network, Position PDA, and epoch.
     - Keep the wallet signature and secret client-side.
@@ -275,7 +275,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Atomically re-encrypt, update public key, and increment epoch.
     - Clear browser key material on lock and disconnect.
 
-  - [ ] 5.6 Balance reference model and tests
+  - [x] 5.6 Balance reference model and tests
     - Vault conservation.
     - Pending Shield exclusivity.
     - Failure and late callback neutrality.
