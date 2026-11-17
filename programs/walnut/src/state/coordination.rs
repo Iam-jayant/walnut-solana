@@ -216,17 +216,20 @@ impl<'a> CoordinationSlot<'a> {
 ///
 /// Rejects duplicate keys first: two deserialized copies of one account would
 /// otherwise let the later write-back silently overwrite the earlier one.
-fn with_protected<R>(
+///
+/// Generic over the error type so the callback helpers (Task 3.3) can reuse the
+/// same copy-in, write-back-on-success logic with their own error enum.
+pub(crate) fn with_protected<R, E: From<CoordinationError>>(
     slots: &mut [CoordinationSlot<'_>],
-    operation: impl FnOnce(&mut [&mut ProtectedAccount]) -> Result<R, CoordinationError>,
-) -> Result<R, CoordinationError> {
+    operation: impl FnOnce(&mut [&mut ProtectedAccount]) -> Result<R, E>,
+) -> Result<R, E> {
     for (index, slot) in slots.iter().enumerate() {
         if slots
             .iter()
             .skip(index + 1)
             .any(|other| other.key == slot.key)
         {
-            return Err(CoordinationError::DuplicateAccount);
+            return Err(CoordinationError::DuplicateAccount.into());
         }
     }
 

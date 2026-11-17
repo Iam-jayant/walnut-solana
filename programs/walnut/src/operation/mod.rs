@@ -12,8 +12,12 @@
 //! * [`ownership`]: exact transition ownership, Decision Expiry and Lock-expiry
 //!   timing, and payer and reclaim ownership.
 //!
+//! Task 3.3 adds [`callback`]: the callback verification order, the decision
+//! classifier, and the helpers that apply a decision or abandon on timeout.
+//!
 //! No financial logic lives here.
 
+pub mod callback;
 pub mod commitment;
 pub mod intent;
 pub mod lifecycle;
@@ -21,6 +25,11 @@ pub mod ownership;
 pub mod seeds;
 pub mod sha256;
 
+pub use callback::{
+    abandon_timeout, apply_decision, classify_callback, verify_and_classify, CallbackContext,
+    CallbackDecision, CallbackError, CallbackReport, CallbackResult, CurrentDependencies,
+    StaleReason,
+};
 pub use commitment::{
     account_commitment, input_commitment, AccountBinding, AccountRole, InputField, InputValue,
 };
@@ -47,3 +56,9 @@ mod ordering;
 // pure Rust so they run in CI without a localnet or MPC round trip.
 #[cfg(test)]
 mod failure_matrix;
+
+// The Task 3.5 framework checkpoint: a model-based test that drives the real
+// queue, callback, failure, expiry, abandonment, and retry code against a
+// reference state machine and proves failed operations move no value.
+#[cfg(test)]
+mod checkpoint;

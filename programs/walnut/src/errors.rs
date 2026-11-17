@@ -1,5 +1,6 @@
 use anchor_lang::prelude::*;
 
+use crate::operation::callback::CallbackError;
 use crate::operation::IntentError;
 use crate::state::CoordinationError;
 
@@ -49,6 +50,18 @@ pub enum ErrorCode {
     InvalidIntentTiming,
     #[msg("A Position and its captured generation do not pair up")]
     IntentSnapshotMismatch,
+    #[msg("The callback output was not authenticated, so the Intent stays queued")]
+    CallbackOutputNotAuthenticated,
+    #[msg("The callback computation offset does not match the Operation Intent")]
+    CallbackOffsetMismatch,
+    #[msg("The callback was delivered for a different Operation Intent")]
+    CallbackIntentMismatch,
+    #[msg("The callback operation kind does not match the Operation Intent")]
+    CallbackKindMismatch,
+    #[msg("The callback accounts do not match the accounts commitment")]
+    CallbackAccountsCommitmentMismatch,
+    #[msg("The callback inputs do not match the inputs commitment")]
+    CallbackInputsCommitmentMismatch,
 }
 
 impl From<CoordinationError> for ErrorCode {
@@ -83,6 +96,28 @@ impl From<IntentError> for ErrorCode {
             IntentError::SnapshotMismatch => ErrorCode::IntentSnapshotMismatch,
             IntentError::Coordination(error) => ErrorCode::from(error),
         }
+    }
+}
+
+impl From<CallbackError> for ErrorCode {
+    fn from(error: CallbackError) -> Self {
+        match error {
+            CallbackError::OffsetMismatch => ErrorCode::CallbackOffsetMismatch,
+            CallbackError::IntentKeyMismatch => ErrorCode::CallbackIntentMismatch,
+            CallbackError::IntentKindMismatch => ErrorCode::CallbackKindMismatch,
+            CallbackError::AccountsCommitmentMismatch => {
+                ErrorCode::CallbackAccountsCommitmentMismatch
+            }
+            CallbackError::InputsCommitmentMismatch => ErrorCode::CallbackInputsCommitmentMismatch,
+            CallbackError::Intent(error) => ErrorCode::from(error),
+        }
+    }
+}
+
+/// Lets Anchor instructions propagate callback verification failures with `?`.
+impl From<CallbackError> for anchor_lang::error::Error {
+    fn from(error: CallbackError) -> Self {
+        ErrorCode::from(error).into()
     }
 }
 
@@ -127,6 +162,41 @@ mod tests {
         assert_eq!(u32::from(ErrorCode::ReclaimAuthorityNotPayer), 6017);
         assert_eq!(u32::from(ErrorCode::InvalidIntentTiming), 6018);
         assert_eq!(u32::from(ErrorCode::IntentSnapshotMismatch), 6019);
+        // Task 3.3 appends the callback verification codes.
+        assert_eq!(u32::from(ErrorCode::CallbackOutputNotAuthenticated), 6020);
+        assert_eq!(u32::from(ErrorCode::CallbackOffsetMismatch), 6021);
+        assert_eq!(u32::from(ErrorCode::CallbackIntentMismatch), 6022);
+        assert_eq!(u32::from(ErrorCode::CallbackKindMismatch), 6023);
+        assert_eq!(
+            u32::from(ErrorCode::CallbackAccountsCommitmentMismatch),
+            6024
+        );
+        assert_eq!(u32::from(ErrorCode::CallbackInputsCommitmentMismatch), 6025);
+    }
+
+    #[test]
+    fn callback_errors_map_to_distinct_codes() {
+        let all = [
+            CallbackError::OffsetMismatch,
+            CallbackError::IntentKeyMismatch,
+            CallbackError::IntentKindMismatch,
+            CallbackError::AccountsCommitmentMismatch,
+            CallbackError::InputsCommitmentMismatch,
+            CallbackError::Intent(IntentError::DecisionExpired),
+        ];
+        let codes: Vec<u32> = all
+            .iter()
+            .map(|error| u32::from(ErrorCode::from(*error)))
+            .collect();
+        for (index, code) in codes.iter().enumerate() {
+            assert!(!codes[index + 1..].contains(code));
+        }
+        // Intent errors keep their existing codes.
+        assert_eq!(
+            codes[5],
+            u32::from(ErrorCode::DecisionExpired),
+            "wrapped Intent errors reuse the Task 3.2 code"
+        );
     }
 
     #[test]
