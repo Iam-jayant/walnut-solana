@@ -51,6 +51,18 @@ use arcis::*;
 /// * `init_pool_state` seals the all-zero `PoolSecret` to the MXE so the USDC
 ///   Pool State starts with a valid `Enc<Mxe>` payload.
 ///
+/// Task 5.1 adds `init_position_state`, which seals the all-zero
+/// `PositionSecret` to a production Position owner's Viewing Key.
+///
+/// Task 5.3 adds `shield_credit`, which adds a public shielded amount to the
+/// stored Position's free SOL or free USDC balance. Task 5.4 adds `unshield`,
+/// which debits a public requested amount all-or-nothing. Both seal their
+/// output to a bare `Shared` input that carries a program-derived unique
+/// nonce, so no attempt ever reuses an output (key, nonce).
+///
+/// Task 5.5 adds `rotate_position_key`, which re-seals the stored Position
+/// payload to a new Viewing public key with a program-derived output nonce.
+///
 /// Nonce note for ADR-0003: the MXE derives each output nonce as the owning
 /// input's nonce + 1 (Arcium encryption docs). Clients therefore MUST pick a
 /// fresh random 16-byte nonce per encryption and never pick sequential nonces
@@ -244,5 +256,131 @@ mod circuits {
             reserves_usdc: 0,
         };
         Mxe::get().from_arcis(zero)
+    }
+
+    // ---- Task 5.1: production Position initialization ----------------------
+
+    /// Produces the all-zero `PositionSecret` sealed to the owner's Viewing
+    /// Key (`Enc<Shared>`), the first encrypted state of a production Position.
+    ///
+    /// `owner` is a bare `Shared` parameter: the queue instruction passes the
+    /// registered `viewing_pubkey` and a fresh client nonce, and no ciphertext.
+    /// The circuit takes no client-chosen value, so the stored state is zero
+    /// by construction. The output nonce is the input nonce + 1 (ADR-0003); the
+    /// callback relies on that to bind the input nonce to the Intent.
+    #[instruction]
+    pub fn init_position_state(owner: Shared) -> Enc<Shared, PositionSecret> {
+        let zero = PositionSecret {
+            free_sol: 0,
+            free_usdc: 0,
+            collateral_sol: 0,
+            supply_shares_usdc: 0,
+            debt_shares_usdc: 0,
+        };
+        owner.from_arcis(zero)
+    }
+
+    // ---- Task 5.3: shield credit -------------------------------------------
+
+    /// Credits a public shield `amount` to `free_usdc` (`is_usdc`) or
+    /// `free_sol` of the stored Position state and re-seals it to the owner.
+    ///
+    /// `state` is the account-backed payload the queue instruction reads from
+    /// the Position. `owner` is a bare `Shared` (the Viewing public key plus a
+    /// fresh output-nonce input, no ciphertext): the result is sealed to
+    /// `owner`, so the output nonce is `owner`'s nonce + 1. The queue
+    /// instruction derives that nonce from the Position and the unique
+    /// Operation Intent sequence, so no two attempts, applied or not, ever
+    /// seal under the same (key, nonce). The output nonce is independent of
+    /// the stored state's nonce (ADR-0003, nonce safety).
+    ///
+    /// `is_usdc` and `amount` are public: the SPL transfer into the vault
+    /// already revealed them. The sum is formed in `u128`; if it does not fit
+    /// in `u64` the state is returned unchanged and the revealed flag is
+    /// `false`, so the callback resolves `Zero` and the Pending Shield stays
+    /// refundable. Nothing wraps. The flag reveals only that the balance would
+    /// overflow, which cannot happen while every balance is backed by a `u64`
+    /// vault. No other field changes.
+    #[instruction]
+    pub fn shield_credit(
+        state: Enc<Shared, PositionSecret>,
+        owner: Shared,
+        is_usdc: bool,
+        amount: u64,
+    ) -> (Enc<Shared, PositionSecret>, bool) {
+        let mut s = state.to_arcis();
+        let current = if is_usdc { s.free_usdc } else { s.free_sol };
+        let sum = current as u128 + amount as u128;
+        let fits = sum <= 18_446_744_073_709_551_615u128;
+        let credited = if fits { sum as u64 } else { current };
+        if is_usdc {
+            s.free_usdc = credited;
+        } else {
+            s.free_sol = credited;
+        }
+        (owner.from_arcis(s), fits.reveal())
+    }
+
+    // ---- Task 5.4: unshield -------------------------------------------------
+
+    /// Debits a public requested `amount` from the free USDC (`is_usdc`) or
+    /// SOL balance of the stored Position state, all or nothing, and re-seals
+    /// the result to `owner` (see `shield_credit` for the output-nonce rule).
+    ///
+    /// If the free balance of the asset is at least `amount`, the amount is
+    /// subtracted and the revealed approved amount equals the request.
+    /// Otherwise the state is returned unchanged and the approved amount is
+    /// zero (Requirement 5.7): never a partial approval, never an underflow
+    /// (the subtrahend is zero when the request is refused). The request is
+    /// revealed too: it is public anyway (the outgoing SPL transfer shows
+    /// it), and the callback needs it to rebuild the Intent's input
+    /// commitment even when the approved amount is zero. No other field
+    /// changes.
+    #[instruction]
+    pub fn unshield(
+        state: Enc<Shared, PositionSecret>,
+        owner: Shared,
+        is_usdc: bool,
+        amount: u64,
+    ) -> (Enc<Shared, PositionSecret>, u64, u64) {
+        let mut s = state.to_arcis();
+        let current = if is_usdc { s.free_usdc } else { s.free_sol };
+        let approved = current >= amount;
+        let debit = if approved { amount } else { 0 };
+        let remaining = current - debit;
+        if is_usdc {
+            s.free_usdc = remaining;
+        } else {
+            s.free_sol = remaining;
+        }
+        (owner.from_arcis(s), debit.reveal(), amount.reveal())
+    }
+
+    // ---- Task 5.5: production Viewing Key rotation --------------------------
+
+    /// Re-seals the stored Position payload from its current Viewing Key to a
+    /// new one, revealing nothing (Requirement 5.11).
+    ///
+    /// `state` is the account-backed payload still sealed to the OLD key
+    /// (stored public key, stored nonce, five ciphertexts). `new_owner` is a
+    /// bare `Shared` input: the NEW Viewing public key and a fresh
+    /// output-nonce input, no ciphertext. The five values are copied
+    /// unchanged and sealed to `new_owner`, so the output nonce is
+    /// `new_owner`'s nonce + 1. The queue instruction derives that nonce from
+    /// the Position and the unique Operation Intent sequence (see
+    /// `shield_credit`), so no rotation attempt, applied or not, ever seals
+    /// under a repeated (key, nonce).
+    ///
+    /// Unlike the Task 2.3 spike `rotate_viewing_key`, no throwaway
+    /// ciphertext carries the new key and the client picks no nonce. No
+    /// value is revealed: the callback learns only the sealed output, and the
+    /// new key and epoch are already public in the Intent.
+    #[instruction]
+    pub fn rotate_position_key(
+        state: Enc<Shared, PositionSecret>,
+        new_owner: Shared,
+    ) -> Enc<Shared, PositionSecret> {
+        let s = state.to_arcis();
+        new_owner.from_arcis(s)
     }
 }

@@ -13,5 +13,13 @@
   "program": {
     "walnut": "5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea",
     "note": "Matches declare_id! in programs/walnut/src/lib.rs and the Anchor.toml [programs.localnet] id. Deploying with the persisted target/deploy/walnut-keypair.json keeps the devnet program id identical to the declared id."
+  },
+  "mints": {
+    "wsol": "So11111111111111111111111111111111111111112",
+    "usdc": "GHLMq3gCUHkb9sGPouXNo4Lt9QpGCmz5UMrtF7EwVDLT"
+  },
+  "vaults": {
+    "wsol": "8wLfwZZbLUqkqpJ4gu2jdEqKtrqT9D17d1LwPX7EyBvP",
+    "usdc": "4Nk1Lvbs5cHZ4V1oVBtG5JRbimEKrPVMxg6M1fL6h9JZ"
   }
 }
