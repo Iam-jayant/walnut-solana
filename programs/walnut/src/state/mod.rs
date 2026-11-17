@@ -20,12 +20,15 @@
 //! unit- and property-tested in CI without a localnet or an MPC round trip.
 
 pub mod accounts;
+pub mod band;
 pub mod coordination;
 pub mod generation;
 pub mod nonce;
 pub mod pending_shield;
+pub mod pool_mutation;
 pub mod position;
 pub mod protected;
+pub mod reserve_withdrawal;
 pub mod rotation;
 pub mod shield;
 pub mod unshield;
@@ -34,6 +37,12 @@ pub mod unshield;
 // real shield, unshield, and rotation rules next to a plaintext reference.
 #[cfg(test)]
 mod balance_checkpoint;
+
+// The Task 7.7 Pool accounting checkpoint: a model-based test that drives the
+// real Pool mutation, reserve withdrawal, and band rules next to a plaintext
+// reference model.
+#[cfg(test)]
+mod pool_checkpoint;
 
 pub use accounts::{
     EncryptedPoolState, EncryptedPositionPayload, PoolState, PoolStatus, Position, PositionStatus,

@@ -402,7 +402,9 @@ pub fn operation_is_price_sensitive(kind: OperationKind) -> bool {
         | OperationKind::Supply
         | OperationKind::WithdrawSupply
         | OperationKind::Repay
-        | OperationKind::ViewingKeyRotation => false,
+        | OperationKind::ViewingKeyRotation
+        | OperationKind::UtilizationBand
+        | OperationKind::ReserveWithdrawal => false,
     }
 }
 

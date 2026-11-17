@@ -2,6 +2,9 @@
 // the documented Arcium sealing shape, so allow the type-complexity lint crate-wide
 // rather than hiding it behind type aliases that the Arcis macro may not parse.
 #![allow(clippy::type_complexity)]
+// Fixed-point and checkpoint helpers are called by the circuits of Tasks 7.4 to 7.6
+// and by the equivalence tests; until then they are unused in the library build.
+#![allow(dead_code)]
 
 use arcis::*;
 
@@ -382,5 +385,441 @@ mod circuits {
     ) -> Enc<Shared, PositionSecret> {
         let s = state.to_arcis();
         new_owner.from_arcis(s)
+    }
+
+    // ---- Task 7.1: fixed-point helpers ----------------------------------------
+    //
+    // Plain `u128` arithmetic, the same algorithm as
+    // `programs/walnut/src/math/fixed.rs` and
+    // `packages/reference-model/src/fixed.ts`. Arcis has no 256-bit type and no
+    // `Result`, so every helper assumes its caller range-checked the operands
+    // against the committed domain (`shares <= 10^16`, `WAD <= index <= 10^21`,
+    // pool values <= 2^96), which keeps `a * b` inside `u128`. The `*_checked`
+    // helpers perform that check and return an `ok` flag instead of failing;
+    // on `!ok` they compute with harmless clamped inputs (never an overflow or
+    // an underflow) and the caller must treat the whole step as refused.
+    //
+    // Equivalence with the program and the TypeScript mirror is established by
+    // the `tests` module at the bottom of this file, which replays the shared
+    // golden vectors (`packages/reference-model/vectors/*.vectors`) against
+    // these exact functions.
+
+    /// `10^18`, the WAD scale.
+    pub fn wad() -> u128 {
+        1_000_000_000_000_000_000
+    }
+
+    /// `floor(a * b / d)`. `d` must be nonzero and `a * b` must fit `u128`.
+    pub fn mul_div_floor(a: u128, b: u128, d: u128) -> u128 {
+        (a * b) / d
+    }
+
+    /// `ceil(a * b / d)`. `d` must be nonzero and `a * b` must fit `u128`.
+    pub fn mul_div_ceil(a: u128, b: u128, d: u128) -> u128 {
+        let p = a * b;
+        let q = p / d;
+        if q * d == p {
+            q
+        } else {
+            q + 1
+        }
+    }
+
+    /// `floor(a * b / WAD)`.
+    pub fn mul_wad_floor(a: u128, b: u128) -> u128 {
+        (a * b) / 1_000_000_000_000_000_000
+    }
+
+    /// `ceil(a * b / WAD)`.
+    pub fn mul_wad_ceil(a: u128, b: u128) -> u128 {
+        let p = a * b;
+        let q = p / 1_000_000_000_000_000_000;
+        if q * 1_000_000_000_000_000_000 == p {
+            q
+        } else {
+            q + 1
+        }
+    }
+
+    /// `floor(a * WAD / b)`; a zero `b` yields zero.
+    pub fn div_wad_floor(a: u128, b: u128) -> u128 {
+        let safe = if b == 0 { 1 } else { b };
+        let q = (a * 1_000_000_000_000_000_000) / safe;
+        if b == 0 {
+            0
+        } else {
+            q
+        }
+    }
+
+    /// `ceil(a * WAD / b)`; a zero `b` yields zero.
+    pub fn div_wad_ceil(a: u128, b: u128) -> u128 {
+        let safe = if b == 0 { 1 } else { b };
+        let p = a * 1_000_000_000_000_000_000;
+        let q = p / safe;
+        let up = if q * safe == p { q } else { q + 1 };
+        if b == 0 {
+            0
+        } else {
+            up
+        }
+    }
+
+    /// Whether `index` is a valid Borrow Index: `WAD <= index <= 1000 * WAD`.
+    pub fn index_in_range(index: u128) -> bool {
+        index >= 1_000_000_000_000_000_000 && index <= 1_000_000_000_000_000_000_000
+    }
+
+    /// Debt units `ceil(shares * index / WAD)` with the domain check. Returns
+    /// `(debt, ok)`; on `!ok` the debt is zero.
+    pub fn debt_from_shares_checked(shares: u128, index: u128) -> (u128, bool) {
+        let ok = shares <= 10_000_000_000_000_000 && index_in_range(index);
+        let s = if ok { shares } else { 0 };
+        let i = if ok { index } else { 1_000_000_000_000_000_000 };
+        (mul_wad_ceil(s, i), ok)
+    }
+
+    // ---- Task 7.2: utilization band -------------------------------------------
+
+    /// The utilization band (0..=19, 5% each) of `debt / (cash + debt)` with
+    /// `debt = ceil(debt_shares * index / WAD)`, computed without dividing by a
+    /// secret: band = number of edges `5k%` (`k = 1..=19`) that
+    /// `debt * 10_000 >= total * k * 500` reaches. A zero total is band 0.
+    ///
+    /// Out-of-domain inputs (debt shares above 10^16, index outside
+    /// `[WAD, 1000 * WAD]`, cash above 2^96) return the highest band (19):
+    /// the conservative choice, since the accrual rate uses the band's upper
+    /// edge.
+    pub fn utilization_band_index(cash: u128, debt_shares: u128, index: u128) -> u8 {
+        let (debt, debt_ok) = debt_from_shares_checked(debt_shares, index);
+        let cash_ok = cash <= 79_228_162_514_264_337_593_543_950_336;
+        let c = if cash_ok { cash } else { 0 };
+        let total = c + debt;
+        let scaled = debt * 10_000;
+        let mut band: u8 = 0;
+        for k in 1..20usize {
+            let edge = total * (k as u128 * 500);
+            if scaled >= edge {
+                band += 1;
+            }
+        }
+        let band = if total == 0 { 0 } else { band };
+        if debt_ok && cash_ok {
+            band
+        } else {
+            19
+        }
+    }
+
+    /// Reads the Pool's encrypted Cash and Debt Shares and reveals only the
+    /// utilization band index at the public accounting Borrow Index.
+    ///
+    /// Read-only: it neither checkpoints nor writes the Pool, so there is no
+    /// encrypted output and no nonce to derive. `pool` is the account-backed
+    /// `Enc<Mxe, PoolSecret>`; `accounting_index` is the public captured
+    /// index. The callback applies the band only if the Pool generation, the
+    /// accounting index, and the rate epoch still match the Intent.
+    #[instruction]
+    pub fn update_utilization_band(pool: Enc<Mxe, PoolSecret>, accounting_index: u128) -> u8 {
+        let p = pool.to_arcis();
+        utilization_band_index(p.cash_usdc, p.total_debt_shares, accounting_index).reveal()
+    }
+
+    // ---- Task 7.3: Pool interest checkpoint -----------------------------------
+
+    /// Scalar form of the Pool interest checkpoint (see
+    /// `programs/walnut/src/math/checkpoint.rs` for the definition and the
+    /// rounding): returns `(reserves', supplier_equity, new_debt, ok)`.
+    ///
+    /// ```text
+    /// old_debt    = ceil(debt_shares * accounted_index  / WAD)
+    /// new_debt    = ceil(debt_shares * accounting_index / WAD)
+    /// reserve_add = floor((new_debt - old_debt) * reserve_factor_bps / 10_000)
+    /// reserves'   = reserves + reserve_add
+    /// equity      = cash + new_debt - reserves'
+    /// ```
+    ///
+    /// `ok` is false (and reserves are returned unchanged, equity zero) when
+    /// an index is out of range, the accounting index is below the accounted
+    /// one, debt shares exceed 10^16, cash or reserves exceed 2^96, the
+    /// reserve factor exceeds 10,000 bps, or reserves exceed `cash + new_debt`.
+    pub fn checkpoint_pool_values(
+        cash: u128,
+        debt_shares: u128,
+        reserves: u128,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+    ) -> (u128, u128, u128, bool) {
+        let max_value: u128 = 79_228_162_514_264_337_593_543_950_336;
+        let inputs_ok = index_in_range(accounted_index)
+            && index_in_range(accounting_index)
+            && accounting_index >= accounted_index
+            && debt_shares <= 10_000_000_000_000_000
+            && cash <= max_value
+            && reserves <= max_value
+            && reserve_factor_bps <= 10_000;
+        let s = if inputs_ok { debt_shares } else { 0 };
+        let a = if inputs_ok {
+            accounted_index
+        } else {
+            1_000_000_000_000_000_000
+        };
+        let b = if inputs_ok {
+            accounting_index
+        } else {
+            1_000_000_000_000_000_000
+        };
+        let rf = if inputs_ok { reserve_factor_bps } else { 0 };
+        let c = if inputs_ok { cash } else { 0 };
+        let r = if inputs_ok { reserves } else { 0 };
+        let old_debt = mul_wad_ceil(s, a);
+        let new_debt = mul_wad_ceil(s, b);
+        let interest = new_debt - old_debt;
+        let reserve_add = (interest * rf) / 10_000;
+        let r2 = r + reserve_add;
+        let assets = c + new_debt;
+        let solvent = assets >= r2;
+        let sub = if solvent { r2 } else { 0 };
+        let equity = assets - sub;
+        let ok = inputs_ok && solvent;
+        let out_reserves = if ok { r2 } else { reserves };
+        let out_equity = if ok { equity } else { 0 };
+        (out_reserves, out_equity, new_debt, ok)
+    }
+
+    /// The Pool interest checkpoint over the decrypted payload. This is the
+    /// FIRST step of every Pool-mutating circuit (supply, withdraw, borrow,
+    /// repay, reserve withdrawal, partial liquidation, Absorb): call it
+    /// before any share or Cash mutation and use the returned payload,
+    /// `supplier_equity` (the NAV before the operation), and `ok`. When `ok`
+    /// is false the payload is returned unchanged and the caller must refuse
+    /// the operation (move no value).
+    ///
+    /// Returns `(pool', supplier_equity, ok)`. Only `reserves_usdc` changes.
+    pub fn checkpoint_pool(
+        pool: PoolSecret,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+    ) -> (PoolSecret, u128, bool) {
+        let (reserves, equity, _new_debt, ok) = checkpoint_pool_values(
+            pool.cash_usdc,
+            pool.total_debt_shares,
+            pool.reserves_usdc,
+            accounted_index,
+            accounting_index,
+            reserve_factor_bps,
+        );
+        let next = PoolSecret {
+            cash_usdc: pool.cash_usdc,
+            total_supply_shares: pool.total_supply_shares,
+            total_debt_shares: pool.total_debt_shares,
+            reserves_usdc: reserves,
+        };
+        (next, equity, ok)
+    }
+
+    // ---- Task 7.5: reserve withdrawal ------------------------------------------
+
+    /// Reserve withdrawal over the decrypted payload (plaintext twin:
+    /// `programs/walnut/src/math/checkpoint.rs::reserve_withdrawal`).
+    ///
+    /// FIRST the interest checkpoint (`checkpoint_pool`), THEN all-or-zero
+    /// approval: the full `requested` amount is approved only if it is
+    /// nonzero, the checkpoint succeeded, and it is no greater than Cash and
+    /// Reserves after the checkpoint. On approval Cash and Reserves both
+    /// decrease by exactly `requested`, so supplier equity is unchanged. On
+    /// refusal the INPUT payload is returned unchanged (no checkpoint is
+    /// committed on zero) and the approved amount is zero. Returns
+    /// `(payload to store, approved)`. The subtrahend is zero when refused, so
+    /// nothing underflows.
+    pub fn reserve_withdrawal_values(
+        pool: PoolSecret,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        requested: u64,
+    ) -> (PoolSecret, u64) {
+        let (cp, _equity, ok) =
+            checkpoint_pool(pool, accounted_index, accounting_index, reserve_factor_bps);
+        let amount = requested as u128;
+        let approve = ok && amount > 0 && amount <= cp.cash_usdc && amount <= cp.reserves_usdc;
+        let debit = if approve { amount } else { 0 };
+        let cash = if approve {
+            cp.cash_usdc - debit
+        } else {
+            pool.cash_usdc
+        };
+        let reserves = if approve {
+            cp.reserves_usdc - debit
+        } else {
+            pool.reserves_usdc
+        };
+        let next = PoolSecret {
+            cash_usdc: cash,
+            total_supply_shares: pool.total_supply_shares,
+            total_debt_shares: pool.total_debt_shares,
+            reserves_usdc: reserves,
+        };
+        (next, debit as u64)
+    }
+
+    /// Reserve withdrawal (Requirement 7.15): the Pool payload (`Enc<Mxe>`),
+    /// the public accounted and accounting Borrow Indexes, the public reserve
+    /// factor, and the public requested amount. Returns the payload to store,
+    /// the approved amount (the request or zero), and the request echo (public
+    /// anyway; the callback needs it to rebuild the Intent's input commitment
+    /// when the approval is zero). The output nonce is chosen by the MXE.
+    #[instruction]
+    pub fn reserve_withdrawal(
+        pool: Enc<Mxe, PoolSecret>,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        requested: u64,
+    ) -> (Enc<Mxe, PoolSecret>, u64, u64) {
+        let p = pool.to_arcis();
+        let (next, approved) = reserve_withdrawal_values(
+            p,
+            accounted_index,
+            accounting_index,
+            reserve_factor_bps,
+            requested,
+        );
+        (
+            Mxe::get().from_arcis(next),
+            approved.reveal(),
+            requested.reveal(),
+        )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Replays the shared golden vectors on the circuit helpers, so the
+    //! Arcis-side arithmetic provably equals the program-side and the
+    //! TypeScript definitions (Tasks 7.1 to 7.3).
+    use super::circuits::*;
+
+    const FIXED: &str = include_str!("../../packages/reference-model/vectors/fixed.vectors");
+    const RATE: &str = include_str!("../../packages/reference-model/vectors/rate.vectors");
+    const CHECKPOINT: &str =
+        include_str!("../../packages/reference-model/vectors/checkpoint.vectors");
+
+    const WAD: u128 = 1_000_000_000_000_000_000;
+    const MAX_SHARES: u128 = 10_000_000_000_000_000;
+    const MAX_INDEX: u128 = 1_000 * WAD;
+
+    fn lines(text: &str) -> impl Iterator<Item = Vec<&str>> {
+        text.lines()
+            .map(str::trim)
+            .filter(|l| !l.is_empty() && !l.starts_with('#'))
+            .map(|l| l.split_whitespace().collect())
+    }
+
+    fn n(word: &str) -> u128 {
+        word.parse().unwrap()
+    }
+
+    /// The circuit helpers have no error channel: they are only defined where
+    /// the vector expects a number and the product fits `u128`.
+    #[test]
+    fn fixed_point_matches_the_golden_vectors() {
+        let mut checked = 0;
+        for w in lines(FIXED) {
+            let Ok(expected) = w[w.len() - 1].parse::<u128>() else {
+                continue; // an error vector: the circuit callers range-check first
+            };
+            let got = match w[0] {
+                "mul_div_floor" => mul_div_floor(n(w[1]), n(w[2]), n(w[3])),
+                "mul_div_ceil" => mul_div_ceil(n(w[1]), n(w[2]), n(w[3])),
+                "mul_wad_floor" => mul_wad_floor(n(w[1]), n(w[2])),
+                "mul_wad_ceil" => mul_wad_ceil(n(w[1]), n(w[2])),
+                "div_wad_floor" => div_wad_floor(n(w[1]), n(w[2])),
+                "div_wad_ceil" => div_wad_ceil(n(w[1]), n(w[2])),
+                "debt_from_shares" => {
+                    let (debt, ok) = debt_from_shares_checked(n(w[1]), n(w[2]));
+                    assert!(ok, "vector: {w:?}");
+                    debt
+                }
+                // Wide and share-conversion variants are program-side only.
+                _ => continue,
+            };
+            assert_eq!(got, expected, "vector: {w:?}");
+            checked += 1;
+        }
+        assert!(checked >= 60, "only {checked} fixed-point vectors ran");
+    }
+
+    #[test]
+    fn domain_violations_are_flagged_not_computed() {
+        assert!(!debt_from_shares_checked(MAX_SHARES + 1, WAD).1);
+        assert!(!debt_from_shares_checked(5, WAD - 1).1);
+        assert!(!debt_from_shares_checked(5, MAX_INDEX + 1).1);
+        assert_eq!(
+            debt_from_shares_checked(MAX_SHARES, MAX_INDEX),
+            (MAX_SHARES * 1_000, true)
+        );
+        assert_eq!(div_wad_ceil(5, 0), 0);
+        assert_eq!(div_wad_floor(5, 0), 0);
+    }
+
+    #[test]
+    fn utilization_bands_match_the_golden_vectors() {
+        let mut checked = 0;
+        for w in lines(RATE) {
+            match w[0] {
+                "band" => {
+                    // `band cash debt` feeds debt directly: use index WAD so
+                    // that ceil(debt * WAD / WAD) == debt.
+                    if n(w[2]) <= MAX_SHARES && n(w[1]) <= (1u128 << 96) {
+                        let got = utilization_band_index(n(w[1]), n(w[2]), WAD);
+                        assert_eq!(got as u128, n(w[3]), "vector: {w:?}");
+                        checked += 1;
+                    }
+                }
+                "band_pool" => {
+                    let got = utilization_band_index(n(w[1]), n(w[2]), n(w[3]));
+                    match w[4].parse::<u128>() {
+                        Ok(expected) => assert_eq!(got as u128, expected, "vector: {w:?}"),
+                        // Out of domain: the circuit returns the top band.
+                        Err(_) => assert_eq!(got, 19, "vector: {w:?}"),
+                    }
+                    checked += 1;
+                }
+                _ => {}
+            }
+        }
+        assert!(checked >= 12, "only {checked} band vectors ran");
+    }
+
+    #[test]
+    fn checkpoint_matches_the_golden_vectors() {
+        let mut checked = 0;
+        for line in CHECKPOINT.lines().map(str::trim) {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let (input, expected) = line.split_once("=>").unwrap();
+            let w: Vec<&str> = input.split_whitespace().collect();
+            let (reserves, equity, _debt, ok) =
+                checkpoint_pool_values(n(w[1]), n(w[3]), n(w[4]), n(w[5]), n(w[6]), n(w[7]));
+            let expected = expected.trim();
+            if expected == "err" {
+                assert!(!ok, "vector: {line}");
+                assert_eq!(
+                    (reserves, equity),
+                    (n(w[4]), 0),
+                    "refusal leaves state: {line}"
+                );
+            } else {
+                let e: Vec<u128> = expected.split_whitespace().map(n).collect();
+                assert!(ok, "vector: {line}");
+                assert_eq!([reserves, equity], [e[0], e[1]], "vector: {line}");
+            }
+            checked += 1;
+        }
+        assert!(checked >= 30, "only {checked} checkpoint vectors ran");
     }
 }
