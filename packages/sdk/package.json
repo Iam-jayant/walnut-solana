@@ -25,6 +25,7 @@
     "bench:contention": "node bench/run.ts contention",
     "bench:init-devnet": "node bench/init.ts",
     "demo:balance": "node demo/balance-demo.ts",
+    "demo:oracle": "node demo/oracle-devnet.ts",
     "bench:selftest": "node --test bench/stats.test.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   }

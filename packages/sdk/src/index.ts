@@ -14,3 +14,4 @@ export * from "./pyth.ts";
 export * from "./output-nonce.ts";
 export * from "./unwrap.ts";
 export * from "./viewing-key.ts";
+export * from "./oracle.ts";
