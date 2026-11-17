@@ -352,7 +352,7 @@ mod tests {
             let floor = mul_wad_floor(a, b).unwrap();
             let ceil = mul_wad_ceil(a, b).unwrap();
             assert!(ceil == floor || ceil == floor + 1);
-            assert_eq!(ceil == floor, (a * b) % WAD == 0);
+            assert_eq!(ceil == floor, (a * b).is_multiple_of(WAD));
         }
     }
 

@@ -124,8 +124,7 @@ pub fn supply_flow(
             return refused;
         }
         let shares = if empty {
-            if p.cash != 0 || p.total_debt_shares != 0 || p.reserves != 0 || !request.claims_clear
-            {
+            if p.cash != 0 || p.total_debt_shares != 0 || p.reserves != 0 || !request.claims_clear {
                 return refused;
             }
             amount * INITIAL_SHARE_SCALE

@@ -35,9 +35,16 @@ export function bandUpperEdgeBps(band: number): bigint {
 }
 
 /** Annual borrow rate in bps at `utilizationBps` (kinked, capped). */
-export function borrowRateBps(rates: RateParams, utilizationBps: bigint): bigint {
+export function borrowRateBps(
+  rates: RateParams,
+  utilizationBps: bigint,
+): bigint {
   const opt = rates.optimalUtilizationBps;
-  if (utilizationBps > BPS_DENOMINATOR || opt === 0n || opt >= BPS_DENOMINATOR) {
+  if (
+    utilizationBps > BPS_DENOMINATOR ||
+    opt === 0n ||
+    opt >= BPS_DENOMINATOR
+  ) {
     throw new FixedPointError("invalid");
   }
   const rate =
@@ -45,13 +52,17 @@ export function borrowRateBps(rates: RateParams, utilizationBps: bigint): bigint
       ? rates.baseRateBps + ceilDiv(rates.slope1Bps * utilizationBps, opt)
       : rates.baseRateBps +
         rates.slope1Bps +
-        ceilDiv(rates.slope2Bps * (utilizationBps - opt), BPS_DENOMINATOR - opt);
+        ceilDiv(
+          rates.slope2Bps * (utilizationBps - opt),
+          BPS_DENOMINATOR - opt,
+        );
   return rate > MAX_BORROW_RATE_BPS ? MAX_BORROW_RATE_BPS : rate;
 }
 
 /** ceil(rateBps x WAD / (10_000 x SECONDS_PER_YEAR)). */
 export function ratePerSecondWad(rateBps: bigint): bigint {
-  if (rateBps < 0n || rateBps > MAX_BORROW_RATE_BPS) throw new FixedPointError("invalid");
+  if (rateBps < 0n || rateBps > MAX_BORROW_RATE_BPS)
+    throw new FixedPointError("invalid");
   return ceilDiv(rateBps * WAD, BPS_DENOMINATOR * SECONDS_PER_YEAR);
 }
 
@@ -67,7 +78,8 @@ export function projectIndex(
   targetTs: bigint,
   ratePerSecond: bigint,
 ): bigint {
-  if (index < WAD || index > MAX_BORROW_INDEX) throw new FixedPointError("range");
+  if (index < WAD || index > MAX_BORROW_INDEX)
+    throw new FixedPointError("range");
   if (targetTs < indexTs) throw new FixedPointError("regress");
   const elapsed = targetTs - indexTs;
   if (elapsed === 0n) return index;
@@ -94,7 +106,11 @@ export function utilizationBand(cash: bigint, debt: bigint): number {
 }
 
 /** Band from Pool aggregates: debt = ceil(debtShares x index / WAD). */
-export function bandFromPool(cash: bigint, debtShares: bigint, index: bigint): number {
+export function bandFromPool(
+  cash: bigint,
+  debtShares: bigint,
+  index: bigint,
+): number {
   return utilizationBand(cash, debtFromShares(debtShares, index));
 }
 

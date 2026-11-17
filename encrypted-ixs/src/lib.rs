@@ -2,6 +2,8 @@
 // the documented Arcium sealing shape, so allow the type-complexity lint crate-wide
 // rather than hiding it behind type aliases that the Arcis macro may not parse.
 #![allow(clippy::type_complexity)]
+#![allow(clippy::too_many_arguments)]
+#![allow(clippy::manual_range_contains)]
 // Fixed-point and checkpoint helpers are called by the circuits of Tasks 7.4 to 7.6
 // and by the equivalence tests; until then they are unused in the library build.
 #![allow(dead_code)]
@@ -735,10 +737,8 @@ mod circuits {
         let cash = if domain { cp.cash_usdc } else { 0 };
         let free = position.free_usdc as u128;
         let empty = ts == 0;
-        let canonical = cp.cash_usdc == 0
-            && cp.total_debt_shares == 0
-            && cp.reserves_usdc == 0
-            && claims_clear;
+        let canonical =
+            cp.cash_usdc == 0 && cp.total_debt_shares == 0 && cp.reserves_usdc == 0 && claims_clear;
         // Supply.
         let safe_eq = if eq == 0 { 1 } else { eq };
         let minted = if empty { r * scale } else { (r * ts) / safe_eq };
@@ -812,7 +812,12 @@ mod circuits {
         requested: u128,
         supply_cap: u64,
         claims_clear: bool,
-    ) -> (Enc<Mxe, PoolSecret>, Enc<Shared, PositionSecret>, bool, u128) {
+    ) -> (
+        Enc<Mxe, PoolSecret>,
+        Enc<Shared, PositionSecret>,
+        bool,
+        u128,
+    ) {
         let p = pool.to_arcis();
         let s = position.to_arcis();
         let (np, ns, applied) = supply_flow_values(

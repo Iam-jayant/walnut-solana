@@ -49,10 +49,14 @@ export function mulDivCeil(a: bigint, b: bigint, d: bigint): bigint {
   return fit((p + d - 1n) / d);
 }
 
-export const mulWadFloor = (a: bigint, b: bigint): bigint => mulDivFloor(a, b, WAD);
-export const mulWadCeil = (a: bigint, b: bigint): bigint => mulDivCeil(a, b, WAD);
-export const divWadFloor = (a: bigint, b: bigint): bigint => mulDivFloor(a, WAD, b);
-export const divWadCeil = (a: bigint, b: bigint): bigint => mulDivCeil(a, WAD, b);
+export const mulWadFloor = (a: bigint, b: bigint): bigint =>
+  mulDivFloor(a, b, WAD);
+export const mulWadCeil = (a: bigint, b: bigint): bigint =>
+  mulDivCeil(a, b, WAD);
+export const divWadFloor = (a: bigint, b: bigint): bigint =>
+  mulDivFloor(a, WAD, b);
+export const divWadCeil = (a: bigint, b: bigint): bigint =>
+  mulDivCeil(a, WAD, b);
 
 /** floor(a x b / WAD) where the product may exceed u128; only the result must fit. */
 export function mulWadFloorWide(a: bigint, b: bigint): bigint {
@@ -65,7 +69,8 @@ export function mulWadCeilWide(a: bigint, b: bigint): bigint {
 }
 
 export function checkIndex(index: bigint): bigint {
-  if (index < WAD || index > MAX_BORROW_INDEX) throw new FixedPointError("range");
+  if (index < WAD || index > MAX_BORROW_INDEX)
+    throw new FixedPointError("range");
   return index;
 }
 

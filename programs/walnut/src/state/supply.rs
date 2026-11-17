@@ -125,7 +125,14 @@ pub fn supply_bindings(
             Some(owner),
             position_generation,
         ),
-        plain(pool, AccountRole::Pool, program, true, None, pool_generation),
+        plain(
+            pool,
+            AccountRole::Pool,
+            program,
+            true,
+            None,
+            pool_generation,
+        ),
     ]
 }
 
@@ -185,14 +192,20 @@ pub fn supply_inputs(
             INPUT_RESERVE_FACTOR_BPS,
             InputValue::U64(public.reserve_factor_bps as u64),
         ),
-        InputField::new(INPUT_OUTPUT_NONCE, InputValue::U128(public.output_nonce_input)),
+        InputField::new(
+            INPUT_OUTPUT_NONCE,
+            InputValue::U128(public.output_nonce_input),
+        ),
         InputField::new(INPUT_IS_WITHDRAW, InputValue::Bool(public.is_withdraw)),
         InputField::new(INPUT_SUPPLY_REQUEST, InputValue::U128(public.requested)),
         InputField::new(INPUT_SUPPLY_CAP, InputValue::U64(public.supply_cap)),
         InputField::new(INPUT_CLAIMS_CLEAR, InputValue::Bool(public.claims_clear)),
     ];
     for (i, c) in pc.iter().enumerate() {
-        fields.push(InputField::new(pool_first + i as u8, InputValue::Bytes32(*c)));
+        fields.push(InputField::new(
+            pool_first + i as u8,
+            InputValue::Bytes32(*c),
+        ));
     }
     for (i, c) in sc.iter().enumerate() {
         fields.push(InputField::new(

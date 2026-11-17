@@ -40,7 +40,12 @@ export function supplyFlow(
   const refused: SupplyOutcome = { pool, position, applied: false };
   let cp;
   try {
-    cp = checkpoint(pool, accountedIndex, accountingIndex, reserveFactorBps);
+    cp = checkpoint(
+      pool,
+      accountedIndex,
+      accountingIndex,
+      BigInt(reserveFactorBps),
+    );
   } catch {
     return refused;
   }
@@ -58,12 +63,17 @@ export function supplyFlow(
   const empty = p.totalSupplyShares === 0n;
   if (request.isWithdraw) {
     const shares = request.requested;
-    if (empty || shares > position.supplyShares || shares > p.totalSupplyShares) {
+    if (
+      empty ||
+      shares > position.supplyShares ||
+      shares > p.totalSupplyShares
+    ) {
       return refused;
     }
     const claim = (shares * equity) / p.totalSupplyShares;
     const newFree = position.freeUsdc + claim;
-    if (claim === 0n || claim > p.cash || newFree > MAX_FLOW_VALUE) return refused;
+    if (claim === 0n || claim > p.cash || newFree > MAX_FLOW_VALUE)
+      return refused;
     return {
       pool: {
         ...p,

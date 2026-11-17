@@ -850,7 +850,7 @@ struct M {
 }
 
 fn cdiv(a: u128, b: u128) -> u128 {
-    (a + b - 1) / b
+    a.div_ceil(b)
 }
 
 /// Annual borrow rate (bps) of the launch curve: base 0, slope1 400 up to the

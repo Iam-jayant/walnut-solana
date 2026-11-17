@@ -2594,9 +2594,9 @@ pub struct ShieldDeposit<'info> {
     pub payer: Signer<'info>,
     /// Not init_if_needed: a Position is Active only after its
     /// initialization computation was queued, and initialize_position creates
-    /// this program-wide PDA. seeds + ump already pin the address, so the
-    /// template's extra ddress = derive_sign_pda!() is dropped. Both changes
-    /// keep 	ry_accounts inside the 4,096-byte SBF stack frame.
+    /// this program-wide PDA. seeds + bump already pin the address, so the
+    /// template's extra address = derive_sign_pda!() is dropped. Both changes
+    /// keep try_accounts inside the 4,096-byte SBF stack frame.
     #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
     pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(address = derive_mxe_pda!())]
@@ -4272,14 +4272,10 @@ pub struct SupplyFlowQueue<'info> {
     /// The Position owner; signs, pays rent and the computation fee.
     #[account(mut)]
     pub payer: Signer<'info>,
-    #[account(
-        init_if_needed,
-        space = 9,
-        payer = payer,
-        seeds = [&SIGN_PDA_SEED],
-        bump,
-        address = derive_sign_pda!(),
-    )]
+    /// Not init_if_needed: a Position is Active only after initialize_position
+    /// created this program-wide PDA; seeds + bump pin the address. This keeps
+    /// try_accounts inside the 4,096-byte SBF stack frame.
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
     pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
     #[account(address = derive_mxe_pda!())]
     pub mxe_account: Box<Account<'info, MXEAccount>>,
@@ -4316,13 +4312,13 @@ pub struct SupplyFlowQueue<'info> {
     /// Locked by this operation.
     #[account(
         mut,
-        seeds = [POSITION_ACCOUNT_SEED, market.key().as_ref(), payer.key().as_ref()],
+        seeds = [POSITION_ACCOUNT_SEED, market.key().as_ref(), payer.key.as_ref()],
         bump = position.bump,
     )]
     pub position: Box<Account<'info, Position>>,
     #[account(
         mut,
-        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
+        seeds = [OPERATION_COUNTER_SEED, payer.key.as_ref()],
         bump = operation_counter.bump,
     )]
     pub operation_counter: Box<Account<'info, OperationCounter>>,
@@ -4330,7 +4326,7 @@ pub struct SupplyFlowQueue<'info> {
         init,
         payer = payer,
         space = OperationIntent::ACCOUNT_LEN,
-        seeds = [OPERATION_INTENT_SEED, payer.key().as_ref(), &sequence.to_le_bytes()],
+        seeds = [OPERATION_INTENT_SEED, payer.key.as_ref(), &sequence.to_le_bytes()],
         bump,
     )]
     pub operation_intent: Box<Account<'info, OperationIntent>>,
