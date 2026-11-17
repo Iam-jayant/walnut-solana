@@ -154,7 +154,7 @@ pub struct PythPriceView {
     pub price: i64,
     /// The confidence interval (same exponent as `price`).
     pub conf: u64,
-    /// The price exponent (Pyth prices are `price × 10^exponent`).
+    /// The price exponent (Pyth prices are `price Ãƒâ€” 10^exponent`).
     pub exponent: i32,
     /// The feed publish time (unix seconds).
     pub publish_time: i64,
@@ -376,7 +376,7 @@ pub struct LastGoodObservation {
 }
 
 /// Blocks a price-sensitive operation while the oracle is in anomaly mode.
-/// Non-price-sensitive operations (repay, collateral addition, supply, …) never
+/// Non-price-sensitive operations (repay, collateral addition, supply, Ã¢â‚¬Â¦) never
 /// call this, so they stay available.
 pub fn ensure_price_sensitive_allowed(status: OracleStatus) -> Result<(), OracleError> {
     match status {
@@ -408,7 +408,7 @@ pub fn operation_is_price_sensitive(kind: OperationKind) -> bool {
 
 /// The oracle status implied by a fresh observation: `Normal` only if both
 /// feeds validated this round, otherwise `Anomaly`. Entering `Anomaly` (a
-/// `Normal → Anomaly` transition) is what bumps the oracle generation and
+/// `Normal Ã¢â€ â€™ Anomaly` transition) is what bumps the oracle generation and
 /// stales pending price-sensitive callbacks; resuming requires both feeds valid.
 pub fn status_after_observation(both_feeds_valid: bool) -> OracleStatus {
     if both_feeds_valid {
@@ -834,5 +834,881 @@ mod tests {
             }
         }
         assert!(accepted > 0, "the generator must reach the accepted case");
+    }
+
+    // ---- Task 6.5: boundary-exact named tests -------------------------------
+
+    const NOW: i64 = 1_000_030;
+
+    /// A $10 SOL view at exponent -8, fresh at `NOW`, EMA equal to spot.
+    fn ten_dollar_view() -> PythPriceView {
+        PythPriceView {
+            price: 10_00000000,
+            conf: 1,
+            ema_price: 10_00000000,
+            publish_time: NOW - 1,
+            ..sol_view()
+        }
+    }
+
+    fn run(view: &PythPriceView, p: &OracleParams, use_: PriceUse) -> Result<u128, OracleError> {
+        validate_price(view, &SOL_FEED, p, NOW, use_).map(|v| v.normalized)
+    }
+
+    #[test]
+    fn wrong_owner_is_rejected_by_the_pipeline() {
+        for owner in [Pubkey::default(), Pubkey::new_from_array([0xAB; 32])] {
+            let view = PythPriceView {
+                owner,
+                ..ten_dollar_view()
+            };
+            assert_eq!(
+                run(&view, &params(), PriceUse::Collateral),
+                Err(OracleError::WrongReceiverProgram)
+            );
+        }
+        // A one-byte difference from the receiver id is still wrong.
+        let mut bytes = PYTH_RECEIVER_PROGRAM_ID.to_bytes();
+        bytes[31] ^= 1;
+        let view = PythPriceView {
+            owner: Pubkey::new_from_array(bytes),
+            ..ten_dollar_view()
+        };
+        assert_eq!(
+            run(&view, &params(), PriceUse::Debt),
+            Err(OracleError::WrongReceiverProgram)
+        );
+    }
+
+    #[test]
+    fn wrong_owner_is_reported_before_a_wrong_feed() {
+        let view = PythPriceView {
+            owner: Pubkey::default(),
+            ..ten_dollar_view()
+        };
+        assert_eq!(
+            check_receiver_and_feed(&view, &USDC_FEED),
+            Err(OracleError::WrongReceiverProgram)
+        );
+    }
+
+    #[test]
+    fn wrong_feed_id_single_bit_is_rejected_by_the_pipeline() {
+        for byte in [0usize, 15, 31] {
+            let mut feed = SOL_FEED;
+            feed[byte] ^= 0x80;
+            let view = PythPriceView {
+                feed_id: feed,
+                ..ten_dollar_view()
+            };
+            assert_eq!(
+                run(&view, &params(), PriceUse::Collateral),
+                Err(OracleError::FeedMismatch)
+            );
+        }
+    }
+
+    #[test]
+    fn age_exactly_max_passes_and_one_more_second_is_stale() {
+        for max in [MIN_ORACLE_MAX_AGE_SECONDS, 60, MAX_ORACLE_MAX_AGE_SECONDS] {
+            let p = OracleParams {
+                max_age_seconds: max,
+                ..params()
+            };
+            let at_max = PythPriceView {
+                publish_time: NOW - i64::from(max),
+                ..ten_dollar_view()
+            };
+            assert!(run(&at_max, &p, PriceUse::Collateral).is_ok(), "max {max}");
+            let past = PythPriceView {
+                publish_time: NOW - i64::from(max) - 1,
+                ..ten_dollar_view()
+            };
+            assert_eq!(
+                run(&past, &p, PriceUse::Collateral),
+                Err(OracleError::StalePrice),
+                "max {max}"
+            );
+        }
+    }
+
+    #[test]
+    fn publish_time_equal_to_now_passes_and_future_time_fails() {
+        let at_now = PythPriceView {
+            publish_time: NOW,
+            ..ten_dollar_view()
+        };
+        assert!(run(&at_now, &params(), PriceUse::Collateral).is_ok());
+        let future = PythPriceView {
+            publish_time: NOW + 1,
+            ..ten_dollar_view()
+        };
+        assert_eq!(
+            run(&future, &params(), PriceUse::Collateral),
+            Err(OracleError::StalePrice)
+        );
+        assert_eq!(
+            check_age(i64::MAX, i64::MAX - 1, 60),
+            Err(OracleError::StalePrice)
+        );
+        // The widest legal span never overflows the subtraction.
+        assert_eq!(check_age(0, i64::MAX, 300), Err(OracleError::StalePrice));
+    }
+
+    #[test]
+    fn zero_price_is_rejected() {
+        let view = PythPriceView {
+            price: 0,
+            conf: 0,
+            ..ten_dollar_view()
+        };
+        assert_eq!(
+            run(&view, &params(), PriceUse::Collateral),
+            Err(OracleError::NonPositivePrice)
+        );
+        assert_eq!(
+            run(&view, &params(), PriceUse::Debt),
+            Err(OracleError::NonPositivePrice)
+        );
+    }
+
+    #[test]
+    fn negative_price_is_rejected_including_i64_min() {
+        for price in [-1i64, -10_00000000, i64::MIN] {
+            let view = PythPriceView {
+                price,
+                ..ten_dollar_view()
+            };
+            assert_eq!(
+                run(&view, &params(), PriceUse::Collateral),
+                Err(OracleError::NonPositivePrice),
+                "price {price}"
+            );
+        }
+    }
+
+    #[test]
+    fn zero_or_negative_ema_is_rejected() {
+        for ema_price in [0i64, -1, i64::MIN] {
+            let view = PythPriceView {
+                ema_price,
+                ..ten_dollar_view()
+            };
+            assert_eq!(
+                run(&view, &params(), PriceUse::Collateral),
+                Err(OracleError::NonPositivePrice),
+                "ema {ema_price}"
+            );
+        }
+    }
+
+    #[test]
+    fn confidence_exactly_at_the_bps_bound_passes_and_one_unit_more_fails() {
+        // price = $10 (1e9 at -8): 10 bps => 1_000_000, 200 bps => 20_000_000,
+        // 1_000 bps => 100_000_000.
+        for (bps, max_conf) in [
+            (10u16, 1_000_000u64),
+            (200, 20_000_000),
+            (1_000, 100_000_000),
+        ] {
+            let p = OracleParams {
+                max_confidence_bps: bps,
+                ..params()
+            };
+            let ok = PythPriceView {
+                conf: max_conf,
+                ..ten_dollar_view()
+            };
+            assert!(run(&ok, &p, PriceUse::Collateral).is_ok(), "bps {bps}");
+            let wide = PythPriceView {
+                conf: max_conf + 1,
+                ..ten_dollar_view()
+            };
+            assert_eq!(
+                run(&wide, &p, PriceUse::Collateral),
+                Err(OracleError::ConfidenceTooWide),
+                "bps {bps}"
+            );
+        }
+    }
+
+    #[test]
+    fn confidence_check_does_not_overflow_at_u64_extremes() {
+        assert_eq!(
+            check_confidence(i64::MAX, u64::MAX, MAX_ORACLE_MAX_CONFIDENCE_BPS),
+            Err(OracleError::ConfidenceTooWide)
+        );
+        assert_eq!(
+            check_confidence(i64::MAX, 0, u16::MAX),
+            Ok(()),
+            "i64::MAX * u16::MAX fits u128"
+        );
+    }
+
+    #[test]
+    fn exponent_below_min_and_above_max_is_rejected_by_the_pipeline() {
+        for exponent in [
+            MIN_PYTH_EXPONENT - 1,
+            MAX_PYTH_EXPONENT + 1,
+            i32::MIN,
+            i32::MAX,
+        ] {
+            let view = PythPriceView {
+                exponent,
+                ..ten_dollar_view()
+            };
+            assert_eq!(
+                run(&view, &params(), PriceUse::Collateral),
+                Err(OracleError::ExponentOutOfRange),
+                "exponent {exponent}"
+            );
+        }
+    }
+
+    #[test]
+    fn exponent_window_edges_are_accepted_by_normalization() {
+        // -12: mantissa 1e12 is exactly $1 (1e8 at USD_SCALE).
+        assert_eq!(
+            normalize_price(1_000_000_000_000, MIN_PYTH_EXPONENT, false),
+            Ok(USD_SCALE)
+        );
+        // +12 passes the exponent gate; only the price domain can reject it.
+        assert_eq!(
+            normalize_price(1, MAX_PYTH_EXPONENT, false),
+            Err(OracleError::PriceOutOfRange)
+        );
+        assert_ne!(
+            normalize_price(1, MAX_PYTH_EXPONENT, false),
+            Err(OracleError::ExponentOutOfRange)
+        );
+    }
+
+    #[test]
+    fn pow10_covers_the_whole_exponent_window() {
+        // The largest power the normalizer asks for is |exponent| <= 12, far
+        // below the u128 limit of 10^38, so `pow10` never returns None there.
+        for exp in 0..=MAX_PYTH_EXPONENT
+            .unsigned_abs()
+            .max(MIN_PYTH_EXPONENT.unsigned_abs())
+        {
+            assert!(pow10(exp).is_some(), "10^{exp}");
+        }
+        assert!(pow10(38).is_some());
+        assert_eq!(pow10(39), None);
+    }
+
+    #[test]
+    fn normalization_overflow_is_an_error_not_a_wrap() {
+        // u64::MAX * 1e8 * 1e12 > u128::MAX.
+        assert_eq!(
+            normalize_price(u64::MAX, MAX_PYTH_EXPONENT, false),
+            Err(OracleError::ArithmeticOverflow)
+        );
+        // Fits u128 but exceeds the committed price domain.
+        assert_eq!(
+            normalize_price(u64::MAX, 0, true),
+            Err(OracleError::PriceOutOfRange)
+        );
+        // Most negative exponent keeps the value in domain.
+        assert!(normalize_price(u64::MAX, MIN_PYTH_EXPONENT, true).is_ok());
+        assert!(normalize_price(u64::MAX, MIN_PYTH_EXPONENT, false).is_ok());
+    }
+
+    #[test]
+    fn price_plus_confidence_overflow_is_an_error() {
+        assert_eq!(
+            conservative_mantissa(i64::MAX, u64::MAX, PriceUse::Debt),
+            Err(OracleError::ArithmeticOverflow)
+        );
+        // Exact edge: i64::MAX + (2^63 + 1) = u64::MAX passes, one more overflows.
+        let price = i64::MAX;
+        let conf_ok = u64::MAX - price as u64;
+        assert_eq!(
+            conservative_mantissa(price, conf_ok, PriceUse::Debt),
+            Ok(u64::MAX)
+        );
+        assert_eq!(
+            conservative_mantissa(price, conf_ok + 1, PriceUse::Debt),
+            Err(OracleError::ArithmeticOverflow)
+        );
+    }
+
+    #[test]
+    fn normalized_price_domain_boundaries_are_exact() {
+        // At exponent -8 the normalized value equals the mantissa.
+        let max = MAX_NORMALIZED_PRICE as u64;
+        assert_eq!(normalize_price(max, -8, false), Ok(MAX_NORMALIZED_PRICE));
+        assert_eq!(
+            normalize_price(max + 1, -8, false),
+            Err(OracleError::PriceOutOfRange)
+        );
+        assert_eq!(normalize_price(1, -8, false), Ok(MIN_NORMALIZED_PRICE));
+        assert_eq!(
+            normalize_price(0, -8, true),
+            Err(OracleError::PriceOutOfRange)
+        );
+    }
+
+    #[test]
+    fn spot_versus_ema_deviation_boundary_is_exact_in_both_directions() {
+        // EMA $10, 5% bound: spot in [9.50, 10.50] passes.
+        let ema = 10_00000000i64;
+        let p = params();
+        let at = |spot: i64| {
+            let view = PythPriceView {
+                price: spot,
+                ema_price: ema,
+                ..ten_dollar_view()
+            };
+            run(&view, &p, PriceUse::Collateral)
+        };
+        assert!(at(10_50000000).is_ok());
+        assert_eq!(at(10_50000001), Err(OracleError::DeviationTooHigh));
+        assert!(at(9_50000000).is_ok());
+        assert_eq!(at(9_49999999), Err(OracleError::DeviationTooHigh));
+    }
+
+    #[test]
+    fn spot_versus_ema_extreme_deviation_is_rejected() {
+        // Spot at the top of the domain against a 1-unit EMA.
+        let view = PythPriceView {
+            price: MAX_NORMALIZED_PRICE as i64,
+            conf: 1,
+            ema_price: 1,
+            ..ten_dollar_view()
+        };
+        assert_eq!(
+            run(&view, &params(), PriceUse::Collateral),
+            Err(OracleError::DeviationTooHigh)
+        );
+        // And the reverse: a 1-unit spot against a top-of-domain EMA.
+        let view = PythPriceView {
+            price: 1_000_000,
+            conf: 0,
+            ema_price: MAX_NORMALIZED_PRICE as i64,
+            ..ten_dollar_view()
+        };
+        assert_eq!(
+            run(&view, &params(), PriceUse::Collateral),
+            Err(OracleError::DeviationTooHigh)
+        );
+    }
+
+    #[test]
+    fn spot_versus_last_good_deviation_boundary_is_exact() {
+        let last_good = LastGoodObservation {
+            normalized_sol_low: 149_99500000,
+            normalized_usdc_high: 1_00010000,
+            sol_publish_time: 1_000,
+            usdc_publish_time: 1_000,
+            slot: 5,
+            recorded: true,
+        };
+        let reference = last_good.normalized_sol_low;
+        let bound = DEFAULT_DEVIATION_BPS;
+        // 5% of 149.995 = 7.49975 => 7_49975000 exactly.
+        let delta = reference * u128::from(bound) / BPS_DENOMINATOR;
+        assert_eq!(reference * u128::from(bound) % BPS_DENOMINATOR, 0);
+        assert_eq!(
+            deviation_within(reference + delta, reference, bound),
+            Ok(())
+        );
+        assert_eq!(
+            deviation_within(reference + delta + 1, reference, bound),
+            Err(OracleError::DeviationTooHigh)
+        );
+        assert_eq!(
+            deviation_within(reference - delta, reference, bound),
+            Ok(())
+        );
+        assert_eq!(
+            deviation_within(reference - delta - 1, reference, bound),
+            Err(OracleError::DeviationTooHigh)
+        );
+    }
+
+    #[test]
+    fn deviation_check_handles_zero_reference_and_overflow() {
+        assert_eq!(
+            deviation_within(1, 0, 500),
+            Err(OracleError::NonPositivePrice)
+        );
+        assert_eq!(
+            deviation_within(u128::MAX, 1, 500),
+            Err(OracleError::ArithmeticOverflow)
+        );
+        assert_eq!(
+            deviation_within(1, u128::MAX, u16::MAX),
+            Err(OracleError::ArithmeticOverflow)
+        );
+        assert_eq!(deviation_within(7, 7, MIN_DEVIATION_BPS), Ok(()));
+    }
+
+    #[test]
+    fn collateral_rounds_down_and_debt_rounds_up_through_the_pipeline() {
+        // price 1000, conf 1 at exponent -9: low 999 -> 99.9 floors to 99,
+        // high 1001 -> 100.1 ceils to 101 (USD_SCALE 1e8).
+        let view = PythPriceView {
+            price: 1_000,
+            conf: 1,
+            exponent: -9,
+            ema_price: 1_000,
+            ..ten_dollar_view()
+        };
+        assert_eq!(run(&view, &params(), PriceUse::Collateral), Ok(99));
+        assert_eq!(run(&view, &params(), PriceUse::Debt), Ok(101));
+    }
+
+    #[test]
+    fn collateral_with_confidence_equal_to_price_is_rejected() {
+        // 100% confidence is wider than any allowed bound, so the band check
+        // fires first; the conservative-low rule is the second line of defence.
+        let view = PythPriceView {
+            conf: 10_00000000,
+            ..ten_dollar_view()
+        };
+        assert_eq!(
+            run(&view, &params(), PriceUse::Collateral),
+            Err(OracleError::ConfidenceTooWide)
+        );
+    }
+
+    // ---- Decision Expiry and oracle-generation staling ---------------------
+
+    use crate::operation::callback::{
+        classify_callback, CallbackContext, CallbackDecision, CallbackReport, CurrentDependencies,
+        StaleReason,
+    };
+    use crate::operation::commitment::{account_commitment, input_commitment};
+    use crate::operation::OperationIntent;
+
+    const ORACLE_GENERATION: u64 = 5;
+    const DECISION_EXPIRY_SLOT: u64 = 100;
+
+    /// A queued price-sensitive Borrow Intent that captured oracle generation
+    /// `ORACLE_GENERATION`, both publish times, and a Decision Expiry.
+    fn price_sensitive_intent() -> OperationIntent {
+        OperationIntent {
+            key: Pubkey::new_from_array([42; 32]),
+            kind: OperationKind::Borrow,
+            computation_offset: 9,
+            oracle_generation: ORACLE_GENERATION,
+            decision_expiry_slot: DECISION_EXPIRY_SLOT,
+            oracle_publish_time_sol: Some(1_000),
+            oracle_publish_time_usdc: Some(1_000),
+            accounts_commitment: account_commitment(&[]),
+            inputs_commitment: input_commitment(OperationKind::Borrow, &[]),
+            ..OperationIntent::default()
+        }
+    }
+
+    fn classify(intent: &OperationIntent, oracle_generation: u64, slot: u64) -> CallbackDecision {
+        let mut current = CurrentDependencies::captured_by(intent);
+        current.oracle_generation = oracle_generation;
+        let ctx = CallbackContext {
+            output_authenticated: true,
+            computation_offset: intent.computation_offset,
+            intent_key: intent.key,
+            kind: intent.kind,
+            accounts: &[],
+            input_fields: &[],
+            current,
+            current_slot: slot,
+            report: CallbackReport::Success { nonzero: true },
+        };
+        classify_callback(intent, &ctx).expect("a well-formed callback classifies")
+    }
+
+    #[test]
+    fn decision_expiry_slot_is_inclusive_for_a_price_sensitive_callback() {
+        let intent = price_sensitive_intent();
+        assert_eq!(
+            classify(&intent, ORACLE_GENERATION, DECISION_EXPIRY_SLOT),
+            CallbackDecision::Applied
+        );
+        assert_eq!(
+            classify(&intent, ORACLE_GENERATION, DECISION_EXPIRY_SLOT + 1),
+            CallbackDecision::Expired
+        );
+    }
+
+    #[test]
+    fn a_price_sensitive_intent_captures_publish_times_and_oracle_generation() {
+        let intent = price_sensitive_intent();
+        assert!(intent.oracle_publish_time_sol.is_some());
+        assert!(intent.oracle_publish_time_usdc.is_some());
+        assert_eq!(intent.oracle_generation, ORACLE_GENERATION);
+        assert!(operation_is_price_sensitive(intent.kind));
+    }
+
+    #[test]
+    fn an_oracle_generation_change_stales_the_callback_before_expiry() {
+        let intent = price_sensitive_intent();
+        assert_eq!(
+            classify(&intent, ORACLE_GENERATION + 1, DECISION_EXPIRY_SLOT - 1),
+            CallbackDecision::Stale(StaleReason::OracleGeneration)
+        );
+    }
+
+    #[test]
+    fn stale_oracle_generation_takes_precedence_over_expiry() {
+        let intent = price_sensitive_intent();
+        assert_eq!(
+            classify(&intent, ORACLE_GENERATION + 1, DECISION_EXPIRY_SLOT + 50),
+            CallbackDecision::Stale(StaleReason::OracleGeneration)
+        );
+    }
+
+    // ---- Property tests (Task 6.5) -----------------------------------------
+
+    impl Lcg {
+        fn below(&mut self, n: u64) -> u64 {
+            self.sample() % n
+        }
+        fn pick<T: Copy>(&mut self, items: &[T]) -> T {
+            items[self.below(items.len() as u64) as usize]
+        }
+    }
+
+    /// A value from a mix of small, boundary, and extreme magnitudes.
+    fn wild_u64(rng: &mut Lcg) -> u64 {
+        match rng.below(6) {
+            0 => rng.below(1_000),
+            1 => rng.below(300_00000000),
+            2 => (rng.sample() << 11) | rng.below(2_048),
+            3 => u64::MAX - rng.below(4),
+            4 => i64::MAX as u64 - rng.below(4),
+            _ => rng.pick(&[0, 1, 10_000_000_000_000_000_000, 1_000_000_000_000_000_000]),
+        }
+    }
+
+    fn wild_i64(rng: &mut Lcg) -> i64 {
+        match rng.below(8) {
+            0 => -(rng.below(1_000) as i64),
+            1 => i64::MIN + rng.below(3) as i64,
+            2 => 0,
+            _ => (wild_u64(rng) & (i64::MAX as u64)) as i64,
+        }
+    }
+
+    fn wild_exponent(rng: &mut Lcg) -> i32 {
+        match rng.below(8) {
+            0 => i32::MIN + rng.below(3) as i32,
+            1 => i32::MAX - rng.below(3) as i32,
+            2 => -8,
+            _ => rng.below(33) as i32 - 16,
+        }
+    }
+
+    fn wild_view(rng: &mut Lcg, now: i64) -> PythPriceView {
+        let anchor_price = (rng.below(300_00000000) + 1) as i64;
+        let near = rng.below(2) == 0;
+        let price = if near { anchor_price } else { wild_i64(rng) };
+        let conf = if near && rng.below(4) != 0 {
+            rng.below(anchor_price as u64 / 20 + 1)
+        } else {
+            wild_u64(rng)
+        };
+        let ema_price = match rng.below(4) {
+            0 => wild_i64(rng),
+            1 => price.saturating_add((rng.below(600) as i64 - 300) * (price / 5_000)),
+            _ => price,
+        };
+        PythPriceView {
+            account: Pubkey::new_from_array([3; 32]),
+            owner: if rng.below(12) == 0 {
+                Pubkey::new_from_array([7; 32])
+            } else {
+                PYTH_RECEIVER_PROGRAM_ID
+            },
+            feed_id: if rng.below(12) == 0 {
+                USDC_FEED
+            } else {
+                SOL_FEED
+            },
+            price,
+            conf,
+            exponent: if near && rng.below(3) != 0 {
+                -8
+            } else {
+                wild_exponent(rng)
+            },
+            publish_time: match rng.below(6) {
+                0 => now + rng.below(5) as i64,
+                1 => -(rng.below(5) as i64),
+                2 => now - 400 + rng.below(450) as i64,
+                _ => now - rng.below(70) as i64,
+            },
+            ema_price,
+            ema_conf: wild_u64(rng),
+        }
+    }
+
+    fn wild_params(rng: &mut Lcg) -> OracleParams {
+        if rng.below(10) == 0 {
+            // Occasionally out-of-bounds parameters.
+            OracleParams {
+                max_age_seconds: rng.pick(&[0, 4, 301, u32::MAX]),
+                max_confidence_bps: rng.pick(&[0, 9, 1_001, u16::MAX]),
+                max_deviation_bps: rng.pick(&[0, 49, 5_001, u16::MAX]),
+            }
+        } else {
+            OracleParams {
+                max_age_seconds: 5 + rng.below(296) as u32,
+                max_confidence_bps: 10 + rng.below(991) as u16,
+                max_deviation_bps: 50 + rng.below(4_951) as u16,
+            }
+        }
+    }
+
+    /// Reference normalization written independently of `normalize_price`:
+    /// divides with `/` and `%` instead of the add-then-divide ceiling.
+    fn reference_normalize(mantissa: u64, exponent: i32, up: bool) -> Option<u128> {
+        if !(-12..=12).contains(&exponent) {
+            return None;
+        }
+        let shift = exponent + 8; // value = mantissa * 10^shift
+        let m = u128::from(mantissa);
+        let value = if shift >= 0 {
+            m.checked_mul(10u128.checked_pow(shift as u32)?)?
+        } else {
+            let den = 10u128.pow(shift.unsigned_abs());
+            let q = m / den;
+            if up && m % den != 0 {
+                q + 1
+            } else {
+                q
+            }
+        };
+        (1..=1_000_000_000_000_000_000u128)
+            .contains(&value)
+            .then_some(value)
+    }
+
+    /// The accept/reject rule list, written as a flat conjunction.
+    fn reference_validate(
+        view: &PythPriceView,
+        p: &OracleParams,
+        now: i64,
+        price_use: PriceUse,
+    ) -> Option<u128> {
+        let params_ok = (5..=300).contains(&p.max_age_seconds)
+            && (10..=1_000).contains(&p.max_confidence_bps)
+            && (50..=5_000).contains(&p.max_deviation_bps);
+        if !params_ok
+            || view.owner != PYTH_RECEIVER_PROGRAM_ID
+            || view.feed_id != SOL_FEED
+            || view.publish_time < 0
+            || now < 0
+            || view.publish_time > now
+            || (now - view.publish_time) > i64::from(p.max_age_seconds)
+            || view.price <= 0
+            || view.ema_price <= 0
+        {
+            return None;
+        }
+        let price = view.price as u64;
+        if u128::from(view.conf) * 10_000 > u128::from(price) * u128::from(p.max_confidence_bps) {
+            return None;
+        }
+        let (mantissa, up) = match price_use {
+            PriceUse::Collateral => (price.checked_sub(view.conf).filter(|m| *m > 0)?, false),
+            PriceUse::Debt => (price.checked_add(view.conf)?, true),
+        };
+        let result = reference_normalize(mantissa, view.exponent, up)?;
+        let spot = reference_normalize(price, view.exponent, false)?;
+        let ema = reference_normalize(view.ema_price as u64, view.exponent, false)?;
+        let diff = spot.abs_diff(ema);
+        if diff * 10_000 > ema * u128::from(p.max_deviation_bps) {
+            return None;
+        }
+        Some(result)
+    }
+
+    /// **Validates: Requirements 6.1, 6.2, 6.3, 6.4, 6.5, 6.6** - over random
+    /// valid and invalid views and parameters (including extreme mantissas and
+    /// exponents), `validate_price` accepts exactly when an independently
+    /// written rule list accepts, and returns the same conservative value.
+    #[test]
+    fn prop_validate_price_accepts_iff_every_rule_holds() {
+        let mut rng = Lcg(0x5EED_0651);
+        let (mut accepted, mut rejected) = (0u32, 0u32);
+        for _ in 0..60_000 {
+            let now = 1_000_000 + rng.below(1_000) as i64;
+            let view = wild_view(&mut rng, now);
+            let p = wild_params(&mut rng);
+            let price_use = if rng.below(2) == 0 {
+                PriceUse::Collateral
+            } else {
+                PriceUse::Debt
+            };
+            let actual = validate_price(&view, &SOL_FEED, &p, now, price_use);
+            let expected = reference_validate(&view, &p, now, price_use);
+            assert_eq!(
+                actual.ok().map(|v| v.normalized),
+                expected,
+                "{view:?} {p:?} {price_use:?}"
+            );
+            if expected.is_some() {
+                accepted += 1;
+            } else {
+                rejected += 1;
+            }
+        }
+        assert!(accepted > 500 && rejected > 500, "{accepted}/{rejected}");
+    }
+
+    /// **Validates: Requirement 6.5** - for every accepted view,
+    /// `low <= floor(spot) <= high` (collateral price never above spot, debt
+    /// price never below it).
+    #[test]
+    fn prop_low_never_exceeds_spot_and_spot_never_exceeds_high() {
+        let mut rng = Lcg(0x5EED_0652);
+        let mut checked = 0u32;
+        for _ in 0..40_000 {
+            let now = 1_000_000;
+            let view = wild_view(&mut rng, now);
+            let p = OracleParams {
+                max_confidence_bps: MAX_ORACLE_MAX_CONFIDENCE_BPS,
+                max_deviation_bps: MAX_DEVIATION_BPS,
+                ..params()
+            };
+            let low = validate_price(&view, &SOL_FEED, &p, now, PriceUse::Collateral);
+            let high = validate_price(&view, &SOL_FEED, &p, now, PriceUse::Debt);
+            if let (Ok(low), Ok(high)) = (low, high) {
+                let spot = normalize_price(view.price as u64, view.exponent, false)
+                    .expect("accepted views have an in-domain spot");
+                assert!(low.normalized <= spot, "{view:?}");
+                assert!(spot <= high.normalized, "{view:?}");
+                checked += 1;
+            }
+        }
+        assert!(checked > 500, "{checked}");
+    }
+
+    /// **Validates: Requirement 6.4** - normalization is monotone in the
+    /// mantissa for both rounding modes, and ceil exceeds floor by at most one.
+    #[test]
+    fn prop_normalization_is_monotone_in_the_mantissa() {
+        let mut rng = Lcg(0x5EED_0653);
+        let mut compared = 0u32;
+        for _ in 0..40_000 {
+            let exponent = rng.below(25) as i32 - 12;
+            let (a, b) = (wild_u64(&mut rng), wild_u64(&mut rng));
+            let (lo, hi) = (a.min(b), a.max(b));
+            for up in [false, true] {
+                if let (Ok(n_lo), Ok(n_hi)) = (
+                    normalize_price(lo, exponent, up),
+                    normalize_price(hi, exponent, up),
+                ) {
+                    assert!(n_lo <= n_hi, "{lo} {hi} e{exponent} up={up}");
+                    compared += 1;
+                }
+            }
+            if let (Ok(floor), Ok(ceil)) = (
+                normalize_price(hi, exponent, false),
+                normalize_price(hi, exponent, true),
+            ) {
+                assert!(floor <= ceil && ceil - floor <= 1, "{hi} e{exponent}");
+            }
+        }
+        assert!(compared > 500, "{compared}");
+    }
+
+    /// **Validates: Requirement 6.4** - no function panics or wraps anywhere in
+    /// the input domain, including i64/u64/i32/u16 extremes.
+    #[test]
+    fn prop_no_panics_on_the_full_input_domain() {
+        let mut rng = Lcg(0x5EED_0654);
+        for _ in 0..60_000 {
+            let now = wild_i64(&mut rng);
+            let view = PythPriceView {
+                price: wild_i64(&mut rng),
+                conf: wild_u64(&mut rng),
+                exponent: wild_exponent(&mut rng),
+                publish_time: wild_i64(&mut rng),
+                ema_price: wild_i64(&mut rng),
+                ..sol_view()
+            };
+            let p = OracleParams {
+                max_age_seconds: rng.sample() as u32,
+                max_confidence_bps: rng.sample() as u16,
+                max_deviation_bps: rng.sample() as u16,
+            };
+            for price_use in [PriceUse::Collateral, PriceUse::Debt] {
+                let _ = validate_price(&view, &SOL_FEED, &p, now, price_use);
+                let _ = conservative_mantissa(view.price, view.conf, price_use);
+            }
+            let _ = check_age(view.publish_time, now, p.max_age_seconds);
+            let _ = check_confidence(view.price, view.conf, p.max_confidence_bps);
+            let _ = normalize_price(wild_u64(&mut rng), view.exponent, rng.below(2) == 0);
+            let (x, y) = (
+                u128::from(wild_u64(&mut rng)) * u128::from(wild_u64(&mut rng)),
+                u128::from(wild_u64(&mut rng)),
+            );
+            let _ = deviation_within(x, y, p.max_deviation_bps);
+            let _ = deviation_within(u128::MAX, y, p.max_deviation_bps);
+        }
+    }
+
+    /// A random observation of both feeds; `true` entries are valid views.
+    fn observe(rng: &mut Lcg, now: i64) -> (bool, bool) {
+        let p = params();
+        let sol_view = wild_view(rng, now);
+        let usdc_view = PythPriceView {
+            feed_id: USDC_FEED,
+            ..wild_view(rng, now)
+        };
+        let sol = validate_price(&sol_view, &SOL_FEED, &p, now, PriceUse::Collateral).is_ok();
+        let usdc = validate_price(&usdc_view, &USDC_FEED, &p, now, PriceUse::Debt).is_ok();
+        (sol, usdc)
+    }
+
+    /// **Validates: Requirements 6.7, 6.8, 6.9** - across random observation
+    /// sequences: entering anomaly mode always bumps the oracle generation and
+    /// stales a pending price-sensitive callback; a callback captured at the
+    /// current generation is never staled by oracle movement; price-sensitive
+    /// operations are blocked in anomaly and resume only after a fresh
+    /// observation where both feeds pass.
+    #[test]
+    fn prop_anomaly_bumps_generation_stales_pending_and_resume_needs_both_feeds() {
+        let mut rng = Lcg(0x5EED_0655);
+        let mut status = OracleStatus::Normal;
+        let mut generation = ORACLE_GENERATION;
+        let (mut entered, mut resumed) = (0u32, 0u32);
+        for _ in 0..30_000 {
+            let now = 1_000_000;
+            let pending = OperationIntent {
+                oracle_generation: generation,
+                ..price_sensitive_intent()
+            };
+            let (sol_ok, usdc_ok) = observe(&mut rng, now);
+            let next = status_after_observation(sol_ok && usdc_ok);
+            // Resume only when both feeds pass.
+            assert_eq!(next == OracleStatus::Normal, sol_ok && usdc_ok);
+            if enters_anomaly(status, next) {
+                generation += 1;
+                entered += 1;
+                assert_eq!(
+                    classify(&pending, generation, DECISION_EXPIRY_SLOT),
+                    CallbackDecision::Stale(StaleReason::OracleGeneration)
+                );
+            } else {
+                assert_eq!(
+                    classify(&pending, generation, DECISION_EXPIRY_SLOT),
+                    CallbackDecision::Applied
+                );
+            }
+            if status == OracleStatus::Anomaly && next == OracleStatus::Normal {
+                assert!(sol_ok && usdc_ok);
+                resumed += 1;
+            }
+            status = next;
+            assert_eq!(
+                ensure_price_sensitive_allowed(status).is_ok(),
+                sol_ok && usdc_ok
+            );
+        }
+        assert!(entered > 20 && resumed > 20, "{entered}/{resumed}");
     }
 }
