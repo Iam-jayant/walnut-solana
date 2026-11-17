@@ -102,6 +102,10 @@ pub enum OperationKind {
     Liquidation,
     /// Viewing Key rotation (Task 5.5): re-encrypts the Position to a new key.
     ViewingKeyRotation,
+    /// Read-only utilization band update (Task 7.2): takes no Lock.
+    UtilizationBand,
+    /// Reserve withdrawal to the treasury (Task 7.5): Locks the Pool.
+    ReserveWithdrawal,
 }
 
 impl OperationKind {

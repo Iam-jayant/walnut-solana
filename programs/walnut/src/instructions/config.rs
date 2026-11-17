@@ -11,9 +11,11 @@ use anchor_lang::prelude::*;
 use crate::events::{ConfigChangeCancelled, ConfigChangeExecuted, ConfigChangeProposed};
 use crate::market::config as rules;
 use crate::market::{
-    AssetState, ConfigProposal, ConfigValue, Market, ASSET_STATE_SEED, CONFIG_PROPOSAL_SEED,
-    MARKET_SEED,
+    AssetState, ConfigGroup, ConfigProposal, ConfigValue, Market, ASSET_STATE_SEED,
+    CONFIG_PROPOSAL_SEED, MARKET_SEED, POOL_STATE_SEED,
 };
+use crate::state::pool_mutation::ensure_pool_unlocked_for_index_mutation;
+use crate::state::PoolState;
 
 /// Accounts of `propose_config_change`.
 #[derive(Accounts)]
@@ -64,6 +66,14 @@ pub struct ExecuteConfigChange<'info> {
         bump = proposal.bump,
     )]
     pub proposal: Box<Account<'info, ConfigProposal>>,
+    /// Read for the Lock: a `Rates` change accrues the accounting Borrow Index
+    /// and must not run while the Pool is Locked (Task 7.4).
+    #[account(
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
 }
 
 /// Accounts of `cancel_config_change`.
@@ -129,6 +139,9 @@ pub fn execute_config_change_handler(
     let clock = Clock::get()?;
     let accounts = &mut *ctx.accounts;
     let executor = accounts.executor.key();
+    if accounts.proposal.group == ConfigGroup::Rates {
+        ensure_pool_unlocked_for_index_mutation(&accounts.pool_state)?;
+    }
     let done = rules::execute(
         &mut accounts.market,
         &mut accounts.asset_state,

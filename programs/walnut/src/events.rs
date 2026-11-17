@@ -545,3 +545,107 @@ pub struct ViewingKeyRotationAbandoned {
     pub signer: Pubkey,
     pub slot: u64,
 }
+
+/// Emitted when `update_utilization_band` queues a computation (Task 7.2).
+/// Public values only: the band computation reads encrypted Cash and debt but
+/// reveals only the band index.
+#[event]
+pub struct UtilizationBandQueued {
+    pub market: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub computation_offset: u64,
+    pub pool_generation: u64,
+    pub rate_epoch_generation: u64,
+    pub accounting_borrow_index: u128,
+    pub decision_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `update_utilization_band` callback when the revealed band
+/// was current and stored (`written`) or superseded by a newer observation.
+#[event]
+pub struct UtilizationBandUpdated {
+    pub asset_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub band: u8,
+    pub observation_slot: u64,
+    pub written: bool,
+    pub slot: u64,
+}
+
+/// Emitted by the `update_utilization_band` callback when nothing was stored
+/// (`Stale`, `Expired`, or `Failed`). The status says which.
+#[event]
+pub struct UtilizationBandNotApplied {
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `reserve_withdrawal` when it queues (Task 7.5). The requested
+/// amount and the treasury account are public by design.
+#[event]
+pub struct ReserveWithdrawalQueued {
+    pub market: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub authority: Pubkey,
+    pub amount: u64,
+    pub destination: Pubkey,
+    pub computation_offset: u64,
+    pub pool_generation: u64,
+    pub accounting_borrow_index: u128,
+    pub risk_borrow_index_at_expiry: u128,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `reserve_withdrawal` callback when the request was approved,
+/// the new Pool state stored, and exactly `amount` transferred.
+#[event]
+pub struct ReserveWithdrawalApproved {
+    pub market: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub amount: u64,
+    pub vault: Pubkey,
+    pub destination: Pubkey,
+    pub generation: u64,
+    pub accounted_borrow_index: u128,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted by the `reserve_withdrawal` callback when nothing moved: the
+/// circuit approved zero (`Zero`), or the attempt was `Stale`, `Expired`, or
+/// `Failed`. The Pool state is unchanged and the Lock is released.
+#[event]
+pub struct ReserveWithdrawalNotApplied {
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub requested_amount: u64,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_reserve_withdrawal` (any signer, after Lock expiry).
+#[event]
+pub struct ReserveWithdrawalAbandoned {
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub signer: Pubkey,
+    pub slot: u64,
+}
+
+/// Emitted by `set_treasury_usdc_account` (admin).
+#[event]
+pub struct TreasuryUsdcAccountChanged {
+    pub market: Pubkey,
+    pub old_account: Pubkey,
+    pub new_account: Pubkey,
+    pub changed_by: Pubkey,
+    pub slot: u64,
+}

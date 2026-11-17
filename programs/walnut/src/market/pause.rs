@@ -315,6 +315,8 @@ impl From<OperationKind> for Action {
             OperationKind::Health => Action::Health,
             OperationKind::Liquidation => Action::Liquidation,
             OperationKind::ViewingKeyRotation => Action::ViewingKeyRotation,
+            OperationKind::UtilizationBand => Action::UtilizationBandUpdate,
+            OperationKind::ReserveWithdrawal => Action::ReserveWithdrawal,
         }
     }
 }

@@ -284,6 +284,88 @@ pub enum ErrorCode {
     RotationEpochOverflow,
     #[msg("The Operation Intent is not this Position's queued rotation")]
     RotationIntentMismatch,
+    // ---- Task 7 (fixed-point, rate model, utilization band) ----
+    #[msg("A fixed-point product or sum overflowed")]
+    FixedPointOverflow,
+    #[msg("A fixed-point division by zero")]
+    FixedPointDivisionByZero,
+    #[msg("A fixed-point operand is outside its committed range")]
+    FixedPointOutOfRange,
+    #[msg("A fixed-point subtraction would underflow")]
+    FixedPointUnderflow,
+    #[msg("The interest rate, utilization, or band input is invalid")]
+    InterestRateInvalid,
+    #[msg("The target time is before the accounting Borrow Index timestamp")]
+    BorrowIndexTimeRegression,
+    #[msg("The elapsed time exceeds the maximum accrual interval")]
+    BorrowIndexElapsedTooLong,
+    #[msg("The utilization band observation is older than the maximum age")]
+    UtilizationBandStale,
+    #[msg("The utilization band has never been observed")]
+    UtilizationBandNeverObserved,
+    #[msg("The utilization band observation slot is in the future")]
+    UtilizationBandFromTheFuture,
+    #[msg("The revealed utilization band index is invalid")]
+    UtilizationBandInvalid,
+    #[msg("The Pool State is not active")]
+    BandPoolNotActive,
+    #[msg("The Operation Intent is not a queued utilization band update")]
+    BandIntentMismatch,
+    // ---- Task 7.4/7.5: Pool serialization and reserve withdrawal ----
+    #[msg("The Pool is locked by another operation, so the accounting Borrow Index cannot change")]
+    PoolLockedForIndexMutation,
+    #[msg("The Pool State is not active")]
+    PoolMutationPoolNotActive,
+    #[msg("The Operation Intent is not this Pool's queued mutation")]
+    PoolMutationIntentMismatch,
+    #[msg("The Pool output nonce repeats the stored nonce")]
+    PoolOutputNonceReused,
+    #[msg("The reserve withdrawal amount must be nonzero")]
+    ReserveWithdrawalZeroAmount,
+    #[msg("The treasury USDC account is not configured")]
+    TreasuryAccountNotSet,
+    #[msg(
+        "The treasury USDC account must hold the USDC mint and be owned by the treasury authority"
+    )]
+    TreasuryAccountInvalid,
+    #[msg("The reserve withdrawal mint, vault, or token program is not the Market's")]
+    ReserveWithdrawalAccountMismatch,
+    #[msg("The approved reserve withdrawal is neither the request nor zero")]
+    ReserveWithdrawalApprovalInvalid,
+}
+impl From<crate::math::fixed::MathError> for ErrorCode {
+    fn from(error: crate::math::fixed::MathError) -> Self {
+        use crate::math::fixed::MathError;
+        match error {
+            MathError::Overflow => ErrorCode::FixedPointOverflow,
+            MathError::DivisionByZero => ErrorCode::FixedPointDivisionByZero,
+            MathError::OutOfRange => ErrorCode::FixedPointOutOfRange,
+            MathError::Underflow => ErrorCode::FixedPointUnderflow,
+            MathError::InvalidRate => ErrorCode::InterestRateInvalid,
+            MathError::TimeRegression => ErrorCode::BorrowIndexTimeRegression,
+            MathError::ElapsedTooLong => ErrorCode::BorrowIndexElapsedTooLong,
+        }
+    }
+}
+impl From<crate::math::rate::BandError> for ErrorCode {
+    fn from(error: crate::math::rate::BandError) -> Self {
+        use crate::math::rate::BandError;
+        match error {
+            BandError::NeverObserved => ErrorCode::UtilizationBandNeverObserved,
+            BandError::Stale => ErrorCode::UtilizationBandStale,
+            BandError::FromTheFuture => ErrorCode::UtilizationBandFromTheFuture,
+        }
+    }
+}
+impl From<crate::math::fixed::MathError> for anchor_lang::error::Error {
+    fn from(error: crate::math::fixed::MathError) -> Self {
+        ErrorCode::from(error).into()
+    }
+}
+impl From<crate::math::rate::BandError> for anchor_lang::error::Error {
+    fn from(error: crate::math::rate::BandError) -> Self {
+        ErrorCode::from(error).into()
+    }
 }
 
 impl From<ShieldError> for ErrorCode {
@@ -692,6 +774,9 @@ mod tests {
         // Task 5.5 appends the rotation codes.
         assert_eq!(u32::from(ErrorCode::RotationNotOwner), 6121);
         assert_eq!(u32::from(ErrorCode::RotationIntentMismatch), 6127);
+        // Task 7 appends the fixed-point, rate, and band codes.
+        assert_eq!(u32::from(ErrorCode::FixedPointOverflow), 6128);
+        assert_eq!(u32::from(ErrorCode::BandIntentMismatch), 6140);
     }
 
     #[test]

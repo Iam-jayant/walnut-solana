@@ -52,6 +52,7 @@ pub use instructions::config::*;
 pub use instructions::initialize_market::*;
 pub use instructions::pause::*;
 pub use instructions::position::*;
+pub use instructions::reserve_withdrawal::*;
 pub use instructions::roles::*;
 pub use instructions::rotation::*;
 pub use instructions::shield::*;
@@ -71,6 +72,8 @@ use events::{
     ShieldCreditFailed, ShieldCredited, ShieldQueued, ShieldRetried, SumEvent, UnshieldApproved,
     UnshieldFailed, UnshieldQueued, UnshieldZero, ViewingKeyRotated,
 };
+use events::{ReserveWithdrawalApproved, ReserveWithdrawalNotApplied, ReserveWithdrawalQueued};
+use events::{UtilizationBandNotApplied, UtilizationBandQueued, UtilizationBandUpdated};
 use events::{ViewingKeyRotationApplied, ViewingKeyRotationFailed, ViewingKeyRotationQueued};
 use market::{
     check_pool_initializing, AssetState, Market, VaultAuthority, MARKET_SEED, POOL_STATE_SEED,
@@ -78,10 +81,14 @@ use market::{
 };
 use operation::{OperationCounter, OperationIntent, OPERATION_COUNTER_SEED, OPERATION_INTENT_SEED};
 use position::{EncryptedPositionState, SpikePosition, POSITION_SECRET_FIELDS};
+use state::band::{BandKeys, BandReport, BandRequest, BandSettlement};
 use state::pending_shield::{NewPendingShield, PENDING_SHIELD_SEED};
 use state::position::{
     NewPosition, PositionInitCallback, PositionInitRequest, PositionInitSettlement,
     POSITION_ACCOUNT_SEED,
+};
+use state::reserve_withdrawal::{
+    ReserveWithdrawalReport, ReserveWithdrawalRequest, ReserveWithdrawalSettlement,
 };
 use state::rotation::{RotationReport, RotationRequest, RotationSettlement};
 use state::shield::{ShieldCallback, ShieldRequest, ShieldSettlement, TokenAccountView};
@@ -99,6 +106,8 @@ const COMP_DEF_OFFSET_ROTATE_VIEWING_KEY: u32 = comp_def_offset("rotate_viewing_
 const COMP_DEF_OFFSET_OVERSIZED_OUTPUT: u32 = comp_def_offset("oversized_output");
 const COMP_DEF_OFFSET_INIT_POOL_STATE: u32 = comp_def_offset("init_pool_state");
 const COMP_DEF_OFFSET_INIT_POSITION_STATE: u32 = comp_def_offset("init_position_state");
+const COMP_DEF_OFFSET_UPDATE_UTILIZATION_BAND: u32 = comp_def_offset("update_utilization_band");
+const COMP_DEF_OFFSET_RESERVE_WITHDRAWAL: u32 = comp_def_offset("reserve_withdrawal");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -1882,6 +1891,432 @@ pub mod walnut {
     pub fn abandon_rotation(ctx: Context<AbandonRotation>) -> Result<()> {
         abandon_rotation_handler(ctx)
     }
+
+    // ---- Task 7.2: utilization band --------------------------------------
+
+    /// Registers the `update_utilization_band` computation definition.
+    pub fn init_update_utilization_band_comp_def(
+        ctx: Context<InitUpdateUtilizationBandCompDef>,
+    ) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Permissionless: queues the read-only utilization-band computation. It
+    /// reads the Pool's encrypted Cash and Debt Shares at the public
+    /// accounting Borrow Index and reveals only the band index. It neither
+    /// checkpoints nor Locks the Pool and changes no generation. The Intent
+    /// captures the Pool generation, Asset State generation, rate epoch, and
+    /// accounting index; the Pool-owned counter supplies `sequence`.
+    pub fn update_utilization_band(
+        ctx: Context<UpdateUtilizationBandQueue>,
+        computation_offset: u64,
+        sequence: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        if ctx.accounts.operation_counter.owner == Pubkey::default() {
+            ctx.accounts
+                .operation_counter
+                .set_inner(OperationCounter::new(pool_key, ctx.bumps.operation_counter));
+        }
+        let keys = BandKeys {
+            payer: ctx.accounts.payer.key(),
+            market: market_key,
+            asset_state: ctx.accounts.asset_state.key(),
+            pool: pool_key,
+        };
+        let request = BandRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let mut intent = state::band::queue_band_update(
+            accounts.market.status,
+            &keys,
+            &accounts.asset_state,
+            &accounts.pool_state,
+            &mut accounts.operation_counter,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(UtilizationBandQueued {
+            market: market_key,
+            pool_state: pool_key,
+            operation_intent: intent_key,
+            computation_offset,
+            pool_generation: accounts.pool_state.coordination.generation,
+            rate_epoch_generation: intent.rate_epoch_generation,
+            accounting_borrow_index: intent.accounting_borrow_index,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            slot: clock.slot,
+        });
+
+        // `update_utilization_band(pool: Enc<Mxe, PoolSecret>, accounting_index: u128)`.
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let args = update_utilization_band_args(
+            &ctx.accounts.pool_state,
+            ctx.accounts.asset_state.accounting_borrow_index,
+        )
+        .build();
+        let callback_accounts = [
+            CallbackAccount {
+                pubkey: market_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: keys.asset_state,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: pool_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: intent_key,
+                is_writable: true,
+            },
+        ];
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![UpdateUtilizationBandCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the revealed band with the Task 3.3 helpers. `Applied` stores
+    /// the band and the observation slot (the queue slot) on the Asset State
+    /// only if the Pool generation, Asset State generation, rate epoch, and
+    /// accounting index still match; `Stale`, `Expired`, and failed outcomes
+    /// store nothing. A terminal Intent is a no-op. Unauthenticated output and
+    /// any binding mismatch revert, so the Intent stays `Queued`.
+    #[arcium_callback(encrypted_ix = "update_utilization_band")]
+    pub fn update_utilization_band_callback(
+        ctx: Context<UpdateUtilizationBandCallback>,
+        output: SignedComputationOutputs<UpdateUtilizationBandOutput>,
+    ) -> Result<()> {
+        let band = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(UpdateUtilizationBandOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+
+        let intent_offset = ctx.accounts.operation_intent.computation_offset;
+        let computation_offset = if ctx.accounts.computation_account.key()
+            == derive_comp_pda!(intent_offset, ctx.accounts.mxe_account)
+        {
+            intent_offset
+        } else {
+            intent_offset.wrapping_add(1)
+        };
+
+        let clock = Clock::get()?;
+        let intent_key = ctx.accounts.operation_intent.key();
+        let asset_state_key = ctx.accounts.asset_state.key();
+        let keys = BandKeys {
+            payer: ctx.accounts.operation_intent.payer,
+            market: ctx.accounts.market.key(),
+            asset_state: asset_state_key,
+            pool: ctx.accounts.pool_state.key(),
+        };
+        let report = BandReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            band,
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::band::settle_band_update(
+            &keys,
+            &mut accounts.asset_state,
+            &accounts.pool_state,
+            &mut accounts.operation_intent,
+            &report,
+        )?;
+        match settlement {
+            BandSettlement::Applied {
+                band,
+                observation_slot,
+                written,
+            } => emit!(UtilizationBandUpdated {
+                asset_state: asset_state_key,
+                operation_intent: intent_key,
+                band,
+                observation_slot,
+                written,
+                slot: clock.slot,
+            }),
+            BandSettlement::Stale(_) | BandSettlement::Failed(_) => {
+                emit!(UtilizationBandNotApplied {
+                    operation_intent: intent_key,
+                    intent_status: accounts.operation_intent.status,
+                    slot: clock.slot,
+                })
+            }
+            BandSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
+    // ---- Task 7.5: reserve withdrawal ---------------------------------------
+
+    /// Registers the `reserve_withdrawal` computation definition.
+    pub fn init_reserve_withdrawal_comp_def(
+        ctx: Context<InitReserveWithdrawalCompDef>,
+    ) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Treasury-authority-signed: requests a public all-or-zero USDC `amount`
+    /// from the Pool's Reserves to the configured treasury token account.
+    /// Requires an `Active` Pool with a free Lock, the `WITHDRAW_SUPPLY` pause
+    /// off, and a configured treasury account owned by the treasury
+    /// authority. Accrues the accounting Borrow Index, creates the Intent at
+    /// `sequence` (Pool-owned counter), Locks the Pool, and queues
+    /// `reserve_withdrawal`. No token moves until the callback approves.
+    pub fn reserve_withdrawal(
+        ctx: Context<ReserveWithdrawalQueue>,
+        computation_offset: u64,
+        sequence: u64,
+        amount: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let signer = ctx.accounts.payer.key();
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let asset_state_key = ctx.accounts.asset_state.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        if ctx.accounts.operation_counter.owner == Pubkey::default() {
+            ctx.accounts
+                .operation_counter
+                .set_inner(OperationCounter::new(pool_key, ctx.bumps.operation_counter));
+        }
+        let destination = TokenAccountView {
+            key: ctx.accounts.destination.key(),
+            mint: ctx.accounts.destination.mint,
+            owner: ctx.accounts.destination.owner,
+        };
+        let request = ReserveWithdrawalRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            now_ts: clock.unix_timestamp,
+            amount,
+        };
+        let accounts = &mut *ctx.accounts;
+        let accounted_index = accounts.pool_state.accounted_borrow_index;
+        let reserve_factor_bps = accounts.asset_state.risk.reserve_factor_bps;
+        let mut intent = state::reserve_withdrawal::queue_reserve_withdrawal(
+            &accounts.market,
+            market_key,
+            asset_state_key,
+            &mut accounts.asset_state,
+            &mut accounts.pool_state,
+            pool_key,
+            &mut accounts.operation_counter,
+            &signer,
+            &destination,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(ReserveWithdrawalQueued {
+            market: market_key,
+            pool_state: pool_key,
+            operation_intent: intent_key,
+            authority: signer,
+            amount,
+            destination: destination.key,
+            computation_offset,
+            pool_generation: accounts.pool_state.coordination.generation,
+            accounting_borrow_index: intent.accounting_borrow_index,
+            risk_borrow_index_at_expiry: intent.risk_borrow_index_at_expiry,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            lock_expiry_slot: intent.lock_expiry_slot,
+            slot: clock.slot,
+        });
+
+        // `reserve_withdrawal(pool, accounted_index, accounting_index,
+        // reserve_factor_bps, requested)`.
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let args = reserve_withdrawal_args(
+            &ctx.accounts.pool_state,
+            accounted_index,
+            intent.accounting_borrow_index,
+            reserve_factor_bps,
+            amount,
+        )
+        .build();
+        let callback_accounts = reserve_withdrawal_callback_accounts(
+            &ctx.accounts.market,
+            market_key,
+            asset_state_key,
+            pool_key,
+            intent_key,
+            destination.key,
+        );
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![ReserveWithdrawalCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the `reserve_withdrawal` output with the Task 3.3 helpers.
+    /// `Applied` stores the new Pool payload, sets the accounted index, bumps
+    /// the Pool generation, releases the Lock, and transfers exactly the
+    /// approved amount from the USDC vault to the committed treasury account,
+    /// signed by the vault-authority PDA. `Zero`, `Stale`, and `Expired`
+    /// release the Lock and move nothing. A terminal Intent is a no-op.
+    /// Unauthenticated output and any binding mismatch revert, so the Intent
+    /// stays `Queued` for `abandon_reserve_withdrawal`.
+    #[arcium_callback(encrypted_ix = "reserve_withdrawal")]
+    pub fn reserve_withdrawal_callback(
+        ctx: Context<ReserveWithdrawalCallback>,
+        output: SignedComputationOutputs<ReserveWithdrawalOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(ReserveWithdrawalOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+        let sealed = o.field_0;
+
+        let intent_offset = ctx.accounts.operation_intent.computation_offset;
+        let computation_offset = if ctx.accounts.computation_account.key()
+            == derive_comp_pda!(intent_offset, ctx.accounts.mxe_account)
+        {
+            intent_offset
+        } else {
+            intent_offset.wrapping_add(1)
+        };
+
+        let clock = Clock::get()?;
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let vault_key = ctx.accounts.vault.key();
+        let report = ReserveWithdrawalReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            output: EncryptedPoolState {
+                nonce: sealed.nonce,
+                ciphertexts: sealed.ciphertexts,
+            },
+            approved_amount: o.field_1,
+            requested_amount: o.field_2,
+            destination: TokenAccountView {
+                key: ctx.accounts.destination.key(),
+                mint: ctx.accounts.destination.mint,
+                owner: ctx.accounts.destination.owner,
+            },
+            mint: ctx.accounts.mint.key(),
+            vault: vault_key,
+            vault_authority: ctx.accounts.vault_authority.key(),
+            token_program: ctx.accounts.token_program.key(),
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::reserve_withdrawal::settle_reserve_withdrawal(
+            &accounts.market,
+            market_key,
+            &accounts.asset_state,
+            &mut accounts.pool_state,
+            pool_key,
+            &mut accounts.operation_intent,
+            &report,
+        )?;
+        match settlement {
+            ReserveWithdrawalSettlement::Approved {
+                amount,
+                destination,
+            } => {
+                let bump = [accounts.market.vault_authority_bump];
+                let seeds: &[&[u8]] = &[VAULT_AUTHORITY_SEED, market_key.as_ref(), &bump];
+                let signer = &[seeds];
+                spl::transfer_checked(
+                    CpiContext::new_with_signer(
+                        accounts.token_program.key(),
+                        TransferChecked {
+                            from: accounts.vault.to_account_info(),
+                            mint: accounts.mint.to_account_info(),
+                            to: accounts.destination.to_account_info(),
+                            authority: accounts.vault_authority.to_account_info(),
+                        },
+                        signer,
+                    ),
+                    amount,
+                    accounts.mint.decimals,
+                )?;
+                emit!(ReserveWithdrawalApproved {
+                    market: market_key,
+                    pool_state: pool_key,
+                    operation_intent: intent_key,
+                    amount,
+                    vault: vault_key,
+                    destination,
+                    generation: accounts.pool_state.coordination.generation,
+                    accounted_borrow_index: accounts.pool_state.accounted_borrow_index,
+                    nonce: sealed.nonce.to_le_bytes(),
+                    slot: clock.slot,
+                });
+            }
+            ReserveWithdrawalSettlement::Zero | ReserveWithdrawalSettlement::Failed(_) => {
+                emit!(ReserveWithdrawalNotApplied {
+                    pool_state: pool_key,
+                    operation_intent: intent_key,
+                    intent_status: accounts.operation_intent.status,
+                    requested_amount: o.field_2,
+                    slot: clock.slot,
+                })
+            }
+            ReserveWithdrawalSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
+    /// Permissionless: abandons a queued reserve withdrawal after Lock
+    /// expiry. Nothing moved, so there is nothing to refund.
+    pub fn abandon_reserve_withdrawal(ctx: Context<AbandonReserveWithdrawal>) -> Result<()> {
+        abandon_reserve_withdrawal_handler(ctx)
+    }
+
+    /// Admin-signed: records the single treasury USDC token account (USDC
+    /// mint, owned by the treasury authority).
+    pub fn set_treasury_usdc_account(ctx: Context<SetTreasuryUsdcAccount>) -> Result<()> {
+        set_treasury_usdc_account_handler(ctx)
+    }
 }
 
 // ---- Task 5.3: shield accounts and helpers ----------------------------------
@@ -3203,6 +3638,337 @@ pub struct OversizedOutputCallback<'info> {
 #[init_computation_definition_accounts("oversized_output", payer)]
 #[derive(Accounts)]
 pub struct InitOversizedOutputCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- Task 7.2: utilization band accounts and helpers --------------------------
+
+/// `update_utilization_band(pool: Enc<Mxe, PoolSecret>, accounting_index:
+/// u128)` arguments: the stored Pool payload (nonce and the four ciphertexts
+/// in `PoolSecret` order; `Enc<Mxe>` has no public key), then the public
+/// accounting Borrow Index.
+fn update_utilization_band_args(pool: &PoolState, accounting_index: u128) -> ArgBuilder {
+    let c = &pool.encrypted.ciphertexts;
+    ArgBuilder::new()
+        .plaintext_u128(pool.encrypted.nonce)
+        .encrypted_u128(c[0])
+        .encrypted_u128(c[1])
+        .encrypted_u128(c[2])
+        .encrypted_u128(c[3])
+        .plaintext_u128(accounting_index)
+}
+
+#[queue_computation_accounts("update_utilization_band", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct UpdateUtilizationBandQueue<'info> {
+    /// Anyone; pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_UPDATE_UTILIZATION_BAND))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    /// Read for the encrypted payload and its generation; not Locked.
+    #[account(
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The Pool-owned Intent counter (created on first use).
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = OperationCounter::ACCOUNT_LEN,
+        seeds = [OPERATION_COUNTER_SEED, pool_state.key().as_ref()],
+        bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, pool_state.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("update_utilization_band")]
+#[derive(Accounts)]
+pub struct UpdateUtilizationBandCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_UPDATE_UTILIZATION_BAND))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Written only for an `Applied` decision.
+    #[account(mut, address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+}
+
+#[init_computation_definition_accounts("update_utilization_band", payer)]
+#[derive(Accounts)]
+pub struct InitUpdateUtilizationBandCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- Task 7.5: reserve withdrawal accounts and helpers --------------------------
+
+/// `reserve_withdrawal(pool: Enc<Mxe, PoolSecret>, accounted_index: u128,
+/// accounting_index: u128, reserve_factor_bps: u128, requested: u64)`
+/// arguments: the stored Pool payload (nonce and four ciphertexts), then the
+/// public indexes, reserve factor, and requested amount.
+fn reserve_withdrawal_args(
+    pool: &PoolState,
+    accounted_index: u128,
+    accounting_index: u128,
+    reserve_factor_bps: u16,
+    amount: u64,
+) -> ArgBuilder {
+    let c = &pool.encrypted.ciphertexts;
+    ArgBuilder::new()
+        .plaintext_u128(pool.encrypted.nonce)
+        .encrypted_u128(c[0])
+        .encrypted_u128(c[1])
+        .encrypted_u128(c[2])
+        .encrypted_u128(c[3])
+        .plaintext_u128(accounted_index)
+        .plaintext_u128(accounting_index)
+        .plaintext_u128(reserve_factor_bps as u128)
+        .plaintext_u64(amount)
+}
+
+/// The `reserve_withdrawal` callback's custom accounts, in struct order:
+/// Market, Asset State, Pool, Operation Intent, mint, vault, treasury token
+/// account, vault authority, and the SPL Token program.
+fn reserve_withdrawal_callback_accounts(
+    market: &Market,
+    market_key: Pubkey,
+    asset_state: Pubkey,
+    pool: Pubkey,
+    operation_intent: Pubkey,
+    destination: Pubkey,
+) -> [CallbackAccount; 9] {
+    let account = |pubkey, is_writable| CallbackAccount {
+        pubkey,
+        is_writable,
+    };
+    [
+        account(market_key, false),
+        account(asset_state, false),
+        account(pool, true),
+        account(operation_intent, true),
+        account(market.usdc_mint, false),
+        account(market.usdc_vault, true),
+        account(destination, true),
+        account(market.vault_authority, false),
+        account(anchor_spl::token::ID, false),
+    ]
+}
+
+#[queue_computation_accounts("reserve_withdrawal", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct ReserveWithdrawalQueue<'info> {
+    /// The treasury authority; signs, pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_RESERVE_WITHDRAWAL))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    /// Read for the roles and the treasury account; the signer must be the
+    /// treasury authority (`state::reserve_withdrawal` checks).
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Written: the accounting Borrow Index accrues at queue time.
+    #[account(mut, address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    /// Locked by this operation.
+    #[account(
+        mut,
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The Pool-owned Intent counter (created on first use).
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = OperationCounter::ACCOUNT_LEN,
+        seeds = [OPERATION_COUNTER_SEED, pool_state.key().as_ref()],
+        bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, pool_state.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    /// The treasury token account; `state::reserve_withdrawal` checks it is
+    /// the Market's configured one. It is bound in the Intent.
+    pub destination: Box<Account<'info, TokenAccount>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("reserve_withdrawal")]
+#[derive(Accounts)]
+pub struct ReserveWithdrawalCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_RESERVE_WITHDRAWAL))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        mut,
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    /// The USDC mint (bound in the Intent).
+    pub mint: Box<Account<'info, Mint>>,
+    /// The USDC vault (bound in the Intent).
+    #[account(mut)]
+    pub vault: Box<Account<'info, TokenAccount>>,
+    /// The committed treasury token account (bound in the Intent).
+    #[account(mut)]
+    pub destination: Box<Account<'info, TokenAccount>>,
+    /// Signs the vault transfer.
+    #[account(
+        seeds = [VAULT_AUTHORITY_SEED, market.key().as_ref()],
+        bump = market.vault_authority_bump,
+        address = market.vault_authority,
+    )]
+    pub vault_authority: Box<Account<'info, VaultAuthority>>,
+    /// Classic SPL Token only; Token-2022 is rejected.
+    pub token_program: Program<'info, Token>,
+}
+
+#[init_computation_definition_accounts("reserve_withdrawal", payer)]
+#[derive(Accounts)]
+pub struct InitReserveWithdrawalCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]

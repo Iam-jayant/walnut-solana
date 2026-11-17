@@ -709,7 +709,33 @@ pub fn execute(
         .checked_add(1)
         .ok_or(MarketError::ConfigArithmeticOverflow)?;
 
+    // A Rates change first accrues the Borrow Index at the OLD rate, so the new
+    // rate never applies to elapsed time, and starts a new rate epoch so every
+    // in-flight Intent that captured the old epoch resolves `Stale` (Task 7.2).
+    // Computed before any write so an accrual failure changes nothing.
+    let accrued = if proposal.group == ConfigGroup::Rates {
+        let mut next = asset.clone();
+        crate::math::rate::accrue_asset_index(&mut next, now)
+            .map_err(|_| MarketError::ConfigArithmeticOverflow)?;
+        next.rate_epoch_generation = next
+            .rate_epoch_generation
+            .checked_add(1)
+            .ok_or(MarketError::ConfigArithmeticOverflow)?;
+        Some((
+            next.accounting_borrow_index,
+            next.accounting_index_timestamp,
+            next.rate_epoch_generation,
+        ))
+    } else {
+        None
+    };
+
     write_value(market, asset, new_value);
+    if let Some((index, timestamp, epoch)) = accrued {
+        asset.accounting_borrow_index = index;
+        asset.accounting_index_timestamp = timestamp;
+        asset.rate_epoch_generation = epoch;
+    }
     asset.generation = new_generation;
     proposal.status = ProposalStatus::Executed;
     proposal.resolved_at = now;
@@ -1154,6 +1180,40 @@ mod tests {
         assert_eq!(a.rates.slope1_bps, 500);
     }
 
+    /// Task 7.2: executing a Rates change accrues the Borrow Index at the old
+    /// rate up to `now`, then starts a new rate epoch.
+    #[test]
+    fn a_rates_change_accrues_at_the_old_rate_and_starts_a_new_epoch() {
+        let mut a = asset();
+        a.utilization_band = 19;
+        let mut rates = propose_now(
+            &mut a,
+            ConfigValue::Rates {
+                params: RateParams {
+                    slope1_bps: 500,
+                    ..RateParams::LAUNCH_DEFAULT
+                },
+            },
+        );
+        let at = T0 + DELAY;
+        let epoch = a.rate_epoch_generation;
+        let mut expected = a.clone();
+        crate::math::rate::accrue_asset_index(&mut expected, at).unwrap();
+        assert!(expected.accounting_borrow_index > crate::market::WAD);
+        execute(&mut market(), &mut a, &mut rates, &STRANGER, at).unwrap();
+        assert_eq!(a.accounting_borrow_index, expected.accounting_borrow_index);
+        assert_eq!(a.accounting_index_timestamp, at);
+        assert_eq!(a.rate_epoch_generation, epoch + 1);
+        assert_eq!(a.rates.slope1_bps, 500);
+        // A non-rate change touches neither.
+        let mut risk = propose_now(&mut a, risk_change(|r| r.ltv_bps = 5_400));
+        let (index, epoch) = (a.accounting_borrow_index, a.rate_epoch_generation);
+        execute(&mut market(), &mut a, &mut risk, &STRANGER, at + DELAY).unwrap();
+        assert_eq!(
+            (a.accounting_borrow_index, a.rate_epoch_generation),
+            (index, epoch)
+        );
+    }
     #[test]
     fn raising_the_delay_delays_pending_proposals() {
         let mut a = asset();
