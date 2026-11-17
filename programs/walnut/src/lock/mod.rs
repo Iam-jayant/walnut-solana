@@ -8,15 +8,23 @@
 //! that an old computation has stopped. (Design: "Generations and Locks";
 //! Requirements 3.7, 3.8.)
 //!
-//! This is the minimal, test-only Lock used by the Task 2.1 feasibility gate.
-//! It carries no financial state.
+//! The same type is the production on-chain Lock (Task 3.1): it is Borsh
+//! serializable with a fixed 49-byte layout and is embedded in `Position` and
+//! `PoolState` through [`Coordination`](crate::state::Coordination). It carries
+//! no financial state.
 
-use anchor_lang::prelude::Pubkey;
+use anchor_lang::prelude::{AnchorDeserialize, AnchorSerialize, InitSpace, Pubkey};
 
 use crate::state::{CoordinationError, Slot};
 
 /// A writer Lock over one protected account.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+///
+/// Serialized layout (49 bytes, no padding, little-endian integers):
+/// `active` (1) | `computation_offset` (8) | `operation_intent` (32) |
+/// `expiry_slot` (8).
+#[derive(
+    AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, Debug, Default, PartialEq, Eq,
+)]
 pub struct Lock {
     /// Whether the Lock is currently held.
     pub active: bool,
@@ -24,8 +32,9 @@ pub struct Lock {
     pub computation_offset: u64,
     /// The Operation Intent PDA that owns the Lock.
     pub operation_intent: Pubkey,
-    /// The slot after which the Lock may be abandoned.
-    pub expiry_slot: Slot,
+    /// The slot after which the Lock may be abandoned. Written as `u64` (the
+    /// type behind [`Slot`]) so the `InitSpace` derive sees a primitive.
+    pub expiry_slot: u64,
 }
 
 impl Lock {

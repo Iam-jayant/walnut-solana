@@ -1,18 +1,27 @@
 //! Shared on-chain state primitives for the Walnut coordination layer.
 //!
-//! Task 2.1 (Arcium feasibility gate) adds only the minimal, test-only state
-//! machine needed to exercise the generation / Lock / Operation Intent
-//! lifecycle. No financial state (balances, shares, prices, indexes used for
-//! value movement) lives here: this module only proves the coordination
-//! scaffolding required before the feasibility measurements in Tasks 2.2-2.7.
+//! Task 2.1 added the pure-Rust generation / Lock / Operation Intent state
+//! machine. Task 3.1 promotes it to the production foundation:
 //!
-//! The types are deliberately plain Rust (no Anchor account machinery) so the
-//! state transitions can be unit- and property-tested in CI without a localnet
-//! or an MPC round trip.
+//! * [`coordination`] holds the single implementation of the Lock and
+//!   generation transition rules, the fixed-layout on-chain [`Coordination`]
+//!   field group, and a thin adapter over `&mut` account data used by Anchor
+//!   instructions. The lifecycle handlers in `operation::lifecycle` call the
+//!   same primitives, so there is one source of truth.
+//! * [`accounts`] holds the production `Position` and `PoolState` accounts
+//!   that carry a `Coordination`.
+//!
+//! No financial state (balances, shares, prices, indexes used for value
+//! movement) lives here. The transition logic stays plain Rust so it can be
+//! unit- and property-tested in CI without a localnet or an MPC round trip.
 
+pub mod accounts;
+pub mod coordination;
 pub mod generation;
 pub mod protected;
 
+pub use accounts::{PoolState, Position};
+pub use coordination::{Coordination, CoordinationSlot, LockOwner};
 pub use generation::Generation;
 pub use protected::ProtectedAccount;
 
@@ -34,4 +43,7 @@ pub enum CoordinationError {
     IntentNotQueued,
     /// A generation counter would overflow `u64` on increment.
     GenerationOverflow,
+    /// The same protected account was supplied more than once to one
+    /// multi-account operation (adapter-level guard).
+    DuplicateAccount,
 }

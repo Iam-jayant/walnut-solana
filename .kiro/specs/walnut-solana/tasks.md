@@ -160,13 +160,13 @@ Parallelizable task waves (each wave starts after the previous wave completes):
 
 - [ ] 3. Production operation framework
 
-  - [ ] 3.1 Implement account generations and Locks
+  - [x] 3.1 Implement account generations and Locks
     - Atomic multi-account Lock acquisition.
     - Matching callback release.
     - Expired abandonment increments generations.
     - Property tests for every event ordering.
 
-  - [ ] 3.2 Implement Operation Intent PDAs
+  - [x] 3.2 Implement Operation Intent PDAs
     - Unique seeds and sequences.
     - Accounting index/timestamp and projected risk index.
     - Asset, oracle, and rate-epoch generations.

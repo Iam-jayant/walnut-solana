@@ -183,6 +183,30 @@
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794851460435
       }
+    ],
+    "3.1 Implement account generations and Locks": [
+      {
+        "executionId": "e8716f1b-2a12-41dc-bdab-752ff774859a",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794851593564
+      },
+      {
+        "executionId": "b025760d-69e4-4752-8ab8-b64a84b1ad11",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794888042498
+      }
+    ],
+    "3.2 Implement Operation Intent PDAs": [
+      {
+        "executionId": "b025760d-69e4-4752-8ab8-b64a84b1ad11",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794888060592
+      },
+      {
+        "executionId": "b025760d-69e4-4752-8ab8-b64a84b1ad11",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794890495642
+      }
     ]
   }
 }

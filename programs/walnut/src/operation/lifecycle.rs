@@ -42,6 +42,9 @@
 //! CI-testable without a localnet or MPC round trip.
 
 use crate::operation::intent::OperationIntent;
+use crate::state::coordination::{
+    abandon_all, acquire_all, bump_matching_generations, release_all, LockOwner,
+};
 use crate::state::{CoordinationError, ProtectedAccount, Slot};
 
 /// The resolved outcome of a lifecycle handler.
@@ -68,41 +71,17 @@ pub enum CallbackOutcome {
     LeftQueuedForRecovery,
 }
 
-/// Returns whether `account` is write-locked by `intent`.
-fn locked_by_intent(account: &ProtectedAccount, intent: &OperationIntent) -> bool {
-    account.lock.matches(&intent.key, intent.computation_offset)
+/// The Lock owner identity of `intent`: its PDA key and computation offset.
+fn owner_of(intent: &OperationIntent) -> LockOwner {
+    LockOwner::new(intent.key, intent.computation_offset)
 }
 
 /// Releases every Lock owned by `intent`; leaves all other Locks untouched.
-fn release_matching_locks(intent: &OperationIntent, accounts: &mut [&mut ProtectedAccount]) {
-    for account in accounts.iter_mut() {
-        account
-            .lock
-            .release_matching(&intent.key, intent.computation_offset);
-    }
-}
-
-/// Bumps the generation of every account currently locked by `intent`.
 ///
-/// Fully atomic: it first checks that no matching generation is saturated, so a
-/// [`CoordinationError::GenerationOverflow`] leaves every generation unchanged.
-fn bump_locked_generations(
-    intent: &OperationIntent,
-    accounts: &mut [&mut ProtectedAccount],
-) -> Result<(), CoordinationError> {
-    for account in accounts.iter() {
-        if account.lock.matches(&intent.key, intent.computation_offset)
-            && account.generation.value() == u64::MAX
-        {
-            return Err(CoordinationError::GenerationOverflow);
-        }
-    }
-    for account in accounts.iter_mut() {
-        if account.lock.matches(&intent.key, intent.computation_offset) {
-            account.generation.bump()?;
-        }
-    }
-    Ok(())
+/// The Lock and generation rules live in `state::coordination`, which the
+/// production Anchor adapter shares; this handler only supplies the owner.
+fn release_matching_locks(intent: &OperationIntent, accounts: &mut [&mut ProtectedAccount]) {
+    release_all(owner_of(intent), accounts);
 }
 
 /// Queue path: atomically acquire the writer Locks for every affected account.
@@ -116,17 +95,7 @@ pub fn queue(
     accounts: &mut [&mut ProtectedAccount],
     lock_expiry_slot: Slot,
 ) -> Result<(), CoordinationError> {
-    for account in accounts.iter() {
-        if account.lock.is_active() {
-            return Err(CoordinationError::LockHeld);
-        }
-    }
-    for account in accounts.iter_mut() {
-        account
-            .lock
-            .acquire(intent.key, intent.computation_offset, lock_expiry_slot)?;
-    }
-    Ok(())
+    acquire_all(owner_of(intent), accounts, lock_expiry_slot)
 }
 
 /// Success callback.
@@ -162,7 +131,7 @@ pub fn on_success(
         // Applied is the only success outcome that changes accepted state, so
         // it is the only success outcome that bumps generations. Bump first so
         // an overflow aborts before the status becomes terminal.
-        bump_locked_generations(intent, accounts)?;
+        bump_matching_generations(owner_of(intent), accounts)?;
         intent.mark_applied()?;
         release_matching_locks(intent, accounts);
         Ok(CallbackOutcome::Applied)
@@ -225,16 +194,10 @@ pub fn abandon(
     if intent.status.is_terminal() {
         return Err(CoordinationError::IntentNotQueued);
     }
-    // Every Lock this Intent still owns must be past its expiry slot.
-    for account in accounts.iter() {
-        if locked_by_intent(account, intent) && !account.lock.is_expired(current_slot) {
-            return Err(CoordinationError::LockNotExpired);
-        }
-    }
-    // Bump generations first (atomic on overflow), then clear the Locks, then
-    // mark terminal.
-    bump_locked_generations(intent, accounts)?;
-    release_matching_locks(intent, accounts);
+    // Every Lock this Intent still owns must be past its expiry slot. The shared
+    // primitive checks that, bumps generations first (atomic on overflow), then
+    // clears the Locks. Only then does the Intent become terminal.
+    abandon_all(owner_of(intent), accounts, current_slot)?;
     intent.mark_abandoned()?;
     Ok(CallbackOutcome::Abandoned)
 }
