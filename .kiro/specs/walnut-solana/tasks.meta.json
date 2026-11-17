@@ -207,6 +207,49 @@
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794890495642
       }
+    ],
+    "3.3 Implement callback helpers": [
+      {
+        "executionId": "6b9a22a4-3d5d-417f-9500-eee4d9abf472",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794890680767
+      },
+      {
+        "executionId": "6b9a22a4-3d5d-417f-9500-eee4d9abf472",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794892880414
+      }
+    ],
+    "3.4 Implement SDK lifecycle core": [
+      {
+        "executionId": "6b9a22a4-3d5d-417f-9500-eee4d9abf472",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794890694684
+      },
+      {
+        "executionId": "6b9a22a4-3d5d-417f-9500-eee4d9abf472",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794892880608
+      }
+    ],
+    "3.5 Framework checkpoint": [
+      {
+        "executionId": "6b9a22a4-3d5d-417f-9500-eee4d9abf472",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794892880750
+      },
+      {
+        "executionId": "6b9a22a4-3d5d-417f-9500-eee4d9abf472",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794894573174
+      }
+    ],
+    "3. Production operation framework": [
+      {
+        "executionId": "6b9a22a4-3d5d-417f-9500-eee4d9abf472",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794894573277
+      }
     ]
   }
 }

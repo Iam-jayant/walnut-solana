@@ -158,7 +158,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Update requirements and design if measurements differ.
     - Do not begin Task 3 until CI passes and ADR-0003 records a go decision.
 
-- [ ] 3. Production operation framework
+- [x] 3. Production operation framework
 
   - [x] 3.1 Implement account generations and Locks
     - Atomic multi-account Lock acquisition.
@@ -175,7 +175,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - One-way terminal states with exact transition ownership.
     - Payer and reclaim ownership.
 
-  - [ ] 3.3 Implement callback helpers
+  - [x] 3.3 Implement callback helpers
     - Verify Arcium output and callback context.
     - Verify offset, Intent, both commitments, generations, accounting index, rate epoch, and expiry.
     - Recompute commitments to prevent account or input substitution.
@@ -183,7 +183,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Leave invalid unauthenticated output queued for timeout recovery.
     - Ignore callbacks for terminal Intents without financial changes.
 
-  - [ ] 3.4 Implement SDK lifecycle core
+  - [x] 3.4 Implement SDK lifecycle core
     - Network Profile validation.
     - PDA helpers.
     - Encryption and decryption helpers.
@@ -192,7 +192,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Transaction-size check.
     - Typed terminal outcomes.
 
-  - [ ] 3.5 Framework checkpoint
+  - [x] 3.5 Framework checkpoint
     - Run model-based tests over queue, callback, failure, expiry, abandonment, and retry.
     - Prove failed operations move no financial value.
 
