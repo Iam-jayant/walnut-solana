@@ -255,74 +255,112 @@ export const OPERATIONS: OperationPrototype[] = [
     key: "shield",
     title: "Shield (USDC/SOL deposit)",
     provenance: "real",
+    // Task 5.3 `shield` account list, in instruction order after the payer
+    // and the standard Arcium queue accounts. The SPL `transfer_checked`
+    // into the vault is a CPI inside `shield`, so it adds no instruction.
+    // The SOL envelope is modeled because it is the larger one: the client
+    // wraps in the same transaction (System transfer into the owner's wSOL
+    // token account, then SPL `SyncNative`).
     queue: {
       accounts: [
+        { name: "arc-sign-pda", signer: false, writable: true },
         market(false),
+        assetState,
         position(true),
+        { name: "operation-counter", signer: false, writable: true },
         intent,
         { name: "pending-shield", signer: false, writable: true },
+        { name: "asset-mint", signer: false, writable: false },
         { name: "vault-token-account", signer: false, writable: true },
         { name: "user-token-account", signer: false, writable: true },
         tokenProgram,
       ],
-      dataLen: DISC + COMP_OFFSET + U64 + ENC_INPUT,
+      // computation offset, Intent sequence, shield sequence, asset, amount
+      dataLen: DISC + COMP_OFFSET + U64 + U64 + FLAG + U64,
       extraIxs: [
-        tokenTransfer(
-          "spl transfer user->vault",
-          "user-token-account",
-          "vault-token-account",
-          { name: "queue-payer", signer: true, writable: true },
-        ),
+        {
+          label: "system transfer owner->wSOL account",
+          programName: "system-program",
+          accounts: [
+            { name: "queue-payer", signer: true, writable: true },
+            { name: "user-token-account", signer: false, writable: true },
+          ],
+          dataLen: 12,
+        },
+        {
+          label: "spl SyncNative",
+          programName: "token-program",
+          accounts: [
+            { name: "user-token-account", signer: false, writable: true },
+          ],
+          dataLen: 1,
+        },
         ...computeBudgetIxs(CU.position),
       ],
       computeUnitLimit: 0,
     },
+    // `shield_credit` callback custom accounts: Market (read-only), Position,
+    // Pending Shield, Operation Intent. Output: the re-sealed Position state
+    // plus the revealed "credit fits" flag.
     callback: {
       accounts: [
+        market(false),
         position(true),
-        intent,
         { name: "pending-shield", signer: false, writable: true },
+        intent,
       ],
-      dataLen: DISC + ENC_POSITION,
+      dataLen: DISC + ENC_POSITION + FLAG,
       extraIxs: computeBudgetIxs(CU.position),
       computeUnitLimit: CU.position,
     },
     notes:
-      "Built from the real shield flow: public SPL transfer into the vault in the queue tx, encrypted credit in the callback.",
+      "Real Task 5.3 shield: wrap (SOL) + shield with transfer_checked CPI in the queue tx; encrypted credit in the callback.",
   },
   {
     key: "unshield",
     title: "Unshield (+ token CPI)",
-    provenance: "modeled",
+    provenance: "real",
+    // Task 5.4 `unshield` account list, in instruction order after the payer
+    // and the standard Arcium queue accounts. The destination is read-only
+    // here; the asset mint, vault, and vault authority are not queue accounts
+    // (the Market supplies their addresses to the callback).
     queue: {
-      accounts: [market(false), assetState, position(true), intent],
-      dataLen: DISC + COMP_OFFSET + U64 + ENC_INPUT,
-      extraIxs: computeBudgetIxs(CU.light),
+      accounts: [
+        { name: "arc-sign-pda", signer: false, writable: true },
+        market(false),
+        assetState,
+        position(true),
+        { name: "operation-counter", signer: false, writable: true },
+        intent,
+        { name: "user-token-account", signer: false, writable: false },
+      ],
+      // computation offset, Intent sequence, asset, amount
+      dataLen: DISC + COMP_OFFSET + U64 + FLAG + U64,
+      extraIxs: computeBudgetIxs(CU.position),
       computeUnitLimit: 0,
     },
+    // `unshield` callback custom accounts, in struct order: Market, Position,
+    // Operation Intent, asset mint, vault, destination, vault authority, SPL
+    // Token program. Output: the re-sealed Position state plus the revealed
+    // approved and requested amounts. The vault transfer is a CPI inside the
+    // callback, so it adds no instruction.
     callback: {
       accounts: [
+        market(false),
         position(true),
         intent,
+        { name: "asset-mint", signer: false, writable: false },
         { name: "vault-token-account", signer: false, writable: true },
         { name: "user-token-account", signer: false, writable: true },
         vaultAuthority,
         tokenProgram,
       ],
-      dataLen: DISC + ENC_POSITION + U64, // approved plaintext amount for the CPI
-      extraIxs: [
-        tokenTransfer(
-          "spl transfer vault->user",
-          "vault-token-account",
-          "user-token-account",
-          vaultAuthority,
-        ),
-        ...computeBudgetIxs(CU.cpi),
-      ],
+      dataLen: DISC + ENC_POSITION + U64 + U64,
+      extraIxs: computeBudgetIxs(CU.cpi),
       computeUnitLimit: CU.cpi,
     },
     notes:
-      "Modeled from design.md unshield: callback transfers approved SPL with the vault PDA authority.",
+      "Real Task 5.4 unshield: queue binds the destination; the callback transfers the approved SPL amount with the vault PDA authority (CPI).",
   },
   {
     key: "supply",
@@ -663,12 +701,24 @@ export const OPERATIONS: OperationPrototype[] = [
     key: "key-rotation",
     title: "Viewing Key rotation",
     provenance: "real",
+    // Task 5.5 `rotate_position_key` account list, in instruction order after
+    // the payer and the standard Arcium queue accounts. No Market account:
+    // rotation moves no value and is not pausable.
     queue: {
-      accounts: [market(false), position(true), intent],
-      dataLen: DISC + COMP_OFFSET + PUBKEY + U64 + U64, // new pubkey + old/new epoch
+      accounts: [
+        { name: "arc-sign-pda", signer: false, writable: true },
+        position(true),
+        { name: "operation-counter", signer: false, writable: true },
+        intent,
+      ],
+      // computation offset, Intent sequence, old and new epoch, old and new
+      // Viewing public key
+      dataLen: DISC + COMP_OFFSET + U64 + U64 + U64 + PUBKEY + PUBKEY,
       extraIxs: computeBudgetIxs(CU.light),
       computeUnitLimit: 0,
     },
+    // `rotate_position_key` callback custom accounts, in struct order:
+    // Position and Operation Intent. Output: the re-sealed Position state.
     callback: {
       accounts: [position(true), intent],
       dataLen: DISC + ENC_POSITION,
@@ -676,6 +726,6 @@ export const OPERATIONS: OperationPrototype[] = [
       computeUnitLimit: CU.position,
     },
     notes:
-      "Built from the real rotation flow (Task 2.3): atomically re-encrypts state, writes new pubkey, increments epoch.",
+      "Real Task 5.5 rotate_position_key: the queue commits old/new epochs and keys; the callback atomically stores the re-sealed payload, new pubkey, and epoch + 1.",
   },
 ];

@@ -51,7 +51,7 @@ instruction-data size for both phases:
   realistic worst case for the size gate.
 
 Envelopes built from an existing/known instruction are tagged `real` (Position
-initialization, shield, the two-owner liquidation receipts, key rotation); the
+initialization, shield, unshield, the two-owner liquidation receipts, key rotation); the
 rest are tagged `modeled` and constructed from the design account list because
 the financial instructions are not implemented until later tasks.
 

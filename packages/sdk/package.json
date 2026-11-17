@@ -24,6 +24,7 @@
     "bench:latency": "node bench/run.ts latency",
     "bench:contention": "node bench/run.ts contention",
     "bench:init-devnet": "node bench/init.ts",
+    "demo:balance": "node demo/balance-demo.ts",
     "bench:selftest": "node --test bench/stats.test.ts",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\""
   }
