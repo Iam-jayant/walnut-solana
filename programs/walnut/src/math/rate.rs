@@ -117,10 +117,7 @@ pub fn rate_per_second_wad(rate_bps: u128) -> Result<u128, MathError> {
     if rate_bps > MAX_BORROW_RATE_BPS {
         return Err(MathError::InvalidRate);
     }
-    Ok(div_ceil(
-        rate_bps * WAD,
-        BPS_DENOMINATOR * SECONDS_PER_YEAR,
-    ))
+    Ok(div_ceil(rate_bps * WAD, BPS_DENOMINATOR * SECONDS_PER_YEAR))
 }
 
 /// The per-second WAD rate accrual uses for `band`: the rate at the band's
@@ -181,7 +178,10 @@ pub fn project_risk_index(
     slots_to_expiry: u64,
 ) -> Result<u128, MathError> {
     let rate = band_rate_per_second_wad(&asset.rates, asset.utilization_band)?;
-    let expiry = expiry_timestamp(now_ts.max(asset.accounting_index_timestamp), slots_to_expiry)?;
+    let expiry = expiry_timestamp(
+        now_ts.max(asset.accounting_index_timestamp),
+        slots_to_expiry,
+    )?;
     project_index(
         asset.accounting_borrow_index,
         asset.accounting_index_timestamp,
@@ -336,10 +336,7 @@ mod tests {
         assert_eq!(band_upper_edge_bps(19), Ok(10_000));
         assert_eq!(band_upper_edge_bps(20), Err(MathError::InvalidRate));
         assert!(band_rate_per_second_wad(&r, 0).unwrap() > 0);
-        assert_eq!(
-            band_rate_per_second_wad(&r, 19),
-            rate_per_second_wad(7_900)
-        );
+        assert_eq!(band_rate_per_second_wad(&r, 19), rate_per_second_wad(7_900));
     }
 
     #[test]
@@ -357,7 +354,10 @@ mod tests {
             project_index(WAD, 0, MAX_ELAPSED_SECONDS as i64 + 1, rate),
             Err(MathError::ElapsedTooLong)
         );
-        assert_eq!(project_index(WAD - 1, 0, 1, rate), Err(MathError::OutOfRange));
+        assert_eq!(
+            project_index(WAD - 1, 0, 1, rate),
+            Err(MathError::OutOfRange)
+        );
         // A growth that pushes the index past the ceiling is an error.
         let huge = rate_per_second_wad(MAX_BORROW_RATE_BPS).unwrap();
         assert!(project_index(WAD, 0, 4_000_000_000, huge).is_err());
@@ -377,7 +377,10 @@ mod tests {
     #[test]
     fn freshness_blocks_stale_unobserved_and_future_bands() {
         assert_eq!(ensure_band_fresh(0, 10, 100), Err(BandError::NeverObserved));
-        assert_eq!(ensure_band_fresh(11, 10, 100), Err(BandError::FromTheFuture));
+        assert_eq!(
+            ensure_band_fresh(11, 10, 100),
+            Err(BandError::FromTheFuture)
+        );
         assert_eq!(ensure_band_fresh(10, 110, 100), Ok(()));
         assert_eq!(ensure_band_fresh(10, 111, 100), Err(BandError::Stale));
     }
@@ -385,10 +388,19 @@ mod tests {
     #[test]
     fn observation_applies_only_forward() {
         let mut asset = asset();
-        assert_eq!(apply_band_observation(&mut asset, 20, 5), Err(MathError::InvalidRate));
+        assert_eq!(
+            apply_band_observation(&mut asset, 20, 5),
+            Err(MathError::InvalidRate)
+        );
         apply_band_observation(&mut asset, 7, 50).unwrap();
-        assert_eq!((asset.utilization_band, asset.utilization_observation_slot), (7, 50));
-        assert_eq!(apply_band_observation(&mut asset, 8, 49), Err(MathError::TimeRegression));
+        assert_eq!(
+            (asset.utilization_band, asset.utilization_observation_slot),
+            (7, 50)
+        );
+        assert_eq!(
+            apply_band_observation(&mut asset, 8, 49),
+            Err(MathError::TimeRegression)
+        );
         assert_eq!(asset.utilization_band, 7);
     }
 
@@ -472,13 +484,17 @@ mod tests {
             match w[0] {
                 // band <cash> <debt> <expected>
                 "band" => assert_eq!(
-                    utilization_band(n(1), n(2)).map(|b| b as u128).map_err(|e| name(e).to_string()),
+                    utilization_band(n(1), n(2))
+                        .map(|b| b as u128)
+                        .map_err(|e| name(e).to_string()),
                     expect(3),
                     "vector: {line}"
                 ),
                 // band_pool <cash> <debt_shares> <index> <expected>
                 "band_pool" => assert_eq!(
-                    band_from_pool(n(1), n(2), n(3)).map(|b| b as u128).map_err(|e| name(e).to_string()),
+                    band_from_pool(n(1), n(2), n(3))
+                        .map(|b| b as u128)
+                        .map_err(|e| name(e).to_string()),
                     expect(4),
                     "vector: {line}"
                 ),

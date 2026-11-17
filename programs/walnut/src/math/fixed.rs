@@ -248,8 +248,8 @@ pub const fn shares_from_amount_floor(amount: u128, index: u128) -> Result<u128,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::math::{MAX_BORROW_INDEX, MAX_SHARES};
     use crate::math::Lcg;
+    use crate::math::{MAX_BORROW_INDEX, MAX_SHARES};
 
     const VECTORS: &str =
         include_str!("../../../../packages/reference-model/vectors/fixed.vectors");
@@ -311,9 +311,18 @@ mod tests {
         assert_eq!(to_u64(u64::MAX as u128 + 1), Err(MathError::Overflow));
         assert_eq!(to_u64(7), Ok(7));
         assert_eq!(check_index(WAD - 1), Err(MathError::OutOfRange));
-        assert_eq!(check_index(MAX_BORROW_INDEX + 1), Err(MathError::OutOfRange));
-        assert_eq!(debt_from_shares(MAX_SHARES + 1, WAD), Err(MathError::OutOfRange));
-        assert_eq!(debt_from_shares(MAX_SHARES, MAX_BORROW_INDEX), Ok(MAX_SHARES * 1_000));
+        assert_eq!(
+            check_index(MAX_BORROW_INDEX + 1),
+            Err(MathError::OutOfRange)
+        );
+        assert_eq!(
+            debt_from_shares(MAX_SHARES + 1, WAD),
+            Err(MathError::OutOfRange)
+        );
+        assert_eq!(
+            debt_from_shares(MAX_SHARES, MAX_BORROW_INDEX),
+            Ok(MAX_SHARES * 1_000)
+        );
     }
 
     /// **Validates: Requirements 7.1** (checked fixed-point): the wide variant

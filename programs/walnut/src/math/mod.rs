@@ -30,6 +30,10 @@ pub mod checkpoint;
 pub mod fixed;
 pub mod rate;
 
+// Task 7.6: Pool accounting property tests over the real math.
+#[cfg(test)]
+mod properties;
+
 /// Deterministic linear-congruential sampler for the `prop_*` tests (the
 /// workspace has no property-testing crate).
 #[cfg(test)]
@@ -47,7 +51,8 @@ impl Lcg {
 
     /// Uniform-ish value in `0..n` (`n > 0`), up to 128 bits.
     pub fn u128_below(&mut self, n: u128) -> u128 {
-        let wide = ((self.next() as u128) << 64) ^ ((self.next() as u128) << 11) ^ self.next() as u128;
+        let wide =
+            ((self.next() as u128) << 64) ^ ((self.next() as u128) << 11) ^ self.next() as u128;
         wide % n
     }
 }

@@ -120,6 +120,53 @@ pub fn checkpoint(
     })
 }
 
+/// The outcome of a reserve withdrawal (Task 7.5), plaintext twin of
+/// `circuits::reserve_withdrawal_values`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct ReserveWithdrawal {
+    /// The Pool payload to store. On approval it is the checkpointed payload
+    /// with Cash and Reserves both reduced by `approved`. On refusal it is
+    /// the INPUT payload unchanged: a refusal commits nothing, not even the
+    /// interest checkpoint (the accounted index is not advanced either, so
+    /// the next operation checkpoints the same interval once).
+    pub pool: PoolPlain,
+    /// The approved amount: the full request or zero (all-or-zero).
+    pub approved: u64,
+}
+
+/// Reserve withdrawal: checkpoint first, then approve the full `requested`
+/// amount only if it is nonzero and no greater than both Cash and Reserves
+/// after the checkpoint; Cash and Reserves then decrease by exactly that
+/// amount. Supplier equity `cash + debt - reserves` is therefore unchanged by
+/// the withdrawal itself. A checkpoint failure refuses (returns zero).
+pub fn reserve_withdrawal(
+    pool: &PoolPlain,
+    accounted_index: u128,
+    accounting_index: u128,
+    reserve_factor_bps: u16,
+    requested: u64,
+) -> ReserveWithdrawal {
+    let refused = ReserveWithdrawal {
+        pool: *pool,
+        approved: 0,
+    };
+    let Ok(c) = checkpoint(pool, accounted_index, accounting_index, reserve_factor_bps) else {
+        return refused;
+    };
+    let amount = requested as u128;
+    if amount == 0 || amount > c.pool.cash || amount > c.pool.reserves {
+        return refused;
+    }
+    ReserveWithdrawal {
+        pool: PoolPlain {
+            cash: c.pool.cash - amount,
+            reserves: c.pool.reserves - amount,
+            ..c.pool
+        },
+        approved: requested,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -168,13 +215,19 @@ mod tests {
     #[test]
     fn invalid_inputs_are_rejected() {
         let p = pool(10, 10, 0);
-        assert_eq!(checkpoint(&p, 2 * WAD, WAD, 0), Err(MathError::TimeRegression));
+        assert_eq!(
+            checkpoint(&p, 2 * WAD, WAD, 0),
+            Err(MathError::TimeRegression)
+        );
         assert_eq!(checkpoint(&p, WAD - 1, WAD, 0), Err(MathError::OutOfRange));
         assert_eq!(
             checkpoint(&p, WAD, MAX_BORROW_INDEX + 1, 0),
             Err(MathError::OutOfRange)
         );
-        assert_eq!(checkpoint(&p, WAD, WAD, 10_001), Err(MathError::InvalidRate));
+        assert_eq!(
+            checkpoint(&p, WAD, WAD, 10_001),
+            Err(MathError::InvalidRate)
+        );
         assert_eq!(
             checkpoint(&pool(0, MAX_SHARES + 1, 0), WAD, WAD, 0),
             Err(MathError::OutOfRange)
@@ -183,7 +236,10 @@ mod tests {
             checkpoint(&pool(MAX_POOL_VALUE + 1, 0, 0), WAD, WAD, 0),
             Err(MathError::OutOfRange)
         );
-        assert_eq!(checkpoint(&pool(0, 0, 5), WAD, WAD, 0), Err(MathError::Underflow));
+        assert_eq!(
+            checkpoint(&pool(0, 0, 5), WAD, WAD, 0),
+            Err(MathError::Underflow)
+        );
     }
 
     /// **Validates: Requirements 7.3, 7.4** - over random pools and index
@@ -250,10 +306,18 @@ mod tests {
             if expected == "err" {
                 assert!(result.is_err(), "vector: {line}");
             } else {
-                let e: Vec<u128> = expected.split_whitespace().map(|x| x.parse().unwrap()).collect();
+                let e: Vec<u128> = expected
+                    .split_whitespace()
+                    .map(|x| x.parse().unwrap())
+                    .collect();
                 let c = result.unwrap_or_else(|error| panic!("{error:?} for {line}"));
                 assert_eq!(
-                    [c.pool.reserves, c.supplier_equity, c.interest, c.reserve_add],
+                    [
+                        c.pool.reserves,
+                        c.supplier_equity,
+                        c.interest,
+                        c.reserve_add
+                    ],
                     [e[0], e[1], e[2], e[3]],
                     "vector: {line}"
                 );
