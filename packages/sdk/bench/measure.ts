@@ -34,28 +34,19 @@ import {
   RescueCipher,
   x25519,
 } from "@arcium-hq/client";
+import { derivePositionPda } from "../src/pda.ts";
 import type { BenchContext } from "./config.ts";
 import type { BenchOp, OpSample, TxCost } from "./types.ts";
 
-/** PDA seed for the Task 2.2 SpikePosition account (matches lib.rs). */
-const POSITION_SEED = Buffer.from("spike_position");
+// SpikePosition PDA derivation lives in the SDK (src/pda.ts); re-exported for
+// the other bench modules.
+export { derivePositionPda };
 
 /** Builds the queue transaction for one operation instance. */
 export interface OpRunner {
   op: BenchOp;
   /** Enqueue a computation for this offset; resolves to the queue tx signature. */
   queue(offset: BN): Promise<string>;
-}
-
-/** Derive the owner's SpikePosition PDA. */
-export function derivePositionPda(
-  programId: PublicKey,
-  owner: PublicKey,
-): PublicKey {
-  return PublicKey.findProgramAddressSync(
-    [POSITION_SEED, owner.toBuffer()],
-    programId,
-  )[0];
 }
 
 function newOffset(): BN {

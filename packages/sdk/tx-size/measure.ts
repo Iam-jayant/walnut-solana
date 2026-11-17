@@ -24,6 +24,11 @@ import {
   type ExtraIx,
   type OperationPrototype,
 } from "./accounts.ts";
+import {
+  TX_HARD_LIMIT as HARD_LIMIT,
+  TX_TARGET as TARGET,
+  v0TransactionByteLength,
+} from "../src/tx-size.ts";
 
 const {
   PublicKey,
@@ -33,9 +38,6 @@ const {
   ComputeBudgetProgram,
   SystemProgram,
 } = web3;
-
-const HARD_LIMIT = 1232;
-const TARGET = 1150;
 
 // Deterministic distinct placeholder keys, with real ids for known programs.
 const keyRegistry = new Map<string, web3.PublicKey>();
@@ -146,47 +148,6 @@ function lookupEligible(refs: AccountRef[]): web3.PublicKey[] {
   return out;
 }
 
-type V0Message = ReturnType<web3.TransactionMessage["compileToV0Message"]>;
-
-/** Byte length of a shortvec (compact-u16) length prefix. */
-function compactLen(n: number): number {
-  if (n < 0x80) return 1;
-  if (n < 0x4000) return 2;
-  return 3;
-}
-
-/**
- * Exact serialized byte length of a compiled v0 transaction, computed from the
- * compiled message structure. web3's own MessageV0.serialize() encodes into
- * fixed 1,232-byte buffers and throws on an oversized envelope, so measuring
- * an over-limit transaction (which the gate must be able to report rather than
- * crash on) is done analytically from the authoritative compiled message. The
- * formula is the Solana wire format: signatures + version + header + static
- * keys + blockhash + instructions + address-table lookups.
- */
-function v0ByteLength(message: V0Message): number {
-  const numSigs = message.header.numRequiredSignatures;
-  let len = 1 + 3; // version prefix + 3-byte header
-  len +=
-    compactLen(message.staticAccountKeys.length) +
-    32 * message.staticAccountKeys.length;
-  len += 32; // recent blockhash
-  len += compactLen(message.compiledInstructions.length);
-  for (const ix of message.compiledInstructions) {
-    len += 1; // program id index
-    len +=
-      compactLen(ix.accountKeyIndexes.length) + ix.accountKeyIndexes.length;
-    len += compactLen(ix.data.length) + ix.data.length;
-  }
-  len += compactLen(message.addressTableLookups.length);
-  for (const lut of message.addressTableLookups) {
-    len += 32; // lookup table account key
-    len += compactLen(lut.writableIndexes.length) + lut.writableIndexes.length;
-    len += compactLen(lut.readonlyIndexes.length) + lut.readonlyIndexes.length;
-  }
-  return compactLen(numSigs) + 64 * numSigs + len;
-}
-
 function serializedSize(
   a: Assembled,
   useAlt: boolean,
@@ -213,7 +174,7 @@ function serializedSize(
     recentBlockhash: BLOCKHASH,
     instructions: a.instructions,
   }).compileToV0Message(lookupTables);
-  return { bytes: v0ByteLength(message), altAccounts };
+  return { bytes: v0TransactionByteLength(message), altAccounts };
 }
 
 interface PhaseResult {
