@@ -267,6 +267,7 @@ pub fn initialize_market_handler(
         market: market_key,
         accounted_borrow_index: WAD,
         encrypted: EncryptedPoolState::default(),
+        unsettled_recovery_claim_count: 0,
     });
 
     accounts.vault_authority.set_inner(VaultAuthority {

@@ -649,3 +649,58 @@ pub struct TreasuryUsdcAccountChanged {
     pub changed_by: Pubkey,
     pub slot: u64,
 }
+
+/// Emitted by `supply_flow` when it queues a supply or withdrawal (Task 8).
+/// The request is a public argument of the computation in v1 (see ADR-0002).
+#[event]
+pub struct SupplyFlowQueued {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub is_withdraw: bool,
+    pub requested: u128,
+    pub computation_offset: u64,
+    pub position_generation: u64,
+    pub pool_generation: u64,
+    pub accounting_borrow_index: u128,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `supply_flow` callback when both payloads were stored.
+/// Carries no balance, share, or claim amount.
+#[event]
+pub struct SupplyFlowApplied {
+    pub position: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub is_withdraw: bool,
+    pub position_generation: u64,
+    pub pool_generation: u64,
+    pub accounted_borrow_index: u128,
+    pub slot: u64,
+}
+
+/// Emitted when the request resolved `Zero`, `Stale`, `Expired`, or `Failed`.
+/// Nothing was stored; both Locks were released.
+#[event]
+pub struct SupplyFlowNotApplied {
+    pub position: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_supply_flow` (any signer, after Lock expiry).
+#[event]
+pub struct SupplyFlowAbandoned {
+    pub position: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub signer: Pubkey,
+    pub slot: u64,
+}

@@ -56,6 +56,7 @@ pub use instructions::reserve_withdrawal::*;
 pub use instructions::roles::*;
 pub use instructions::rotation::*;
 pub use instructions::shield::*;
+pub use instructions::supply::*;
 pub use instructions::unshield::*;
 
 // Task 2.2 Arcium feasibility gate: persistent encrypted Position state. This
@@ -73,6 +74,7 @@ use events::{
     UnshieldFailed, UnshieldQueued, UnshieldZero, ViewingKeyRotated,
 };
 use events::{ReserveWithdrawalApproved, ReserveWithdrawalNotApplied, ReserveWithdrawalQueued};
+use events::{SupplyFlowApplied, SupplyFlowNotApplied, SupplyFlowQueued};
 use events::{UtilizationBandNotApplied, UtilizationBandQueued, UtilizationBandUpdated};
 use events::{ViewingKeyRotationApplied, ViewingKeyRotationFailed, ViewingKeyRotationQueued};
 use market::{
@@ -92,6 +94,7 @@ use state::reserve_withdrawal::{
 };
 use state::rotation::{RotationReport, RotationRequest, RotationSettlement};
 use state::shield::{ShieldCallback, ShieldRequest, ShieldSettlement, TokenAccountView};
+use state::supply::{SupplyFlowReport, SupplyFlowRequest, SupplyFlowSettlement};
 use state::unshield::{UnshieldReport, UnshieldRequest, UnshieldSettlement};
 use state::{EncryptedPoolState, PendingShield, PoolState, Position, ShieldAsset};
 
@@ -108,6 +111,7 @@ const COMP_DEF_OFFSET_INIT_POOL_STATE: u32 = comp_def_offset("init_pool_state");
 const COMP_DEF_OFFSET_INIT_POSITION_STATE: u32 = comp_def_offset("init_position_state");
 const COMP_DEF_OFFSET_UPDATE_UTILIZATION_BAND: u32 = comp_def_offset("update_utilization_band");
 const COMP_DEF_OFFSET_RESERVE_WITHDRAWAL: u32 = comp_def_offset("reserve_withdrawal");
+const COMP_DEF_OFFSET_SUPPLY_FLOW: u32 = comp_def_offset("supply_flow");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -2317,6 +2321,214 @@ pub mod walnut {
     pub fn set_treasury_usdc_account(ctx: Context<SetTreasuryUsdcAccount>) -> Result<()> {
         set_treasury_usdc_account_handler(ctx)
     }
+
+    // ---- Task 8: supply and withdraw supply --------------------------------
+
+    /// Registers the `supply_flow` computation definition with the MXE.
+    pub fn init_supply_flow_comp_def(ctx: Context<InitSupplyFlowCompDef>) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Owner-signed: supplies `requested` USDC units (`is_withdraw = false`)
+    /// or withdraws `requested` supply shares (`is_withdraw = true`). Requires
+    /// an `Active` Position and Pool with free Locks and the matching pause
+    /// off. Accrues the accounting Borrow Index, creates the Intent at
+    /// `sequence`, Locks the Pool and the Position together, and queues
+    /// `supply_flow`. No token moves: only encrypted balances change.
+    pub fn supply_flow(
+        ctx: Context<SupplyFlowQueue>,
+        computation_offset: u64,
+        sequence: u64,
+        is_withdraw: bool,
+        requested: u128,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let owner = ctx.accounts.payer.key();
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let position_key = ctx.accounts.position.key();
+        let asset_state_key = ctx.accounts.asset_state.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let request = SupplyFlowRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            now_ts: clock.unix_timestamp,
+            is_withdraw,
+            requested,
+        };
+        let accounts = &mut *ctx.accounts;
+        let accounted_index = accounts.pool_state.accounted_borrow_index;
+        let reserve_factor_bps = accounts.asset_state.risk.reserve_factor_bps;
+        let supply_cap = accounts.asset_state.caps.supply_cap_usdc;
+        let claims_clear = accounts.pool_state.unsettled_recovery_claim_count == 0;
+        let mut intent = state::supply::queue_supply_flow(
+            &accounts.market,
+            market_key,
+            asset_state_key,
+            &mut accounts.asset_state,
+            &mut accounts.pool_state,
+            pool_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_counter,
+            &owner,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(SupplyFlowQueued {
+            market: market_key,
+            position: position_key,
+            owner,
+            pool_state: pool_key,
+            operation_intent: intent_key,
+            is_withdraw,
+            requested,
+            computation_offset,
+            position_generation: accounts.position.coordination.generation,
+            pool_generation: accounts.pool_state.coordination.generation,
+            accounting_borrow_index: intent.accounting_borrow_index,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            lock_expiry_slot: intent.lock_expiry_slot,
+            slot: clock.slot,
+        });
+
+        // `supply_flow(pool, position, owner: Shared, accounted_index,
+        // accounting_index, reserve_factor_bps, is_withdraw, requested,
+        // supply_cap, claims_clear)`.
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let output_nonce_input = state::nonce::derive_output_nonce_input(&position_key, sequence);
+        let args = supply_flow_args(
+            &ctx.accounts.pool_state,
+            &ctx.accounts.position,
+            output_nonce_input,
+            accounted_index,
+            intent.accounting_borrow_index,
+            reserve_factor_bps,
+            is_withdraw,
+            requested,
+            supply_cap,
+            claims_clear,
+        )
+        .build();
+        let callback_accounts = supply_flow_callback_accounts(
+            market_key,
+            asset_state_key,
+            pool_key,
+            position_key,
+            intent_key,
+        );
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![SupplyFlowCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the `supply_flow` output with the Task 3.3 helpers. `Applied`
+    /// stores the Pool and Position payloads, advances the accounted index,
+    /// bumps both generations, and releases both Locks. `Zero`, `Stale`, and
+    /// `Expired` release both Locks and store nothing. A terminal Intent is a
+    /// no-op. Unauthenticated output and any binding mismatch revert, so the
+    /// Intent stays `Queued` for `abandon_supply_flow`.
+    #[arcium_callback(encrypted_ix = "supply_flow")]
+    pub fn supply_flow_callback(
+        ctx: Context<SupplyFlowCallback>,
+        output: SignedComputationOutputs<SupplyFlowOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(SupplyFlowOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+        let pool_sealed = o.field_0;
+        let position_sealed = o.field_1;
+
+        let intent_offset = ctx.accounts.operation_intent.computation_offset;
+        let computation_offset = if ctx.accounts.computation_account.key()
+            == derive_comp_pda!(intent_offset, ctx.accounts.mxe_account)
+        {
+            intent_offset
+        } else {
+            intent_offset.wrapping_add(1)
+        };
+
+        let clock = Clock::get()?;
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let report = SupplyFlowReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            pool_output: EncryptedPoolState {
+                nonce: pool_sealed.nonce,
+                ciphertexts: pool_sealed.ciphertexts,
+            },
+            encryption_key: position_sealed.encryption_key,
+            position_nonce: position_sealed.nonce,
+            position_ciphertexts: position_sealed.ciphertexts,
+            applied: o.field_2,
+            requested: o.field_3,
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::supply::settle_supply_flow(
+            &accounts.market,
+            market_key,
+            &accounts.asset_state,
+            &mut accounts.pool_state,
+            pool_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_intent,
+            &report,
+        )?;
+        match settlement {
+            SupplyFlowSettlement::Applied { is_withdraw } => emit!(SupplyFlowApplied {
+                position: position_key,
+                pool_state: pool_key,
+                operation_intent: intent_key,
+                is_withdraw,
+                position_generation: accounts.position.coordination.generation,
+                pool_generation: accounts.pool_state.coordination.generation,
+                accounted_borrow_index: accounts.pool_state.accounted_borrow_index,
+                slot: clock.slot,
+            }),
+            SupplyFlowSettlement::Zero | SupplyFlowSettlement::Failed(_) => {
+                emit!(SupplyFlowNotApplied {
+                    position: position_key,
+                    pool_state: pool_key,
+                    operation_intent: intent_key,
+                    intent_status: accounts.operation_intent.status,
+                    slot: clock.slot,
+                })
+            }
+            SupplyFlowSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
+    /// Permissionless: abandons a queued supply or withdrawal after Lock
+    /// expiry. Nothing moved, so there is nothing to refund.
+    pub fn abandon_supply_flow(ctx: Context<AbandonSupplyFlow>) -> Result<()> {
+        abandon_supply_flow_handler(ctx)
+    }
 }
 
 // ---- Task 5.3: shield accounts and helpers ----------------------------------
@@ -3969,6 +4181,203 @@ pub struct ReserveWithdrawalCallback<'info> {
 #[init_computation_definition_accounts("reserve_withdrawal", payer)]
 #[derive(Accounts)]
 pub struct InitReserveWithdrawalCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- Task 8: supply_flow accounts and helpers ---------------------------------
+
+/// `supply_flow(pool: Enc<Mxe, PoolSecret>, position: Enc<Shared,
+/// PositionSecret>, owner: Shared, accounted_index: u128, accounting_index:
+/// u128, reserve_factor_bps: u128, is_withdraw: bool, requested: u128,
+/// supply_cap: u64, claims_clear: bool)` arguments, in that order.
+#[allow(clippy::too_many_arguments)]
+fn supply_flow_args(
+    pool: &PoolState,
+    position: &Position,
+    output_nonce_input: u128,
+    accounted_index: u128,
+    accounting_index: u128,
+    reserve_factor_bps: u16,
+    is_withdraw: bool,
+    requested: u128,
+    supply_cap: u64,
+    claims_clear: bool,
+) -> ArgBuilder {
+    let pc = &pool.encrypted.ciphertexts;
+    let sc = &position.encrypted_state.ciphertexts;
+    ArgBuilder::new()
+        .plaintext_u128(pool.encrypted.nonce)
+        .encrypted_u128(pc[0])
+        .encrypted_u128(pc[1])
+        .encrypted_u128(pc[2])
+        .encrypted_u128(pc[3])
+        .x25519_pubkey(position.viewing_pubkey)
+        .plaintext_u128(position.encrypted_state.nonce)
+        .encrypted_u64(sc[0])
+        .encrypted_u64(sc[1])
+        .encrypted_u64(sc[2])
+        .encrypted_u128(sc[3])
+        .encrypted_u128(sc[4])
+        .x25519_pubkey(position.viewing_pubkey)
+        .plaintext_u128(output_nonce_input)
+        .plaintext_u128(accounted_index)
+        .plaintext_u128(accounting_index)
+        .plaintext_u128(reserve_factor_bps as u128)
+        .plaintext_bool(is_withdraw)
+        .plaintext_u128(requested)
+        .plaintext_u64(supply_cap)
+        .plaintext_bool(claims_clear)
+}
+
+/// The `supply_flow` callback's custom accounts, in struct order: Market,
+/// Asset State, Pool, Position, and Operation Intent.
+fn supply_flow_callback_accounts(
+    market: Pubkey,
+    asset_state: Pubkey,
+    pool: Pubkey,
+    position: Pubkey,
+    operation_intent: Pubkey,
+) -> [CallbackAccount; 5] {
+    let account = |pubkey, is_writable| CallbackAccount {
+        pubkey,
+        is_writable,
+    };
+    [
+        account(market, false),
+        account(asset_state, false),
+        account(pool, true),
+        account(position, true),
+        account(operation_intent, true),
+    ]
+}
+
+#[queue_computation_accounts("supply_flow", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct SupplyFlowQueue<'info> {
+    /// The Position owner; signs, pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_SUPPLY_FLOW))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Written: the accounting Borrow Index accrues at queue time.
+    #[account(mut, address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    /// Locked by this operation.
+    #[account(
+        mut,
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// Locked by this operation.
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, market.key().as_ref(), payer.key().as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    #[account(
+        mut,
+        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
+        bump = operation_counter.bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, payer.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("supply_flow")]
+#[derive(Accounts)]
+pub struct SupplyFlowCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_SUPPLY_FLOW))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        mut,
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, position.market.as_ref(), position.owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+}
+
+#[init_computation_definition_accounts("supply_flow", payer)]
+#[derive(Accounts)]
+pub struct InitSupplyFlowCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]

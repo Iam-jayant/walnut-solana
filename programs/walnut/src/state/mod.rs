@@ -31,6 +31,7 @@ pub mod protected;
 pub mod reserve_withdrawal;
 pub mod rotation;
 pub mod shield;
+pub mod supply;
 pub mod unshield;
 
 // The Task 5.6 balance-layer checkpoint: a model-based test that drives the

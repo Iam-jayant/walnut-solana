@@ -15,4 +15,5 @@ pub mod reserve_withdrawal;
 pub mod roles;
 pub mod rotation;
 pub mod shield;
+pub mod supply;
 pub mod unshield;

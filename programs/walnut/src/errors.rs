@@ -332,6 +332,14 @@ pub enum ErrorCode {
     ReserveWithdrawalAccountMismatch,
     #[msg("The approved reserve withdrawal is neither the request nor zero")]
     ReserveWithdrawalApprovalInvalid,
+    #[msg("Only the Position owner can supply or withdraw supply")]
+    SupplyNotOwner,
+    #[msg("The Position is not Active")]
+    SupplyPositionNotActive,
+    #[msg("The supply or withdrawal request must be nonzero")]
+    SupplyZeroRequest,
+    #[msg("The Operation Intent is not this Position's queued supply or withdrawal")]
+    SupplyIntentMismatch,
 }
 impl From<crate::math::fixed::MathError> for ErrorCode {
     fn from(error: crate::math::fixed::MathError) -> Self {

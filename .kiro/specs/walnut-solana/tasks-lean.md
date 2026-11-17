@@ -38,9 +38,9 @@ Tasks 16-18 need a multi-day soak and independent reviews, so they are outside t
 
 Pool accounting (original Task 7) is done on the original list and is not repeated here.
 
-- [ ] A6. First-supplier rule (8.1): the canonical-empty check and `unsettled_recovery_claim_count`.
-- [ ] A7. Supply and withdraw supply (8.2, 8.3): mint against encrypted NAV, zero on failure, atomic Position and Pool update.
-- [ ] A-check. `cargo check` and `tsc --noEmit` pass.
+- [x] A6. First-supplier rule (8.1): the canonical-empty check and `unsettled_recovery_claim_count`.
+- [x] A7. Supply and withdraw supply (8.2, 8.3): mint against encrypted NAV, zero on failure, atomic Position and Pool update.
+- [x] A-check. `cargo check` and `tsc --noEmit` pass.
 
 Deferred to V or cut: 8.4, 8.5.
 

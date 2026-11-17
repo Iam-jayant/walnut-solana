@@ -38,3 +38,5 @@ The following features are out of scope for v1. Each requires a new specificatio
 - v1 users cannot transfer encrypted balances to each other; value leaves a Position only through unshield (public amount) or liquidation.
 - v1 liquidations are formulaic and partial, which keeps liquidator pricing simple at the cost of more transactions for large Positions.
 - Lenders and borrowers are limited to the SOL/USDC market until isolated markets are specified.
+
+- Task 8: supply and withdraw-supply requests (USDC units or shares) are public computation arguments in v1, not encrypted inputs. The Intent callback rebuilds its input commitment from the echoed request, as unshield does. Encrypted request inputs are deferred. INITIAL_SHARE_SCALE is 1,000. The circuit's domain is u64 values and 2^63 total shares.
