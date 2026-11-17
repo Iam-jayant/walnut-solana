@@ -283,13 +283,13 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Pause and rescue behavior.
     - Local decryption and wrong-key rejection.
 
-  - [ ] 5.7 Devnet balance demo
+  - [x] 5.7 Devnet balance demo
     - Shield SOL and USDC.
     - Decrypt locally.
     - Unshield USDC.
     - Unshield wSOL and unwrap in a second transaction.
 
-- [ ] 6. Pyth and numeric range safety
+- [x] 6. Pyth and numeric range safety
 
   - [x] 6.1 Implement Pyth validation
     - Receiver owner and feed ID.
@@ -321,7 +321,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Two-transaction post-then-use fallback.
     - Choose based on serialized size and reliability.
 
-  - [ ] 6.5 Oracle tests and checkpoint
+  - [x] 6.5 Oracle tests and checkpoint
     - Wrong owner/feed.
     - Stale, zero, negative, wide-confidence, bad exponent, overflow, and extreme deviation.
     - Decision Expiry.
@@ -329,7 +329,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
 
 - [ ] 7. Borrow Index, encrypted NAV, and Pool accounting
 
-  - [ ] 7.1 Implement fixed-point primitives
+  - [-] 7.1 Implement fixed-point primitives
     - WAD multiplication and division.
     - Floor and ceil variants.
     - Checked conversions.

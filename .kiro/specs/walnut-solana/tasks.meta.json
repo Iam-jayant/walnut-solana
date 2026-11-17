@@ -304,6 +304,11 @@
         "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794903935577
+      },
+      {
+        "executionId": "17ea1669-8c8c-44bc-9a8f-5652f231033f",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794931419922
       }
     ],
     "6.5 Oracle tests and checkpoint": [
@@ -311,6 +316,16 @@
         "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794903935720
+      },
+      {
+        "executionId": "17ea1669-8c8c-44bc-9a8f-5652f231033f",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794929414276
+      },
+      {
+        "executionId": "17ea1669-8c8c-44bc-9a8f-5652f231033f",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794931419737
       }
     ],
     "4.5 Implement on-chain launch caps and public lifecycle counts": [
@@ -438,6 +453,11 @@
         "executionId": "e93f2148-9bb4-43b8-a6f6-c61226fce5ca",
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794927341731
+      },
+      {
+        "executionId": "17ea1669-8c8c-44bc-9a8f-5652f231033f",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794929414047
       }
     ],
     "5. Position, Viewing Key, shield, and unshield": [
@@ -445,6 +465,13 @@
         "executionId": "e93f2148-9bb4-43b8-a6f6-c61226fce5ca",
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794927342267
+      }
+    ],
+    "7.1 Implement fixed-point primitives": [
+      {
+        "executionId": "fc5c9315-8ba7-431d-a333-b8a063021e3d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794931607365
       }
     ]
   }
