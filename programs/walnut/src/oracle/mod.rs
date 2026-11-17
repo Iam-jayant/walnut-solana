@@ -401,7 +401,8 @@ pub fn operation_is_price_sensitive(kind: OperationKind) -> bool {
         | OperationKind::Unshield
         | OperationKind::Supply
         | OperationKind::WithdrawSupply
-        | OperationKind::Repay => false,
+        | OperationKind::Repay
+        | OperationKind::ViewingKeyRotation => false,
     }
 }
 
@@ -750,6 +751,7 @@ mod tests {
             OperationKind::Supply,
             OperationKind::WithdrawSupply,
             OperationKind::Repay,
+            OperationKind::ViewingKeyRotation,
         ] {
             assert!(!operation_is_price_sensitive(kind), "{kind:?}");
         }
@@ -794,7 +796,7 @@ mod tests {
         let mut accepted = 0u32;
         for _ in 0..20_000 {
             let price = (rng.sample() % 300_00000000) as i64 + 1; // 1 .. ~300 at e-8
-            let conf = (rng.sample() % 20_00000000) as u64; // up to ~20 at e-8
+            let conf = rng.sample() % 20_00000000; // up to ~20 at e-8
             let age = (rng.sample() % 400) as i64; // 0..399 s
             let now = 1_000_000;
             let publish = now - age;

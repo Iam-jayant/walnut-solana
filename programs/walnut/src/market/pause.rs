@@ -314,6 +314,7 @@ impl From<OperationKind> for Action {
             OperationKind::Repay => Action::Repay,
             OperationKind::Health => Action::Health,
             OperationKind::Liquidation => Action::Liquidation,
+            OperationKind::ViewingKeyRotation => Action::ViewingKeyRotation,
         }
     }
 }
@@ -588,7 +589,7 @@ mod tests {
         }
     }
 
-    const KINDS: [OperationKind; 10] = [
+    const KINDS: [OperationKind; 11] = [
         OperationKind::Probe,
         OperationKind::PositionInit,
         OperationKind::Shield,
@@ -599,6 +600,7 @@ mod tests {
         OperationKind::Repay,
         OperationKind::Health,
         OperationKind::Liquidation,
+        OperationKind::ViewingKeyRotation,
     ];
 
     #[test]
@@ -647,6 +649,8 @@ mod tests {
             None,
             Some(C::LiquidationStart),
             Some(C::LiquidationComplete),
+            // Viewing Key rotation moves no value and is never paused.
+            None,
         ];
         for (kind, category) in KINDS.iter().zip(expected) {
             assert_eq!(pause_category(*kind), category, "{kind:?}");

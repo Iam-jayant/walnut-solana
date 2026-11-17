@@ -170,20 +170,20 @@ mod tests {
     /// The index domain is monotone and anchored at 1.0.
     #[test]
     fn index_domain_is_anchored_and_bounded() {
-        assert!(MIN_NORMALIZED_PRICE <= MAX_NORMALIZED_PRICE);
-        assert!(WAD <= MAX_BORROW_INDEX);
+        const { assert!(MIN_NORMALIZED_PRICE <= MAX_NORMALIZED_PRICE) };
+        const { assert!(WAD <= MAX_BORROW_INDEX) };
         assert_eq!(MAX_BORROW_INDEX, 10u128.pow(21));
         assert_eq!(MAX_SHARES, 10u128.pow(16));
         // The index ceiling exceeds the largest share count, so the index is
         // the dominant term of the binding `shares × index` product.
-        assert!(MAX_SHARES < MAX_BORROW_INDEX);
+        const { assert!(MAX_SHARES < MAX_BORROW_INDEX) };
     }
 
     /// The exponent window is symmetric and within the pow10 domain.
     #[test]
     fn pyth_exponent_window_is_representable() {
-        assert!(MIN_PYTH_EXPONENT < 0);
-        assert!(MAX_PYTH_EXPONENT > 0);
+        const { assert!(MIN_PYTH_EXPONENT < 0) };
+        const { assert!(MAX_PYTH_EXPONENT > 0) };
         assert!(pow10(MAX_PYTH_EXPONENT.unsigned_abs()).is_some());
         assert!(pow10(MIN_PYTH_EXPONENT.unsigned_abs()).is_some());
     }

@@ -246,3 +246,302 @@ pub struct DebtPositionCountChanged {
     pub cap: u64,
     pub slot: u64,
 }
+
+// ---- Task 5.1: Position initialization ---------------------------------------
+
+/// Emitted when a Position initialization attempt is queued: by
+/// `initialize_position` (`retry == false`) and `retry_position_init`
+/// (`retry == true`).
+#[event]
+pub struct PositionInitQueued {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub sequence: u64,
+    pub computation_offset: u64,
+    pub viewing_pubkey: [u8; 32],
+    pub viewing_key_epoch: u64,
+    pub position_generation: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub retry: bool,
+    pub slot: u64,
+}
+
+/// Emitted by the `init_position_state` callback when the encrypted zero
+/// state is stored and the Position becomes `Active`. `nonce` is the stored
+/// output nonce (little-endian); the client decrypts locally.
+#[event]
+pub struct PositionActivated {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted when an initialization attempt ends without storing state
+/// (callback `Stale`, `Expired`, `Failed`, or `Zero`, or permissionless
+/// abandonment). The Position is `InitFailed`: the owner may retry or close.
+/// `intent_status` is the Intent's terminal status.
+#[event]
+pub struct PositionInitFailed {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub generation: u64,
+    pub slot: u64,
+}
+
+/// Emitted by `close_position`: the `InitFailed` Position was closed and its
+/// rent returned to the owner. `PositionCountChanged` is emitted with it.
+#[event]
+pub struct PositionClosed {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub slot: u64,
+}
+
+// ---- Task 5.3: shield ---------------------------------------------------------
+
+/// Emitted by `shield` after the exact public `amount` moved from
+/// `source_token_account` into `vault` and the first credit attempt was
+/// queued. `asset` and `amount` are public by design (Requirement 5.5).
+#[event]
+pub struct ShieldQueued {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub pending_shield: Pubkey,
+    pub operation_intent: Pubkey,
+    pub asset: crate::state::ShieldAsset,
+    pub amount: u64,
+    pub shield_sequence: u64,
+    pub attempt_sequence: u64,
+    pub computation_offset: u64,
+    pub source_token_account: Pubkey,
+    pub vault: Pubkey,
+    pub position_generation: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by `retry_shield` when a new credit attempt is queued for a
+/// `Deposited` Pending Shield whose previous attempt ended without a credit.
+#[event]
+pub struct ShieldRetried {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub pending_shield: Pubkey,
+    pub operation_intent: Pubkey,
+    pub previous_intent: Pubkey,
+    pub attempt_sequence: u64,
+    pub computation_offset: u64,
+    pub position_generation: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `shield_credit` callback when the credit is stored and the
+/// Pending Shield is `Credited`. `nonce` is the stored output nonce
+/// (little-endian); the owner decrypts locally.
+#[event]
+pub struct ShieldCredited {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub pending_shield: Pubkey,
+    pub operation_intent: Pubkey,
+    pub asset: crate::state::ShieldAsset,
+    pub amount: u64,
+    pub generation: u64,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted by the `shield_credit` callback when the attempt ended without a
+/// credit (`Zero`, `Stale`, or `Expired`). The Pending Shield stays
+/// `Deposited`: the owner may retry or refund.
+#[event]
+pub struct ShieldCreditFailed {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub pending_shield: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_shield` (any signer, after Lock expiry). The Pending
+/// Shield stays `Deposited` and its tokens stay in the vault.
+#[event]
+pub struct ShieldAbandoned {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub pending_shield: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub signer: Pubkey,
+    pub slot: u64,
+}
+
+/// Emitted by `refund_shield`: exactly `amount` moved from `vault` back to
+/// `destination` and the Pending Shield is `Refunded`.
+#[event]
+pub struct ShieldRefunded {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub pending_shield: Pubkey,
+    pub asset: crate::state::ShieldAsset,
+    pub amount: u64,
+    pub vault: Pubkey,
+    pub destination: Pubkey,
+    pub slot: u64,
+}
+
+// ---- Task 5.4: unshield -------------------------------------------------------
+
+/// Emitted by `unshield` when the request was queued. `asset`, `amount`, and
+/// `destination` are public by design (Requirement 5.7): the outgoing SPL
+/// transfer is public. Nothing has moved yet.
+#[event]
+pub struct UnshieldQueued {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub asset: crate::state::ShieldAsset,
+    pub amount: u64,
+    pub destination: Pubkey,
+    pub vault: Pubkey,
+    pub computation_offset: u64,
+    pub position_generation: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `unshield` callback when the circuit approved the request:
+/// exactly `amount` moved from `vault` to `destination` and the new state is
+/// stored. `nonce` is the stored output nonce (little-endian).
+#[event]
+pub struct UnshieldApproved {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub asset: crate::state::ShieldAsset,
+    pub amount: u64,
+    pub vault: Pubkey,
+    pub destination: Pubkey,
+    pub generation: u64,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted by the `unshield` callback when the circuit approved zero
+/// (insufficient free balance). Nothing moved and nothing was stored.
+#[event]
+pub struct UnshieldZero {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub asset: crate::state::ShieldAsset,
+    pub requested_amount: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `unshield` callback when the attempt ended without a
+/// transfer (`Expired`, `Stale`, or `Failed`).
+#[event]
+pub struct UnshieldFailed {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_unshield` (any signer, after Lock expiry).
+#[event]
+pub struct UnshieldAbandoned {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub signer: Pubkey,
+    pub slot: u64,
+}
+
+// ---- Task 5.5: Viewing Key rotation ---------------------------------------------
+
+/// Emitted by `rotate_position_key` when the rotation was queued. The old and
+/// new epochs and public keys are public by design (Requirement 5.11); no
+/// balance is. Nothing has changed yet: the old key stays valid until the
+/// callback applies.
+#[event]
+pub struct ViewingKeyRotationQueued {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub sequence: u64,
+    pub old_epoch: u64,
+    pub new_epoch: u64,
+    pub old_pubkey: [u8; 32],
+    pub new_pubkey: [u8; 32],
+    pub computation_offset: u64,
+    pub position_generation: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `rotate_position_key` callback when the payload, public key,
+/// and epoch changed together. `nonce` is the stored output nonce
+/// (little-endian). This is the production counterpart of the spike's
+/// `ViewingKeyRotated`.
+#[event]
+pub struct ViewingKeyRotationApplied {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub old_epoch: u64,
+    pub new_epoch: u64,
+    pub old_pubkey: [u8; 32],
+    pub new_pubkey: [u8; 32],
+    pub generation: u64,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted by the `rotate_position_key` callback when the attempt ended
+/// without a rotation (`Expired`, `Stale`, or `Failed`). The old key, epoch,
+/// and payload are unchanged.
+#[event]
+pub struct ViewingKeyRotationFailed {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_rotation` (any signer, after Lock expiry).
+#[event]
+pub struct ViewingKeyRotationAbandoned {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub signer: Pubkey,
+    pub slot: u64,
+}

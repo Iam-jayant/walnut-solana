@@ -55,9 +55,9 @@ pub mod state;
 pub mod validation;
 
 pub use caps::{
-    check_caps_bounds, check_count_caps_bounds, decrease_caps, on_position_initialized,
-    reserve_debt_slot, settle_debt_intent, CapCheck, DebtSettlement, DebtSlot, DebtTransition,
-    NewRiskOutcome,
+    check_caps_bounds, check_count_caps_bounds, decrease_caps, on_position_closed,
+    on_position_initialized, reserve_debt_slot, settle_debt_intent, CapCheck, DebtSettlement,
+    DebtSlot, DebtTransition, NewRiskOutcome,
 };
 pub use config::{
     derive_config_proposal_address, ConfigExecution, ConfigGroup, ConfigProposal, ConfigValue,

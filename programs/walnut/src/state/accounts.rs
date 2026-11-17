@@ -2,9 +2,10 @@
 //!
 //! `Position` and `PoolState` are the two accounts the design says carry a
 //! generation and a writer Lock (design: "Position", "Pool State",
-//! "Generations and Locks"). Task 3.1 defines only their coordination layout:
+//! "Generations and Locks"). Task 3.1 defined their coordination layout:
 //! the `owner` identity, the [`Coordination`] field group (generation + Lock),
-//! and the PDA bump. No financial or encrypted fields exist yet.
+//! and the PDA bump. Task 4.1 and Task 5.1 appended the Pool and Position
+//! fields, including their encrypted payloads.
 //!
 //! Later tasks (Position in Task 5, Pool State in Task 4) append their own
 //! fields **after** `coordination` and never reorder or resize the existing
@@ -13,9 +14,14 @@
 //!
 //! Layout (offsets include the 8-byte Anchor discriminator):
 //!
-//! * `Position` (99 bytes): discriminator 0..8, `owner` 8..40, `generation`
+//! * `Position` (437 bytes): discriminator 0..8, `owner` 8..40, `generation`
 //!   40..48, `lock` 48..97, `bump` 97, then the Task 4.5 public `has_debt`
-//!   flag at 98.
+//!   flag at 98, then the Task 5.1 fields: `status` 99, `market` 100..132,
+//!   `viewing_pubkey` 132..164, `viewing_key_epoch` 164..172, `frozen` 172,
+//!   `freeze_epoch` 173..181, `frozen_since_slot` 181..189,
+//!   `next_disclosure_seq` 189..197, `encrypted_state.nonce` 197..213,
+//!   `encrypted_state.ciphertexts` 213..373, then the Task 5.2
+//!   `next_shield_seq` 373..381, `reserved` 381..437.
 //! * `PoolState` (260 bytes): discriminator 0..8, `generation` 8..16, `lock`
 //!   16..65, `bump` 65, then the Task 4.1 fields: `layout_version` 66,
 //!   `status` 67, `market` 68..100, `accounted_borrow_index` 100..116,
@@ -28,7 +34,64 @@ use anchor_lang::prelude::*;
 
 use super::coordination::Coordination;
 
-/// A user Position's coordination layout.
+/// Number of encrypted scalars in the Position payload (`free_sol`,
+/// `free_usdc`, `collateral_sol`, `supply_shares_usdc`, `debt_shares_usdc`).
+/// This is the `N` in Arcium's `SharedEncryptedStruct<N>` for
+/// `Enc<Shared, PositionSecret>` (ADR-0003).
+pub const POSITION_PAYLOAD_FIELDS: usize = 5;
+
+/// Lifecycle of a production Position (Task 5.1). Zeroed data reads as
+/// `Uninitialized`.
+///
+/// Transitions (rules in `state::position`):
+///
+/// ```text
+/// (created) -> Initializing          initialize_position
+/// Initializing -> Active             Applied callback
+/// Initializing -> InitFailed         Stale/Expired/Failed callback, or abandonment
+/// InitFailed -> Initializing         retry_position_init (owner)
+/// InitFailed -> (closed)             close_position (owner)
+/// ```
+#[derive(
+    AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, Debug, Default, PartialEq, Eq,
+)]
+pub enum PositionStatus {
+    /// No user lifecycle. The Recovery Position stays here until its own
+    /// encrypted payload is introduced.
+    #[default]
+    Uninitialized,
+    /// Created; the encrypted zero-state computation is queued.
+    Initializing,
+    /// The encrypted zero state is stored; Position operations may run.
+    Active,
+    /// The initialization attempt ended without storing state. The owner may
+    /// retry or close. Recoverable: the PDA is not consumed.
+    InitFailed,
+}
+
+/// The encrypted Position payload: the nonce and ciphertexts of a
+/// `SharedEncryptedStruct<POSITION_PAYLOAD_FIELDS>` (`Enc<Shared,
+/// PositionSecret>`, the ADR-0003 `EncGroup`). The long-lived encryption key
+/// is stored once as `Position.viewing_pubkey`.
+///
+/// Ciphertext order matches the Arcis `PositionSecret` field order.
+#[derive(
+    AnchorSerialize, AnchorDeserialize, InitSpace, Clone, Copy, Debug, Default, PartialEq, Eq,
+)]
+pub struct EncryptedPositionPayload {
+    /// The MXE output nonce of this revision.
+    pub nonce: u128,
+    /// One 32-byte ciphertext per Position scalar, in payload order. The
+    /// literal length must equal [`POSITION_PAYLOAD_FIELDS`].
+    pub ciphertexts: [[u8; 32]; 5],
+}
+
+/// A production Position (design: "Position").
+///
+/// The Task 3.1 coordination fields and the Task 4.5 `has_debt` flag keep
+/// their offsets; Task 5.1 appends the remaining design fields after
+/// `has_debt`. The design's `next_operation_seq` is the separate per-owner
+/// `OperationCounter` PDA (see `operation::seeds`).
 #[account]
 #[derive(InitSpace)]
 pub struct Position {
@@ -42,11 +105,63 @@ pub struct Position {
     /// changes only through `market::caps::settle_debt_intent`, driven by the
     /// zero/nonzero transition a verified callback reveals; never the amount.
     pub has_debt: bool,
+    /// Lifecycle status (Task 5.1).
+    pub status: PositionStatus,
+    /// The Market this Position belongs to. Part of the PDA seeds.
+    pub market: Pubkey,
+    /// The owner's x25519 Viewing public key; the payload is sealed to it.
+    pub viewing_pubkey: [u8; 32],
+    /// The Viewing Key epoch, starting at zero (Requirement 5.10).
+    pub viewing_key_epoch: u64,
+    /// Public freeze flag (health checks, Task 11).
+    pub frozen: bool,
+    /// Freeze epoch (Task 11).
+    pub freeze_epoch: u64,
+    /// Slot of the current freeze (Task 11).
+    pub frozen_since_slot: u64,
+    /// Next Disclosure sequence (Task 13).
+    pub next_disclosure_seq: u64,
+    /// The `Enc<Shared, PositionSecret>` payload. All zero until `Active`.
+    pub encrypted_state: EncryptedPositionPayload,
+    /// The sequence of this Position's next Pending Shield (Task 5.2). Taken
+    /// from the first 8 reserved bytes, so existing zeroed data reads as 0.
+    /// Advanced only by `state::pending_shield::open_pending_shield`.
+    pub next_shield_seq: u64,
+    /// Reserved for later fields; always zero.
+    pub reserved: [u8; 56],
 }
 
 impl Position {
     /// Account data length including Anchor's 8-byte discriminator.
     pub const ACCOUNT_LEN: usize = 8 + Self::INIT_SPACE;
+
+    /// A Position with every field zero except the ones given.
+    pub fn blank(owner: Pubkey, market: Pubkey, bump: u8) -> Self {
+        Self {
+            owner,
+            coordination: Coordination::default(),
+            bump,
+            has_debt: false,
+            status: PositionStatus::Uninitialized,
+            market,
+            viewing_pubkey: [0; 32],
+            viewing_key_epoch: 0,
+            frozen: false,
+            freeze_epoch: 0,
+            frozen_since_slot: 0,
+            next_disclosure_seq: 0,
+            encrypted_state: EncryptedPositionPayload::default(),
+            next_shield_seq: 0,
+            reserved: [0; 56],
+        }
+    }
+
+    /// The protocol-owned Recovery Position: `owner` is the Market PDA and the
+    /// status stays `Uninitialized` (its encrypted payload arrives with the
+    /// recovery tasks).
+    pub fn recovery(market: Pubkey, bump: u8) -> Self {
+        Self::blank(market, market, bump)
+    }
 }
 
 /// Number of encrypted scalars in the Pool payload (`cash_usdc`,
@@ -163,9 +278,52 @@ mod tests {
 
     #[test]
     fn position_space_is_fixed() {
-        assert_eq!(Position::INIT_SPACE, 32 + 57 + 1 + 1);
-        assert_eq!(Position::INIT_SPACE, 91);
-        assert_eq!(Position::ACCOUNT_LEN, 99);
+        assert_eq!(PositionStatus::INIT_SPACE, 1);
+        assert_eq!(
+            EncryptedPositionPayload::INIT_SPACE,
+            16 + POSITION_PAYLOAD_FIELDS * 32
+        );
+        // ADR-0003: the per-revision payload is 176 bytes.
+        assert_eq!(EncryptedPositionPayload::INIT_SPACE, 176);
+        assert_eq!(
+            POSITION_PAYLOAD_FIELDS,
+            crate::position::POSITION_SECRET_FIELDS
+        );
+        assert_eq!(
+            Position::INIT_SPACE,
+            32 + 57 + 1 + 1 + 1 + 32 + 32 + 8 + 1 + 8 + 8 + 8 + 176 + 8 + 56
+        );
+        assert_eq!(Position::INIT_SPACE, 429);
+        assert_eq!(Position::ACCOUNT_LEN, 437);
+    }
+
+    #[test]
+    fn position_status_tags_are_stable() {
+        let tag = |status: PositionStatus| {
+            let mut bytes = Vec::new();
+            status.serialize(&mut bytes).unwrap();
+            bytes
+        };
+        assert_eq!(tag(PositionStatus::Uninitialized), [0]);
+        assert_eq!(tag(PositionStatus::Initializing), [1]);
+        assert_eq!(tag(PositionStatus::Active), [2]);
+        assert_eq!(tag(PositionStatus::InitFailed), [3]);
+    }
+
+    #[test]
+    fn recovery_position_is_market_owned_and_blank() {
+        let market = Pubkey::new_from_array([0x44; 32]);
+        let recovery = Position::recovery(market, 9);
+        assert_eq!(recovery.owner, market);
+        assert_eq!(recovery.market, market);
+        assert_eq!(recovery.status, PositionStatus::Uninitialized);
+        assert!(!recovery.has_debt);
+        assert_eq!(recovery.coordination, Coordination::default());
+        assert_eq!(
+            recovery.encrypted_state,
+            EncryptedPositionPayload::default()
+        );
+        assert_eq!(recovery.viewing_pubkey, [0; 32]);
     }
 
     #[test]
@@ -185,6 +343,20 @@ mod tests {
             coordination: sample_coordination(),
             bump: 0xFE,
             has_debt: true,
+            status: PositionStatus::InitFailed,
+            market: Pubkey::new_from_array([0x22; 32]),
+            viewing_pubkey: [0x33; 32],
+            viewing_key_epoch: 0x3132_3334_3536_3738,
+            frozen: true,
+            freeze_epoch: 0x4142_4344_4546_4748,
+            frozen_since_slot: 0x5152_5354_5556_5758,
+            next_disclosure_seq: 0x6162_6364_6566_6768,
+            encrypted_state: EncryptedPositionPayload {
+                nonce: 0x7172_7374_7576_7778_797A_7B7C_7D7E_7F80,
+                ciphertexts: [[0x81; 32], [0x82; 32], [0x83; 32], [0x84; 32], [0x85; 32]],
+            },
+            next_shield_seq: 0x9192_9394_9596_9798,
+            reserved: [0; 56],
         };
         let mut bytes = Vec::new();
         position.try_serialize(&mut bytes).unwrap();
@@ -199,6 +371,26 @@ mod tests {
         assert_eq!(read_u64(&bytes, 89), 0x2122_2324_2526_2728);
         assert_eq!(bytes[97], 0xFE);
         assert_eq!(bytes[98], 1, "has_debt");
+        // Task 5.1 fields.
+        assert_eq!(bytes[99], 3, "status");
+        assert_eq!(bytes[100..132], [0x22; 32]);
+        assert_eq!(bytes[132..164], [0x33; 32]);
+        assert_eq!(read_u64(&bytes, 164), 0x3132_3334_3536_3738);
+        assert_eq!(bytes[172], 1, "frozen");
+        assert_eq!(read_u64(&bytes, 173), 0x4142_4344_4546_4748);
+        assert_eq!(read_u64(&bytes, 181), 0x5152_5354_5556_5758);
+        assert_eq!(read_u64(&bytes, 189), 0x6162_6364_6566_6768);
+        assert_eq!(
+            u128::from_le_bytes(bytes[197..213].try_into().unwrap()),
+            position.encrypted_state.nonce
+        );
+        for (index, fill) in [0x81u8, 0x82, 0x83, 0x84, 0x85].iter().enumerate() {
+            let at = 213 + 32 * index;
+            assert_eq!(bytes[at..at + 32], [*fill; 32]);
+        }
+        // Task 5.2 field, taken from the start of the reserved bytes.
+        assert_eq!(read_u64(&bytes, 373), 0x9192_9394_9596_9798);
+        assert_eq!(bytes[381..437], [0u8; 56]);
     }
 
     #[test]

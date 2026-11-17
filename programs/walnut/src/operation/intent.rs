@@ -100,6 +100,8 @@ pub enum OperationKind {
     Health,
     /// Partial liquidation.
     Liquidation,
+    /// Viewing Key rotation (Task 5.5): re-encrypts the Position to a new key.
+    ViewingKeyRotation,
 }
 
 impl OperationKind {
@@ -494,6 +496,7 @@ mod tests {
         assert_eq!(OperationKind::Probe.tag(), 0);
         assert_eq!(OperationKind::Shield.tag(), 2);
         assert_eq!(OperationKind::Liquidation.tag(), 9);
+        assert_eq!(OperationKind::ViewingKeyRotation.tag(), 10);
     }
 
     #[test]

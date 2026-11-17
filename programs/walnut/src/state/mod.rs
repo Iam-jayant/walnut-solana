@@ -10,6 +10,10 @@
 //!   same primitives, so there is one source of truth.
 //! * [`accounts`] holds the production `Position` and `PoolState` accounts
 //!   that carry a `Coordination`.
+//! * [`pending_shield`] holds the Task 5.2 Pending Shield account and its
+//!   pure `Deposited -> Credited | Refunded` state machine.
+//! * [`shield`] holds the Task 5.3 shield, retry, refund, abandonment, and
+//!   `shield_credit` callback rules built on it.
 //!
 //! No financial state (balances, shares, prices, indexes used for value
 //! movement) lives here. The transition logic stays plain Rust so it can be
@@ -18,11 +22,26 @@
 pub mod accounts;
 pub mod coordination;
 pub mod generation;
+pub mod nonce;
+pub mod pending_shield;
+pub mod position;
 pub mod protected;
+pub mod rotation;
+pub mod shield;
+pub mod unshield;
 
-pub use accounts::{EncryptedPoolState, PoolState, PoolStatus, Position, POOL_SECRET_FIELDS};
+// The Task 5.6 balance-layer checkpoint: a model-based test that drives the
+// real shield, unshield, and rotation rules next to a plaintext reference.
+#[cfg(test)]
+mod balance_checkpoint;
+
+pub use accounts::{
+    EncryptedPoolState, EncryptedPositionPayload, PoolState, PoolStatus, Position, PositionStatus,
+    POOL_SECRET_FIELDS, POSITION_PAYLOAD_FIELDS,
+};
 pub use coordination::{Coordination, CoordinationSlot, LockOwner};
 pub use generation::Generation;
+pub use pending_shield::{PendingShield, PendingShieldStatus, ShieldAsset};
 pub use protected::ProtectedAccount;
 
 /// A Solana slot number. Used for Lock expiry and Decision Expiry.

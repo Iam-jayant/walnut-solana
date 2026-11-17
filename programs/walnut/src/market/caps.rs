@@ -402,6 +402,22 @@ pub fn on_position_initialized(market: &mut Market) -> Result<CountChange, Marke
     })
 }
 
+/// A Position PDA was closed (Task 5.1): decrements `position_count`. Every
+/// counted Position was counted once by [`on_position_initialized`], so the
+/// count never underflows; an underflow is rejected. Nothing changes on error.
+pub fn on_position_closed(market: &mut Market) -> Result<CountChange, MarketError> {
+    let old_count = market.position_count;
+    let new_count = old_count
+        .checked_sub(1)
+        .ok_or(MarketError::LifecycleCountOutOfRange)?;
+    market.position_count = new_count;
+    Ok(CountChange {
+        old_count,
+        new_count,
+        cap: market.position_count_cap,
+    })
+}
+
 // ---- Debt-Position count ----------------------------------------------------------
 
 /// Result of [`reserve_debt_slot`].

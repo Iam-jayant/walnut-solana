@@ -4,6 +4,11 @@ use crate::market::MarketError;
 use crate::operation::callback::CallbackError;
 use crate::operation::IntentError;
 use crate::oracle::OracleError;
+use crate::state::pending_shield::PendingShieldError;
+use crate::state::position::PositionError;
+use crate::state::rotation::RotationError;
+use crate::state::shield::ShieldError;
+use crate::state::unshield::UnshieldError;
 use crate::state::CoordinationError;
 
 /// Program errors.
@@ -192,6 +197,208 @@ pub enum ErrorCode {
     LifecycleCountOutOfRange,
     #[msg("The revealed debt transition contradicts the Position or the operation")]
     DebtTransitionMismatch,
+    // ---- Task 5.1: Position initialization (`state::position`) ------------
+    #[msg("The Viewing public key must not be the zero key")]
+    InvalidViewingKey,
+    #[msg("The Position is not initializing")]
+    PositionNotInitializing,
+    #[msg("A Position initialization attempt is still queued")]
+    PositionInitAttemptQueued,
+    #[msg("Only a Position whose initialization failed may retry it")]
+    PositionNotRetryable,
+    #[msg("Only a Position whose initialization failed, without debt, may close")]
+    PositionNotClosable,
+    #[msg("The Operation Intent is not this Position's queued initialization")]
+    PositionInitIntentMismatch,
+    // ---- Task 5.2: Pending Shield (`state::pending_shield`) ---------------
+    #[msg("The shield amount must be nonzero")]
+    PendingShieldZeroAmount,
+    #[msg("The Pending Shield account already holds a shield")]
+    PendingShieldAlreadyExists,
+    #[msg("The shield sequence is not the Position's next shield sequence")]
+    PendingShieldSequenceMismatch,
+    #[msg("The Position shield sequence would overflow")]
+    PendingShieldSequenceOverflow,
+    #[msg("The Position is not the Pending Shield's Position or owner")]
+    PendingShieldPositionMismatch,
+    #[msg("The Position is not active")]
+    PendingShieldPositionNotActive,
+    #[msg("Only the Pending Shield owner may do this")]
+    PendingShieldNotOwner,
+    #[msg("The Pending Shield is not deposited")]
+    PendingShieldNotDeposited,
+    #[msg("The Pending Shield's active credit attempt is still queued")]
+    PendingShieldAttemptQueued,
+    #[msg("The Pending Shield's active credit attempt was applied")]
+    PendingShieldAttemptApplied,
+    #[msg("The Operation Intent is not the Pending Shield's active attempt")]
+    PendingShieldActiveIntentMismatch,
+    #[msg("The attempt Intent does not match the Pending Shield or its Position")]
+    PendingShieldAttemptBindingMismatch,
+    #[msg("The new attempt reuses the active attempt's Operation Intent")]
+    PendingShieldAttemptReused,
+    #[msg("The Pending Shield attempt sequence would overflow")]
+    PendingShieldAttemptOverflow,
+    // ---- Task 5.3: shield instructions (`state::shield`) ------------------
+    #[msg("The mint is not the Market mint of the shield asset")]
+    ShieldMintMismatch,
+    #[msg("The vault is not the Market vault of the shield asset")]
+    ShieldVaultMismatch,
+    #[msg("The source token account must hold the asset mint and be owned by the signer")]
+    ShieldSourceAccountInvalid,
+    #[msg("The refund destination must hold the asset mint and be owned by the shield owner")]
+    ShieldRefundDestinationInvalid,
+    #[msg("The Operation Intent is not this Position's queued shield attempt")]
+    ShieldIntentMismatch,
+    #[msg("The Operation Intent is not the Pending Shield's current attempt")]
+    ShieldAttemptNotCurrent,
+    // ---- Task 5.4: unshield (`state::unshield`) ---------------------------
+    #[msg("The unshield amount must be nonzero")]
+    UnshieldZeroAmount,
+    #[msg("Only the Position owner may unshield")]
+    UnshieldNotOwner,
+    #[msg("The Position is not active")]
+    UnshieldPositionNotActive,
+    #[msg("The mint is not the Market mint of the unshield asset")]
+    UnshieldMintMismatch,
+    #[msg("The vault is not the Market vault of the unshield asset")]
+    UnshieldVaultMismatch,
+    #[msg("The unshield destination must hold the asset mint and be owned by the Position owner")]
+    UnshieldDestinationInvalid,
+    #[msg("The Operation Intent is not this Position's queued unshield")]
+    UnshieldIntentMismatch,
+    #[msg("The approved unshield amount is neither the request nor zero")]
+    UnshieldApprovalInvalid,
+    // ---- Task 5.5: Viewing Key rotation (state::rotation) ---------------
+    #[msg("Only the Position owner may rotate the Viewing Key")]
+    RotationNotOwner,
+    #[msg("The Position is not active")]
+    RotationPositionNotActive,
+    #[msg("The new Viewing public key equals the current one")]
+    RotationKeyUnchanged,
+    #[msg("The expected Viewing Key epochs do not match the Position")]
+    RotationEpochMismatch,
+    #[msg("The expected old Viewing public key does not match the Position")]
+    RotationOldKeyMismatch,
+    #[msg("The Viewing Key epoch cannot be incremented")]
+    RotationEpochOverflow,
+    #[msg("The Operation Intent is not this Position's queued rotation")]
+    RotationIntentMismatch,
+}
+
+impl From<ShieldError> for ErrorCode {
+    fn from(error: ShieldError) -> Self {
+        match error {
+            ShieldError::MintMismatch => ErrorCode::ShieldMintMismatch,
+            ShieldError::VaultMismatch => ErrorCode::ShieldVaultMismatch,
+            ShieldError::SourceAccountInvalid => ErrorCode::ShieldSourceAccountInvalid,
+            ShieldError::RefundDestinationInvalid => ErrorCode::ShieldRefundDestinationInvalid,
+            ShieldError::IntentMismatch => ErrorCode::ShieldIntentMismatch,
+            ShieldError::AttemptNotCurrent => ErrorCode::ShieldAttemptNotCurrent,
+        }
+    }
+}
+
+/// Lets Anchor instructions propagate shield failures with `?`.
+impl From<ShieldError> for anchor_lang::error::Error {
+    fn from(error: ShieldError) -> Self {
+        ErrorCode::from(error).into()
+    }
+}
+
+impl From<UnshieldError> for ErrorCode {
+    fn from(error: UnshieldError) -> Self {
+        match error {
+            UnshieldError::ZeroAmount => ErrorCode::UnshieldZeroAmount,
+            UnshieldError::NotOwner => ErrorCode::UnshieldNotOwner,
+            UnshieldError::PositionNotActive => ErrorCode::UnshieldPositionNotActive,
+            UnshieldError::MintMismatch => ErrorCode::UnshieldMintMismatch,
+            UnshieldError::VaultMismatch => ErrorCode::UnshieldVaultMismatch,
+            UnshieldError::DestinationInvalid => ErrorCode::UnshieldDestinationInvalid,
+            UnshieldError::IntentMismatch => ErrorCode::UnshieldIntentMismatch,
+            UnshieldError::ApprovalInvalid => ErrorCode::UnshieldApprovalInvalid,
+        }
+    }
+}
+
+/// Lets Anchor instructions propagate unshield failures with `?`.
+impl From<UnshieldError> for anchor_lang::error::Error {
+    fn from(error: UnshieldError) -> Self {
+        ErrorCode::from(error).into()
+    }
+}
+
+impl From<RotationError> for ErrorCode {
+    fn from(error: RotationError) -> Self {
+        match error {
+            RotationError::NotOwner => ErrorCode::RotationNotOwner,
+            RotationError::PositionNotActive => ErrorCode::RotationPositionNotActive,
+            RotationError::KeyUnchanged => ErrorCode::RotationKeyUnchanged,
+            RotationError::EpochMismatch => ErrorCode::RotationEpochMismatch,
+            RotationError::OldKeyMismatch => ErrorCode::RotationOldKeyMismatch,
+            RotationError::EpochOverflow => ErrorCode::RotationEpochOverflow,
+            RotationError::IntentMismatch => ErrorCode::RotationIntentMismatch,
+        }
+    }
+}
+
+/// Lets Anchor instructions propagate rotation failures with `?`.
+impl From<RotationError> for anchor_lang::error::Error {
+    fn from(error: RotationError) -> Self {
+        ErrorCode::from(error).into()
+    }
+}
+
+impl From<PendingShieldError> for ErrorCode {
+    fn from(error: PendingShieldError) -> Self {
+        match error {
+            PendingShieldError::ZeroAmount => ErrorCode::PendingShieldZeroAmount,
+            PendingShieldError::AlreadyExists => ErrorCode::PendingShieldAlreadyExists,
+            PendingShieldError::SequenceMismatch => ErrorCode::PendingShieldSequenceMismatch,
+            PendingShieldError::SequenceOverflow => ErrorCode::PendingShieldSequenceOverflow,
+            PendingShieldError::PositionMismatch => ErrorCode::PendingShieldPositionMismatch,
+            PendingShieldError::PositionNotActive => ErrorCode::PendingShieldPositionNotActive,
+            PendingShieldError::NotOwner => ErrorCode::PendingShieldNotOwner,
+            PendingShieldError::NotDeposited => ErrorCode::PendingShieldNotDeposited,
+            PendingShieldError::AttemptQueued => ErrorCode::PendingShieldAttemptQueued,
+            PendingShieldError::AttemptApplied => ErrorCode::PendingShieldAttemptApplied,
+            PendingShieldError::ActiveIntentMismatch => {
+                ErrorCode::PendingShieldActiveIntentMismatch
+            }
+            PendingShieldError::AttemptBindingMismatch => {
+                ErrorCode::PendingShieldAttemptBindingMismatch
+            }
+            PendingShieldError::AttemptReused => ErrorCode::PendingShieldAttemptReused,
+            PendingShieldError::AttemptOverflow => ErrorCode::PendingShieldAttemptOverflow,
+        }
+    }
+}
+
+/// Lets Anchor instructions propagate Pending Shield failures with `?`.
+impl From<PendingShieldError> for anchor_lang::error::Error {
+    fn from(error: PendingShieldError) -> Self {
+        ErrorCode::from(error).into()
+    }
+}
+
+impl From<PositionError> for ErrorCode {
+    fn from(error: PositionError) -> Self {
+        match error {
+            PositionError::InvalidViewingKey => ErrorCode::InvalidViewingKey,
+            PositionError::NotInitializing => ErrorCode::PositionNotInitializing,
+            PositionError::AttemptQueued => ErrorCode::PositionInitAttemptQueued,
+            PositionError::NotRetryable => ErrorCode::PositionNotRetryable,
+            PositionError::NotClosable => ErrorCode::PositionNotClosable,
+            PositionError::IntentMismatch => ErrorCode::PositionInitIntentMismatch,
+        }
+    }
+}
+
+/// Lets Anchor instructions propagate Position lifecycle failures with `?`.
+impl From<PositionError> for anchor_lang::error::Error {
+    fn from(error: PositionError) -> Self {
+        ErrorCode::from(error).into()
+    }
 }
 
 impl From<MarketError> for ErrorCode {
@@ -466,6 +673,131 @@ mod tests {
         assert_eq!(u32::from(ErrorCode::CapChangeNotDecrease), 6084);
         assert_eq!(u32::from(ErrorCode::LifecycleCountOutOfRange), 6085);
         assert_eq!(u32::from(ErrorCode::DebtTransitionMismatch), 6086);
+        // Task 5.1 appends the Position initialization codes.
+        assert_eq!(u32::from(ErrorCode::InvalidViewingKey), 6087);
+        assert_eq!(u32::from(ErrorCode::PositionNotInitializing), 6088);
+        assert_eq!(u32::from(ErrorCode::PositionInitAttemptQueued), 6089);
+        assert_eq!(u32::from(ErrorCode::PositionNotRetryable), 6090);
+        assert_eq!(u32::from(ErrorCode::PositionNotClosable), 6091);
+        assert_eq!(u32::from(ErrorCode::PositionInitIntentMismatch), 6092);
+        // Task 5.2 appends the Pending Shield codes.
+        assert_eq!(u32::from(ErrorCode::PendingShieldZeroAmount), 6093);
+        assert_eq!(u32::from(ErrorCode::PendingShieldAttemptOverflow), 6106);
+        // Task 5.3 appends the shield instruction codes.
+        assert_eq!(u32::from(ErrorCode::ShieldMintMismatch), 6107);
+        assert_eq!(u32::from(ErrorCode::ShieldAttemptNotCurrent), 6112);
+        // Task 5.4 appends the unshield codes.
+        assert_eq!(u32::from(ErrorCode::UnshieldZeroAmount), 6113);
+        assert_eq!(u32::from(ErrorCode::UnshieldApprovalInvalid), 6120);
+        // Task 5.5 appends the rotation codes.
+        assert_eq!(u32::from(ErrorCode::RotationNotOwner), 6121);
+        assert_eq!(u32::from(ErrorCode::RotationIntentMismatch), 6127);
+    }
+
+    #[test]
+    fn shield_errors_map_to_distinct_codes() {
+        let all = [
+            ShieldError::MintMismatch,
+            ShieldError::VaultMismatch,
+            ShieldError::SourceAccountInvalid,
+            ShieldError::RefundDestinationInvalid,
+            ShieldError::IntentMismatch,
+            ShieldError::AttemptNotCurrent,
+        ];
+        let codes: Vec<u32> = all
+            .iter()
+            .map(|error| u32::from(ErrorCode::from(*error)))
+            .collect();
+        let expected: Vec<u32> = (6107..=6112).collect();
+        assert_eq!(codes, expected);
+    }
+
+    #[test]
+    fn rotation_errors_map_to_distinct_codes() {
+        let all = [
+            RotationError::NotOwner,
+            RotationError::PositionNotActive,
+            RotationError::KeyUnchanged,
+            RotationError::EpochMismatch,
+            RotationError::OldKeyMismatch,
+            RotationError::EpochOverflow,
+            RotationError::IntentMismatch,
+        ];
+        let codes: Vec<u32> = all
+            .iter()
+            .map(|error| u32::from(ErrorCode::from(*error)))
+            .collect();
+        let expected: Vec<u32> = (6121..=6127).collect();
+        assert_eq!(codes, expected);
+    }
+
+    #[test]
+    fn unshield_errors_map_to_distinct_codes() {
+        let all = [
+            UnshieldError::ZeroAmount,
+            UnshieldError::NotOwner,
+            UnshieldError::PositionNotActive,
+            UnshieldError::MintMismatch,
+            UnshieldError::VaultMismatch,
+            UnshieldError::DestinationInvalid,
+            UnshieldError::IntentMismatch,
+            UnshieldError::ApprovalInvalid,
+        ];
+        let codes: Vec<u32> = all
+            .iter()
+            .map(|error| u32::from(ErrorCode::from(*error)))
+            .collect();
+        for (index, code) in codes.iter().enumerate() {
+            assert!(!codes[index + 1..].contains(code));
+            assert!((6113..=6120).contains(code));
+        }
+    }
+
+    #[test]
+    fn pending_shield_errors_map_to_distinct_codes() {
+        let all = [
+            PendingShieldError::ZeroAmount,
+            PendingShieldError::AlreadyExists,
+            PendingShieldError::SequenceMismatch,
+            PendingShieldError::SequenceOverflow,
+            PendingShieldError::PositionMismatch,
+            PendingShieldError::PositionNotActive,
+            PendingShieldError::NotOwner,
+            PendingShieldError::NotDeposited,
+            PendingShieldError::AttemptQueued,
+            PendingShieldError::AttemptApplied,
+            PendingShieldError::ActiveIntentMismatch,
+            PendingShieldError::AttemptBindingMismatch,
+            PendingShieldError::AttemptReused,
+            PendingShieldError::AttemptOverflow,
+        ];
+        let codes: Vec<u32> = all
+            .iter()
+            .map(|error| u32::from(ErrorCode::from(*error)))
+            .collect();
+        // Declaration order equals code order.
+        let expected: Vec<u32> = (6093..=6106).collect();
+        assert_eq!(codes, expected);
+    }
+
+    #[test]
+    fn position_errors_map_to_distinct_codes() {
+        let all = [
+            PositionError::InvalidViewingKey,
+            PositionError::NotInitializing,
+            PositionError::AttemptQueued,
+            PositionError::NotRetryable,
+            PositionError::NotClosable,
+            PositionError::IntentMismatch,
+        ];
+        let codes: Vec<u32> = all
+            .iter()
+            .map(|error| u32::from(ErrorCode::from(*error)))
+            .collect();
+        for (index, code) in codes.iter().enumerate() {
+            assert!(!codes[index + 1..].contains(code));
+            assert!((6087..=6092).contains(code));
+        }
     }
 
     #[test]
