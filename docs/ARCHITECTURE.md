@@ -92,12 +92,12 @@ Public versus encrypted fields for every account are tabulated in [PRIVACY_MODEL
 
 | Account                     | Owner of ciphertext     | Created by                          | Purpose                                                                                  |
 | --------------------------- | ----------------------- | ----------------------------------- | ---------------------------------------------------------------------------------------- |
-| Market                      | none                    | `initialize`                        | Authorities, vaults, public counts and count caps, active Asset State.                   |
-| Asset State                 | none                    | `initialize`                        | Risk parameters, accounting Borrow Index, rate epoch, utilization band, caps, pauses.    |
-| Pool State                  | `Enc<Mxe>`              | `initialize`                        | Encrypted USDC Cash, total Supply Shares, total Debt Shares, Reserves.                   |
-| wSOL and USDC vaults        | none                    | `initialize`                        | SPL token accounts with PDA authority. Balances are public.                              |
+| Market                      | none                    | `initialize_market`                 | Authorities, vaults, public counts and count caps, active Asset State.                   |
+| Asset State                 | none                    | `initialize_market`                 | Risk parameters, accounting Borrow Index, rate epoch, utilization band, caps, pauses.    |
+| Pool State                  | `Enc<Mxe>`              | `initialize_market`                 | Encrypted USDC Cash, total Supply Shares, total Debt Shares, Reserves.                   |
+| wSOL and USDC vaults        | none                    | `initialize_market`                 | SPL token accounts with PDA authority. Balances are public.                              |
 | Position                    | `Enc<Shared>`\*         | `init_position` (owner-signed)      | One user's encrypted balances plus public lifecycle fields.                              |
-| Recovery Position           | `Enc<Mxe>`\*            | `initialize`                        | Protocol-owned Position that receives collateral allocated during Absorb.                |
+| Recovery Position           | `Enc<Mxe>`\*            | `initialize_market`                 | Protocol-owned Position that receives collateral allocated during Absorb.                |
 | Operation Intent            | none                    | Every queue instruction             | Captured dependencies, commitments, expiry, and terminal status of one computation.      |
 | Pending Shield              | none                    | `shield`                            | Records a deposit until encrypted credit or refund.                                      |
 | Liquidation Record          | none                    | `open_liquidation` (permissionless) | Lifecycle of one freeze epoch of one Position.                                           |
@@ -106,6 +106,195 @@ Public versus encrypted fields for every account are tabulated in [PRIVACY_MODEL
 | Disclosure                  | `Enc<Shared>` (auditor) | Owner-signed disclosure queue       | Snapshot of owner-selected fields re-encrypted to an auditor key, with binding metadata. |
 
 \* Pending ADR-0003. The Recovery Position's ciphertext mode will be chosen in ADR-0003 together with the user Position layout.
+
+### Market initialization and layouts (Task 4.1)
+
+Code: `programs/walnut/src/market/` (`state.rs` layouts, `validation.rs` pure checks, `mod.rs` seeds), `programs/walnut/src/instructions/initialize_market.rs` (accounts and handler), `PoolState` in `programs/walnut/src/state/accounts.rs`, and the `init_pool_state` circuit in `encrypted-ixs/src/lib.rs`. Offsets are asserted by unit tests next to each struct.
+
+| Account           | Seeds                           | Size (bytes) | Notes                                                                                     |
+| ----------------- | ------------------------------- | ------------ | ----------------------------------------------------------------------------------------- |
+| Market            | `["market"]` (singleton)        | 668          | Authorities, mints, vaults, linked accounts, public counts and count caps, 120 reserved.  |
+| Asset State       | `["asset_state", market]`       | 319          | Generations, Borrow Index (WAD), band, risk/rate params, caps, pauses, timelock.          |
+| Pool State        | `["pool_state", market]`        | 260          | `Coordination` (generation + Lock), status, `accounted_borrow_index`, `Enc<Mxe>` payload. |
+| Vault authority   | `["vault_authority", market]`   | 41           | Owns both vaults and signs vault transfers.                                               |
+| wSOL / USDC vault | `["vault", market, mint]`       | 165          | Classic SPL Token accounts, authority = vault authority.                                  |
+| Recovery Position | `["recovery_position", market]` | 99           | Production `Position` with `owner` = Market PDA. Encrypted fields arrive with Task 5.     |
+
+`initialize_market` checks, in order and before any write: the signer is the program upgrade authority (an immutable program cannot initialize, matching Arcium's MXE rule), risk/treasury/guardian keys are non-zero, both mints are classic SPL Token mints, wSOL is the native mint, USDC is a different 6-decimal mint, and every account is still zeroed. Token-2022 is out of scope: `Program<Token>` and `Account<Mint>` reject it. All accounts use `init_if_needed` so a second call reaches the freshness check and fails with `MarketAlreadyInitialized` (6028); every address is a Walnut PDA, so nobody can pre-create one. Error codes 6026 to 6040 are appended in `errors.rs`.
+
+Risk and rate parameters start at `RiskParams::LAUNCH_DEFAULT` and `RateParams::LAUNCH_DEFAULT`, caps and count caps come from the instruction arguments, pauses start clear, and the timelock delay starts at 48 hours.
+
+The Pool starts `Initializing` with an all-zero payload, because only the MXE can encrypt to itself. The admin queues `queue_pool_state_init`; the `init_pool_state` callback stores the `Enc<Mxe, PoolSecret>` zero payload, sets `Active`, and bumps the Pool generation to 1. Later callbacks are no-ops and later queues fail with `PoolStateNotInitializing`.
+
+Extension points for Tasks 4.2 to 4.5:
+
+- **Roles (4.2):** `Market.admin`, `pending_admin` (all zero = none), `upgrade_authority`, `risk_authority`, `treasury_authority`, `guardian_authority`, `treasury_usdc_account`.
+- **Pauses (4.3):** `AssetState.pauses` with `flags`, `guardian_flags`, `guardian_expiry_slot`; bit constants in `market::pause_flags` follow Requirement 4.7.
+- **Timelocked config (4.4):** `AssetState.generation` (the Asset State generation Intents capture), `risk`, `rates`, `timelock.delay_seconds`, `timelock.next_proposal_id`.
+- **Caps and counts (4.5):** `AssetState.caps`, `Market.position_count`, `debt_position_count`, `unsettled_recovery_claim_count`, `position_count_cap`, `debt_position_count_cap`.
+- **New fields:** take them from the front of the `reserved` tail of Market or Asset State and shrink `reserved` by the same size, so sizes and offsets stay fixed.
+
+### Roles (Task 4.2)
+
+Code: `programs/walnut/src/market/roles.rs` (pure rules and tests) and `programs/walnut/src/instructions/roles.rs` (accounts, handlers, events). Task 4.2 adds no Market fields; it uses the role keys written by `initialize_market`.
+
+Every privileged instruction calls `market::authorize(market, role, signer)`. A signer holds a role only when it equals that role's stored key; a zero key never matches, and no role stands in for another. The admin is the governance root that changes roles, but it does not pass `authorize` for the risk, treasury, guardian, or upgrade roles.
+
+| Instruction                   | Required signer | Effect                                                        | Event                    |
+| ----------------------------- | --------------- | ------------------------------------------------------------- | ------------------------ |
+| `propose_admin(new_admin)`    | admin           | Sets `pending_admin`; a later proposal overwrites it.         | `AdminTransferProposed`  |
+| `accept_admin()`              | pending admin   | `admin = pending_admin`, `pending_admin` cleared.             | `AdminTransferAccepted`  |
+| `cancel_admin_transfer()`     | admin           | Clears `pending_admin` (fails with `NoPendingAdmin` if none). | `AdminTransferCancelled` |
+| `set_risk_authority(new)`     | admin           | Sets `risk_authority`.                                        | `RoleAuthorityChanged`   |
+| `set_treasury_authority(new)` | admin           | Sets `treasury_authority`.                                    | `RoleAuthorityChanged`   |
+| `set_guardian_authority(new)` | admin           | Sets `guardian_authority`.                                    | `RoleAuthorityChanged`   |
+| `set_upgrade_authority(new)`  | admin           | Records `upgrade_authority`; the loader must already name it. | `RoleAuthorityChanged`   |
+
+Every event carries the Market, the old key, the new key, and the slot; `RoleAuthorityChanged` also carries the role and the signer.
+
+Key rules: a new role key must be non-zero, must not be one of the Market's own accounts (Market PDA, vault authority PDA, Asset State, Pool State, Recovery Position, both vaults, the program id), and must differ from its current value. The upgrade, risk, treasury, and guardian authorities must be four different keys (Requirement 4.4); `initialize_market` now checks this too. The admin may share a key with one of them, as it does with the upgrade authority right after initialization.
+
+Multisigs: roles are plain `Pubkey`s and may be Squads vault PDAs, which are off-curve and sign through CPI. The instructions use Anchor's `Signer`, so no on-curve key is required. Mainnet should make the admin, upgrade, and risk keys Squads multisigs.
+
+Upgrade authority: the real authority lives in the BPF upgradeable loader. To rotate it, change it in the loader first (for example from the current Squads multisig), then call `set_upgrade_authority(new)`; it fails with `UpgradeAuthorityMismatch` unless the program-data account names `new`. A frozen (immutable) program cannot be recorded; a later task can add that transition if needed.
+
+Timelock: the design does not place role changes behind the Task 4.4 timelock, so they apply immediately (rationale in [Timelocked configuration](#timelocked-configuration-task-44)). `market::apply_role_change(market, market_key, kind, new_key)` is the validated, unauthorized transition; a timelocked execute instruction would authorize its own proposal and then call it. Error codes 6041 to 6051 are appended in `errors.rs`.
+
+### Pause controls (Task 4.3)
+
+Code: `programs/walnut/src/market/pause.rs` (pure rules and tests) and `programs/walnut/src/instructions/pause.rs` (accounts, handlers, event). The 12-byte `AssetState.pauses` from Task 4.1 is enough, so no layout changed: `flags` holds durable governance pauses, and `guardian_flags` holds guardian pauses that block only while the slot is below `guardian_expiry_slot`.
+
+The ten `pause_flags` bits follow Requirement 4.7 and fall into four classes:
+
+| Class           | Bits                                                | Mask              |
+| --------------- | --------------------------------------------------- | ----------------- |
+| Risk-increasing | `SUPPLY`, `BORROW`, `WITHDRAW_COLLATERAL`, `SHIELD` | `RISK_INCREASING` |
+| Withdrawal      | `WITHDRAW_SUPPLY`, `UNSHIELD`                       | `WITHDRAWAL`      |
+| Settlement      | `LIQUIDATION_START`, `LIQUIDATION_COMPLETE`         | `SETTLEMENT`      |
+| Rescue          | `REPAY`, `ADD_COLLATERAL`                           | `NEVER_PAUSABLE`  |
+
+Rescue bits exist so the ten controls stay distinct, but no instruction may set them (`PauseNotAllowed`) and the check ignores them. Repay, collateral addition, callbacks, Intent abandonment, Pending Shield retry and refund, and Pending Recovery Settlement refund map to no bit, so no pause state can block them (Requirement 4.8).
+
+Operation mapping (`market::pause_category(OperationKind)` and `action_pause_category(Action)`): Shield → `SHIELD`; Unshield → `UNSHIELD`; Supply → `SUPPLY`; WithdrawSupply and reserve withdrawal → `WITHDRAW_SUPPLY`; Borrow → `BORROW`; collateral withdrawal → `WITHDRAW_COLLATERAL`; Health and `open_liquidation` → `LIQUIDATION_START`; Liquidation, `absorb`, and `settle_recovery_claim` → `LIQUIDATION_COMPLETE`. Probe, PositionInit, Viewing Key rotation, and `update_utilization_band` are not pausable. Every future queue instruction calls `market::ensure_not_paused(&asset_state.pauses, category, slot)` (or `ensure_action_allowed`) in queue step 1; callbacks never call it.
+
+| Instruction                         | Signer   | Effect                                      |
+| ----------------------------------- | -------- | ------------------------------------------- |
+| `guardian_pause(flags, duration)`   | guardian | Sets guardian bits until `slot + duration`. |
+| `set_pause(flags, paused)`          | risk     | Sets or clears durable bits.                |
+| `renew_guardian_pause(expiry_slot)` | risk     | Moves the active guardian expiry later.     |
+| `clear_guardian_pause()`            | risk     | Resets guardian bits and expiry to zero.    |
+
+Guardian rules (Requirement 4.9): `1 <= duration <= GUARDIAN_MAX_PAUSE_SLOTS` (216,000 slots, about 24 hours). While a guardian pause is active, another guardian pause adds bits and keeps the expiry. After a guardian pause expires on its own, the guardian must wait `GUARDIAN_PAUSE_COOLDOWN_SLOTS` (9,000 slots, about one hour) past the expiry, so chained pauses cannot become permanent. Only governance (the risk authority) renews, clears, or makes a pause durable; the admin is not an implicit pauser.
+
+Every change emits `PauseUpdated` with the change kind, actor, requested mask, old and new `flags`, `guardian_flags`, and `guardian_expiry_slot`, and the slot. Pauses apply immediately (Requirement 4.5 allows immediate emergency pauses, and the design does not timelock unpausing) and do not bump the Asset State generation, so queued work still completes. The `apply_*` functions in `market::pause` are the validated, unauthorized transitions that a Task 4.4 timelocked execute could call. Error codes 6052 to 6058 are appended in `errors.rs`.
+
+### Timelocked configuration (Task 4.4)
+
+Code: `programs/walnut/src/market/config.rs` (account, bounds, pure transitions, tests) and `programs/walnut/src/instructions/config.rs` (accounts, handlers, events). Market and Asset State layouts are unchanged: proposals live in their own PDAs, and the existing `AssetState.timelock` (`delay_seconds`, `next_proposal_id`) and `AssetState.generation` fields are used as reserved in Task 4.1.
+
+`ConfigProposal` = `PDA["config_proposal", market, id (u64 LE)]`, 372 bytes: layout version, bump, `status` (`Pending`, `Executed`, `Cancelled`), `group` (`Risk`, `Rates`, `Caps`, `TimelockDelay`, and the Task 4.5 `CountCaps`), market, id, proposer, `proposed_at`, `earliest_execute_at`, `expires_at`, `proposal_generation`, `old_values` and `new_values` (fixed 72-byte `ConfigValues` snapshots of all four groups), `resolved_at`, `resolved_by`, `executed_generation`, `old_count_caps` and `new_count_caps` (Task 4.5), and 32 reserved bytes. Snapshots are used instead of a Borsh enum because an enum's encoded length depends on the variant and would move later offsets. Offsets are asserted in `config.rs`.
+
+| Instruction                              | Signer                     | Effect                                                                         | Event                   |
+| ---------------------------------------- | -------------------------- | ------------------------------------------------------------------------------ | ----------------------- |
+| `propose_config_change(id, ConfigValue)` | risk authority (+ payer)   | Validates against the current config, creates the proposal, increments the id. | `ConfigChangeProposed`  |
+| `execute_config_change(id)`              | anyone                     | After the delay, before the grace window ends: writes the group, generation+1. | `ConfigChangeExecuted`  |
+| `cancel_config_change(id)`               | risk authority or guardian | Marks a pending proposal `Cancelled`.                                          | `ConfigChangeCancelled` |
+
+Rules:
+
+- `id` must equal `next_proposal_id`. `earliest_execute_at = proposed_at + delay`. Execution needs `now >= max(earliest_execute_at, proposed_at + current delay)` and `now < expires_at`, where `expires_at = earliest_execute_at + 14 days` (`EXECUTION_GRACE_SECONDS`) is fixed at proposal time; after that a proposal can only be cancelled. A later delay raise therefore cannot reopen an expired proposal (Task 4.6 fix), and because the delay is at most 14 days a raised delay still leaves at least one day to execute.
+- Execution requires the changed group to still hold `old_values` for that group (`ConfigProposalBaseChanged`), so two proposals built on the same risk group cannot silently revert each other. A change to another group does not block it.
+- Bounds, movement, and the cross-bound are checked at proposal time and again at execution against the then-current config. Proposing and cancelling never change configuration or the generation.
+- Execution increments `AssetState.generation` exactly once. Every Intent captures that generation, and the Task 3.3 callback marks it `Stale` with no financial write when it differs. The design does not mark any configuration change as compatible with pending work, so every executed change stales every Intent queued before it. Test: `market::config::tests::executed_change_stales_a_pending_intent_without_moving_value`.
+
+Bounds (basis points unless noted). Every launch default from Task 4.1 is inside them, so no default changed.
+
+| Field                       | Min    | Max     | Max change per execution | Launch |
+| --------------------------- | ------ | ------- | ------------------------ | ------ |
+| `ltv_bps`                   | 1,000  | 8,000   | 500                      | 5,000  |
+| `liquidation_threshold_bps` | 1,000  | 8,500   | 500                      | 6,500  |
+| `liquidation_bonus_bps`     | 100    | 1,500   | 200                      | 500    |
+| `target_health_factor_bps`  | 10,100 | 15,000  | 1,000                    | 11,000 |
+| `close_factor_bps`          | 1,000  | 10,000  | 2,500                    | 5,000  |
+| `reserve_factor_bps`        | 0      | 5,000   | 1,000                    | 1,000  |
+| `oracle_max_age_seconds`    | 5 s    | 300 s   | 60 s                     | 60 s   |
+| `oracle_max_confidence_bps` | 10     | 500     | 100                      | 200    |
+| `decision_expiry_slots`     | 10     | 1,500   | 150                      | 150    |
+| `base_rate_bps`             | 0      | 2,000   | 200                      | 0      |
+| `slope1_bps`                | 0      | 5,000   | 400                      | 400    |
+| `slope2_bps`                | 0      | 50,000  | 5,000                    | 7,500  |
+| `optimal_utilization_bps`   | 5,000  | 9,500   | 1,000                    | 8,000  |
+| `band_max_age_slots`        | 150    | 216,000 | 9,000                    | 9,000  |
+| `timelock.delay_seconds`    | 24 h   | 14 days | any (inside the range)   | 48 h   |
+
+Also `ltv < liquidation_threshold` and `slope1 <= slope2`. Cap bounds and the cap raise limit are Task 4.5 rules; see [Caps and lifecycle counts](#caps-and-lifecycle-counts-task-45). Task 4.5 also adds a fifth group, `CountCaps`, stored in the Market, and two 16-byte proposal fields (`old_count_caps` at 308, `new_count_caps` at 324) taken from the reserved tail, which shrinks to 32 bytes. The proposal size stays 372 bytes, and `execute_config_change` now takes the Market as writable.
+
+Cross-bound (Requirement 4.13), exact integer bps arithmetic with margin `m = 100` bps: `L × (1 + bonus) <= 0.99` and `T >= L × (1 + bonus) + 0.01`. With the bounds above the largest `L × (1 + bonus)` is `0.85 × 1.15 = 0.9775` and the smallest `T` is 1.01, so every in-bounds configuration satisfies it; the check still runs so that a later bound change cannot break it silently.
+
+Role changes stay immediate. Requirement 4.5 timelocks adverse risk changes and upgrades. A role setter changes no risk parameter, cap, or code: whoever holds the risk role still needs this timelock for every parameter change, and the cancellation role can stop it. Upgrades are timelocked at the loader's authority (the Squads multisig, Task 17.3); `set_upgrade_authority` only records what the loader already names. The residual risk is a compromised admin replacing both the risk authority and the guardian; users then still get the full delay to exit, and the admin should itself be a Squads multisig with a time lock (Task 17.3).
+
+Rate changes: once Borrow Index accrual exists (Task 7), executing a `Rates` change must accrue the index at the old rate first, so new rates are not applied to elapsed time. Error codes 6059 to 6070 are appended in `errors.rs`.
+
+### Caps and lifecycle counts (Task 4.5)
+
+Code: `programs/walnut/src/market/caps.rs` (pure rules and tests), `programs/walnut/src/instructions/caps.rs` (`decrease_caps`), the `CountCaps` group in `market/config.rs`, and the localnet test `tests/market-limits.ts`.
+
+Layout changes, all inside fixed sizes: `Market.debt_position_reservations` (u64 at 540) is taken from the reserved tail (now 120 bytes at 548; Market stays 668 bytes). `Position.has_debt` (bool at 98) is appended after `bump` (Position grows from 98 to 99 bytes; no Position other than the Recovery Position exists yet). `ConfigProposal` gains the count-cap fields described above.
+
+Where each cap is checked:
+
+| Cap                       | Compared value                                              | Where                                            | Over the cap                                   |
+| ------------------------- | ----------------------------------------------------------- | ------------------------------------------------ | ---------------------------------------------- |
+| `supply_cap_usdc`         | Encrypted supplier equity after the proposed supply         | Supply circuit                                   | Circuit approves zero                          |
+| `total_debt_cap_usdc`     | Encrypted total debt after the borrow, at the risk index    | Borrow circuit                                   | Circuit approves zero                          |
+| `position_debt_cap_usdc`  | Encrypted Position debt after the borrow, at the risk index | Borrow circuit                                   | Circuit approves zero                          |
+| `position_count_cap`      | `position_count + 1`                                        | Program, when the Position PDA is created        | `PositionCountCapReached` (no Lock exists yet) |
+| `debt_position_count_cap` | `debt_position_count + debt_position_reservations`          | Program, Borrow queue of a Position without debt | Borrow resolves to zero without queueing       |
+
+A value passes when `value <= cap`. `check_supply_cap`, `check_total_debt_cap`, `check_position_debt_cap`, `supply_cap_outcome`, and `borrow_cap_outcome` are the plaintext reference the circuits must match. The queue instruction passes the public caps and the projected risk Borrow Index to the circuit and commits them in `inputs_commitment`; every cap change bumps the Asset State generation, so a computation against old caps resolves `Stale`.
+
+Passive interest: accrual is not an action and never reads a cap, so it cannot fail because of one. `cap_scope` gives a cap check only to Supply, Borrow, and Position creation; Repay, liquidation, Absorb, withdrawals, callbacks, and recovery check none. If interest has moved a value above its cap, `before + amount > cap` holds for every amount, so each new risk-increasing action approves zero. A zero approval classifies `Zero` at the callback and releases the Lock without an error.
+
+Debt-Position count:
+
+1. Borrow queue on a Position with `has_debt == false` calls `reserve_debt_slot`. If `debt_position_count + debt_position_reservations < debt_position_count_cap` one slot is reserved; otherwise the result is `Unavailable` and the borrow resolves to zero without queueing.
+2. Every terminal path of that Intent (`Applied`, `Zero`, `Stale`, `Expired`, `Failed`, abandonment) calls `settle_debt_intent` exactly once. It releases the slot and, only for `Applied`, applies the revealed zero/nonzero transition. `DebtTransition` can only be built from `CallbackDecision::Applied`, so counts never move on client input or a non-applied outcome.
+3. The transition must agree with the public `has_debt` and the action: zero to nonzero only for Borrow, nonzero to zero only for Repay, liquidation, and Absorb. A contradiction fails with `DebtTransitionMismatch` and changes nothing. Overflow and underflow fail with `LifecycleCountOutOfRange`.
+
+The Position is Locked by its Intent, so `has_debt` cannot change between queue and settlement, and "Borrow on a Position without debt" identifies exactly the Intents holding a slot. The Recovery Position is protocol-owned and not counted.
+
+Cap changes:
+
+- **Raises** (any USDC cap or count cap) go only through `propose_config_change` with a `Caps` or `CountCaps` value, because extra room for new risk is an adverse risk change under Requirement 4.5.
+- **Decreases** apply immediately through `decrease_caps(ConfigValue)`, signed by the risk authority. Every field must be at or below its current value and at least one must be lower; anything else fails with `CapChangeNotDecrease`. The guardian cannot call it: its emergency tool is the expiring pause, and a cap decrease does not expire. A decrease bumps the Asset State generation once and emits `CapsDecreased`; a pending proposal for the same group then fails with `ConfigProposalBaseChanged`. A cap below the current count or debt only blocks new risk.
+- **Bounds** (checked at initialization, proposal, execution, and decrease): `position_debt_cap_usdc <= total_debt_cap_usdc <= supply_cap_usdc <= 1,000,000,000 USDC` and `debt_position_count_cap <= position_count_cap <= 1,000,000`.
+- **Raise limit:** one change may raise a cap to at most `max(2 × old, old + floor)`, with floor 100,000 USDC for USDC caps and 100 for count caps.
+
+Events: `CapsDecreased` (emitted now), `PositionCountChanged` and `DebtPositionCountChanged` (defined now, emitted by the Position-initialization and debt callbacks in Tasks 5 and 8 to 10). Error codes 6083 to 6086 are appended in `errors.rs`, after the Task 6 oracle codes.
+
+### Governance test checkpoint (Task 4.6)
+
+Code: `programs/walnut/src/market/governance_tests.rs` (test-only). It drives the real pure transitions of Tasks 4.1 to 4.5 with an independent reference model written from Requirement 4. Signers: admin, pending admin, upgrade, risk, treasury, guardian, an attacker key, a spare key, and an off-curve multisig PDA; role-key candidates add the zero key and the Market PDA. The action alphabet is `propose_admin`, `accept_admin`, `cancel_admin_transfer`, `set_role` (risk, treasury, guardian), `set_upgrade_authority`, `guardian_pause`, `set_pause`, `renew_guardian_pause`, `clear_guardian_pause`, `propose`, `execute`, `cancel`, `decrease_caps`, `on_position_initialized`, `reserve_debt_slot`, `settle_debt_intent` (applied, contradictory, and non-applied outcomes), and time and slot advances, including jumps to `ready - 1`, `ready`, `expires_at - 1`, `expires_at`, the guardian expiry, and the cooldown end.
+
+| Invariant (checked after every step)                                                                                                                                                                                                                                     | Tests                                                                                                                                                                                                                                                                                                                |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Unauthorized access: only the exact role holder succeeds; anyone else gets the role's error and nothing changes. No role stands in for another; an inactive Market authorizes nobody.                                                                                    | `unauthorized_signers_change_nothing_for_every_privileged_action`, `inactive_market_rejects_every_privileged_action`, both `prop_governance_model_*`                                                                                                                                                                 |
+| Timelock bypass: a governed value changes only by executing a pending proposal at `now >= max(earliest_execute_at, proposed_at + current delay)` and `now < expires_at`, or moves down through `decrease_caps`. Final, reused, and base-changed proposals never execute. | `execute_at_earliest_but_not_one_second_before`, `execute_in_last_grace_second_but_not_at_expiry`, `expired_proposal_stays_expired_after_a_delay_raise`, `raising_delay_delays_and_lowering_never_shortens`, `final_reused_and_base_changed_proposals_never_execute`, `cap_decrease_then_raise_needs_the_full_delay` |
+| Pause expiry: an expired guardian pause never blocks; a guardian-only pause lasts at most `GUARDIAN_MAX_PAUSE_SLOTS` and the next one starts at least `GUARDIAN_PAUSE_COOLDOWN_SLOTS` after it ended; rescue actions are never blocked.                                  | `guardian_pause_blocks_before_its_expiry_slot_and_not_at_it`, `guardian_repause_waits_exactly_until_the_cooldown_end`, `rescue_actions_are_never_blocked_by_any_pause_state`, `prop_guardian_only_pauses_never_exceed_max_or_skip_cooldown`                                                                          |
+| Generation invalidation: each execution and each cap decrease bumps the Asset State generation exactly once and an Intent captured before it classifies `Stale(AssetGeneration)` with no value moved; nothing else bumps it.                                             | `only_executions_and_cap_decreases_bump_the_generation`, both `prop_governance_model_*`                                                                                                                                                                                                                              |
+| Cap boundaries: `value == cap` passes, `cap + 1` resolves to zero (never an error); counts stop exactly at their caps; `debt_position_count` equals the Positions with `has_debt`; bound ordering always holds.                                                          | `cap_checks_pass_at_the_cap_and_resolve_to_zero_one_above`, `count_caps_stop_exactly_at_the_cap`, `cap_bounds_accept_exact_edges_and_reject_one_past`, both `prop_governance_model_*`                                                                                                                                |
+| Cross-bound: `L × (1 + bonus) <= 0.99` and `T >= L × (1 + bonus) + 0.01` in exact bps.                                                                                                                                                                                   | `cross_bound_holds_for_every_in_bounds_liquidation_config`, `cross_bound_check_catches_widened_bounds`, `cross_bound_exact_edges`                                                                                                                                                                                    |
+
+`prop_governance_model_random_sequences` runs 1,000 sequences of 80 random steps. `prop_governance_model_exhaustive_short_sequences` primes a Market (two Positions, one with debt; a risk proposal and a delay raise pending; an active guardian pause) and runs all 8,000 sequences of three steps from a 20-step edge alphabet. The whole module runs in about 1.5 s in a debug build.
+
+Findings:
+
+- **Fixed:** `execute` recomputed the deadline as `ready + 14 days` from the current delay, so raising the delay after a proposal had expired made it executable again. It now uses the stored `expires_at`. Regression: `expired_proposal_stays_expired_after_a_delay_raise`; the exhaustive model also caught it.
+- With the current bounds the cross-bound is implied by the field bounds (`0.85 × 1.15 = 0.9775 <= 0.99`, and `T >= 1.01 >= 0.9875`). The check stays as defence in depth; `cross_bound_check_catches_widened_bounds` shows it rejects exactly the violating configurations once the bounds are widened.
+- By design (single guardian expiry): while governance has renewed a guardian pause, the guardian can add bits to it, and they last until the renewed expiry. Governance can clear them at any time.
+- The treasury role has no privileged action yet (reserve withdrawal comes later).
+
+Localnet files `tests/market-{init,limits,pause,roles,timelock}.ts` run alphabetically in one mocha process. Each installs the roles it needs in `before` through the provider wallet, and leaves the provider wallet as admin with no pending admin, no pause, and no pending proposal (`market-roles.ts` also restores the risk, treasury, and guardian keys it started with). `market-init.ts` checks the launch generation, caps, and risk key only on the run that creates the Market.
 
 ### Position encrypted payload (preferred layout)
 
