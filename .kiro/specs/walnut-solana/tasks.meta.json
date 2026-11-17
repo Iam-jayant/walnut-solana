@@ -250,6 +250,106 @@
         "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
         "timestamp": 1794894573277
       }
+    ],
+    "4.1 Implement initialization": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794895740009
+      },
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794898041805
+      }
+    ],
+    "4.2 Implement roles": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794898041954
+      },
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794899116483
+      }
+    ],
+    "4.3 Implement granular pause controls": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794899116920
+      },
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794900134063
+      }
+    ],
+    "4.4 Implement timelocked configuration": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794900134351
+      },
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794903934663
+      }
+    ],
+    "6. Pyth and numeric range safety": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794903935577
+      }
+    ],
+    "6.5 Oracle tests and checkpoint": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794903935720
+      }
+    ],
+    "4.5 Implement on-chain launch caps and public lifecycle counts": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794903935861
+      },
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794906033837
+      }
+    ],
+    "15. Web App and product communication": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794906033932
+      }
+    ],
+    "4.6 Governance tests": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794906034005
+      },
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794907849963
+      }
+    ],
+    "4. Market, governance, caps, and vaults": [
+      {
+        "executionId": "6ff7e35c-4105-4da9-8915-a51f0dd7f10d",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1794907850029
+      }
     ]
   }
 }

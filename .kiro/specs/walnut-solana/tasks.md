@@ -196,31 +196,31 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Run model-based tests over queue, callback, failure, expiry, abandonment, and retry.
     - Prove failed operations move no financial value.
 
-- [ ] 4. Market, governance, caps, and vaults
+- [x] 4. Market, governance, caps, and vaults
 
-  - [ ] 4.1 Implement initialization
+  - [x] 4.1 Implement initialization
     - Create Market, Asset State, Pool State, wSOL vault, USDC vault, vault authority, and Recovery Position.
     - Reject repeat initialization.
     - Validate mint and token-program ownership.
 
-  - [ ] 4.2 Implement roles
+  - [x] 4.2 Implement roles
     - Two-step admin transfer.
     - Separate upgrade, risk, treasury, and guardian roles.
     - Mainnet-compatible multisig addresses.
     - Events for every change.
 
-  - [ ] 4.3 Implement granular pause controls
+  - [x] 4.3 Implement granular pause controls
     - Separate risk-increasing, withdrawal, rescue, and settlement actions.
     - Keep repay, collateral addition, callback completion, and recovery available where safe.
     - Add expiring guardian pauses.
 
-  - [ ] 4.4 Implement timelocked configuration
+  - [x] 4.4 Implement timelocked configuration
     - Propose, wait, execute, and cancel.
     - Increment Asset State generation on execution.
     - Enforce maximum parameter movement and bounds.
     - Invalidate incompatible pending computations.
 
-  - [ ] 4.5 Implement on-chain launch caps and public lifecycle counts
+  - [x] 4.5 Implement on-chain launch caps and public lifecycle counts
     - Supply cap checked against encrypted supplier equity after new supply.
     - Total debt cap checked at projected risk index.
     - Per-Position debt cap checked at projected risk index.
@@ -230,7 +230,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Passive interest may exceed a cap, but new risk then returns zero.
     - Timelocked cap increases.
 
-  - [ ] 4.6 Governance tests
+  - [x] 4.6 Governance tests
     - Unauthorized access.
     - Timelock bypass.
     - Pause expiry.
@@ -291,14 +291,14 @@ Parallelizable task waves (each wave starts after the previous wave completes):
 
 - [ ] 6. Pyth and numeric range safety
 
-  - [ ] 6.1 Implement Pyth validation
+  - [x] 6.1 Implement Pyth validation
     - Receiver owner and feed ID.
     - Age and confidence.
     - Positive value.
     - Exponent and normalization bounds.
     - Conservative low/high prices.
 
-  - [ ] 6.2 Implement anomaly controls
+  - [x] 6.2 Implement anomaly controls
     - Spot-versus-EMA deviation.
     - Last-good observation.
     - Oracle anomaly state and generation increment.
@@ -307,7 +307,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Keep repay and collateral addition available.
     - Resume only after both feeds pass every check in a fresh observation.
 
-  - [ ] 6.3 Commit arithmetic range table
+  - [x] 6.3 Commit arithmetic range table
     - Maximum token balances.
     - Prices and exponents.
     - Indexes and rates.
@@ -316,7 +316,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Collateral and debt values.
     - Liquidation formulas.
 
-  - [ ] 6.4 Implement Pyth SDK flows
+  - [x] 6.4 Implement Pyth SDK flows
     - Same-transaction post-and-use prototype.
     - Two-transaction post-then-use fallback.
     - Choose based on serialized size and reliability.
@@ -652,7 +652,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
 
 - [ ] 15. Web App and product communication
 
-  - [ ] 15.1 Build design system
+  - [x] 15.1 Build design system
     - Next.js App Router, TypeScript, Tailwind v4.
     - Local Telegraf fonts (200, 400, 800) via next/font/local with fallbacks.
     - Measure zama.org's type scale, spacing, grid, component shapes, and motion; record them in `docs/design-tokens.md`; implement as `@theme` tokens with the palette #FFD209, #000000, #2D2D2D, #F4F4F4, #FFFFFF.
