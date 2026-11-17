@@ -26,6 +26,32 @@
 //! No value here is a tunable parameter; these are invariants of the number
 //! system. Governed risk parameters live in [`crate::market`].
 
+pub mod checkpoint;
+pub mod fixed;
+pub mod rate;
+
+/// Deterministic linear-congruential sampler for the `prop_*` tests (the
+/// workspace has no property-testing crate).
+#[cfg(test)]
+pub(crate) struct Lcg(pub u64);
+
+#[cfg(test)]
+impl Lcg {
+    pub fn next(&mut self) -> u64 {
+        self.0 = self
+            .0
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        self.0 >> 11
+    }
+
+    /// Uniform-ish value in `0..n` (`n > 0`), up to 128 bits.
+    pub fn u128_below(&mut self, n: u128) -> u128 {
+        let wide = ((self.next() as u128) << 64) ^ ((self.next() as u128) << 11) ^ self.next() as u128;
+        wide % n
+    }
+}
+
 /// WAD fixed-point scale of the Borrow Index (1.0 = 10^18). Re-exported from
 /// [`crate::market::WAD`] so the range proofs and the index domain agree.
 pub const WAD: u128 = crate::market::WAD;
