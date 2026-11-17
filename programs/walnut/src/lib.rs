@@ -6,6 +6,11 @@
 //! Position state spike (`init_position` / `apply_position_delta`). No Walnut
 //! financial logic is added until the Arcium feasibility gate (Task 2) passes.
 //!
+//! Task 4.1 adds the first production instructions: `initialize_market` and
+//! the `init_pool_state` computation that seals the zero Pool payload. Task
+//! 4.2 adds the role instructions (two-step admin transfer and the separated
+//! upgrade, risk, treasury, and guardian authorities).
+//!
 //! Module directories reserved by the design: `state/`, `instructions/`,
 //! `math/`, `oracle/`, `operation/`, `lock/`.
 
@@ -30,6 +35,24 @@ pub mod lock;
 pub mod operation;
 pub mod state;
 
+// Task 4: Market, Asset State, vaults, and governance. Account layouts and
+// pure validation live in `market/`; instruction account structs in
+// `instructions/` (glob re-exported so the program macro finds them).
+pub mod instructions;
+pub mod market;
+
+// Task 6: the committed arithmetic range table (`math/`) and Pyth oracle
+// validation plus anomaly controls (`oracle/`). Both are pure, host-tested
+// logic the price-sensitive instructions (Task 9+) build on.
+pub mod math;
+pub mod oracle;
+
+pub use instructions::caps::*;
+pub use instructions::config::*;
+pub use instructions::initialize_market::*;
+pub use instructions::pause::*;
+pub use instructions::roles::*;
+
 // Task 2.2 Arcium feasibility gate: persistent encrypted Position state. This
 // account-backed module proves the complete encrypted Position payload can be
 // stored, reread by a later computation, updated, and locally decrypted. It is
@@ -38,10 +61,12 @@ pub mod position;
 
 use errors::ErrorCode;
 use events::{
-    LiquidationReceiptsEmitted, OversizedOutputEmitted, PositionStateStored, SumEvent,
-    ViewingKeyRotated,
+    LiquidationReceiptsEmitted, OversizedOutputEmitted, PoolStateActivated, PositionStateStored,
+    SumEvent, ViewingKeyRotated,
 };
+use market::{check_pool_initializing, Market, MARKET_SEED, POOL_STATE_SEED};
 use position::{EncryptedPositionState, SpikePosition, POSITION_SECRET_FIELDS};
+use state::{EncryptedPoolState, PoolState};
 
 const COMP_DEF_OFFSET_ADD_TOGETHER: u32 = comp_def_offset("add_together");
 const COMP_DEF_OFFSET_INIT_POSITION: u32 = comp_def_offset("init_position");
@@ -49,6 +74,7 @@ const COMP_DEF_OFFSET_APPLY_POSITION_DELTA: u32 = comp_def_offset("apply_positio
 const COMP_DEF_OFFSET_LIQUIDATION_RECEIPTS: u32 = comp_def_offset("liquidation_receipts");
 const COMP_DEF_OFFSET_ROTATE_VIEWING_KEY: u32 = comp_def_offset("rotate_viewing_key");
 const COMP_DEF_OFFSET_OVERSIZED_OUTPUT: u32 = comp_def_offset("oversized_output");
+const COMP_DEF_OFFSET_INIT_POOL_STATE: u32 = comp_def_offset("init_pool_state");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -643,6 +669,288 @@ pub mod walnut {
         });
         Ok(())
     }
+
+    // ---- Task 4.1: market initialization ----------------------------------
+
+    /// Creates the Market, Asset State, Pool State (`Initializing`), vault
+    /// authority, wSOL and USDC vaults, and Recovery Position. Only the
+    /// program upgrade authority may call it, and only once.
+    pub fn initialize_market(
+        ctx: Context<InitializeMarket>,
+        args: InitializeMarketArgs,
+    ) -> Result<()> {
+        initialize_market_handler(ctx, args)
+    }
+
+    // ---- Task 4.2: roles ------------------------------------------------------
+
+    /// Admin-signed: names `new_admin` as pending admin (overwrites any
+    /// earlier proposal).
+    pub fn propose_admin(ctx: Context<ProposeAdmin>, new_admin: Pubkey) -> Result<()> {
+        propose_admin_handler(ctx, new_admin)
+    }
+
+    /// Pending-admin-signed: becomes admin and clears the pending admin.
+    pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
+        accept_admin_handler(ctx)
+    }
+
+    /// Admin-signed: clears the pending admin.
+    pub fn cancel_admin_transfer(ctx: Context<CancelAdminTransfer>) -> Result<()> {
+        cancel_admin_transfer_handler(ctx)
+    }
+
+    /// Admin-signed: sets the risk authority.
+    pub fn set_risk_authority(ctx: Context<SetRoleAuthority>, new_authority: Pubkey) -> Result<()> {
+        set_role_authority_handler(ctx, market::RoleKind::Risk, new_authority)
+    }
+
+    /// Admin-signed: sets the treasury authority.
+    pub fn set_treasury_authority(
+        ctx: Context<SetRoleAuthority>,
+        new_authority: Pubkey,
+    ) -> Result<()> {
+        set_role_authority_handler(ctx, market::RoleKind::Treasury, new_authority)
+    }
+
+    /// Admin-signed: sets the guardian authority.
+    pub fn set_guardian_authority(
+        ctx: Context<SetRoleAuthority>,
+        new_authority: Pubkey,
+    ) -> Result<()> {
+        set_role_authority_handler(ctx, market::RoleKind::Guardian, new_authority)
+    }
+
+    /// Admin-signed: records the program upgrade authority after it was
+    /// rotated in the loader. The program-data account must name it.
+    pub fn set_upgrade_authority(
+        ctx: Context<SetUpgradeAuthority>,
+        new_authority: Pubkey,
+    ) -> Result<()> {
+        set_upgrade_authority_handler(ctx, new_authority)
+    }
+
+    /// Guardian-signed: pauses the `market::pause_flags` bits in `flags` for
+    /// `duration_slots` (at most `GUARDIAN_MAX_PAUSE_SLOTS`). Repay and
+    /// collateral addition cannot be paused.
+    pub fn guardian_pause(
+        ctx: Context<UpdatePause>,
+        flags: u16,
+        duration_slots: u64,
+    ) -> Result<()> {
+        guardian_pause_handler(ctx, flags, duration_slots)
+    }
+
+    /// Risk-authority-signed: sets (`paused`) or clears durable pause bits.
+    pub fn set_pause(ctx: Context<UpdatePause>, flags: u16, paused: bool) -> Result<()> {
+        set_pause_handler(ctx, flags, paused)
+    }
+
+    /// Risk-authority-signed: extends the active guardian pause.
+    pub fn renew_guardian_pause(ctx: Context<UpdatePause>, new_expiry_slot: u64) -> Result<()> {
+        renew_guardian_pause_handler(ctx, new_expiry_slot)
+    }
+
+    /// Risk-authority-signed: clears every guardian pause.
+    pub fn clear_guardian_pause(ctx: Context<UpdatePause>) -> Result<()> {
+        clear_guardian_pause_handler(ctx)
+    }
+
+    // ---- Task 4.4: timelocked configuration ----------------------------------
+
+    /// Risk-authority-signed: proposes one configuration group change.
+    /// `proposal_id` must be `asset_state.timelock.next_proposal_id`.
+    pub fn propose_config_change(
+        ctx: Context<ProposeConfigChange>,
+        proposal_id: u64,
+        change: market::ConfigValue,
+    ) -> Result<()> {
+        propose_config_change_handler(ctx, proposal_id, change)
+    }
+
+    /// Permissionless: executes a pending proposal after the timelock delay
+    /// and before its grace window ends; bumps the Asset State generation.
+    pub fn execute_config_change(
+        ctx: Context<ExecuteConfigChange>,
+        proposal_id: u64,
+    ) -> Result<()> {
+        execute_config_change_handler(ctx, proposal_id)
+    }
+
+    /// Risk-authority- or guardian-signed: cancels a pending proposal.
+    pub fn cancel_config_change(ctx: Context<CancelConfigChange>, proposal_id: u64) -> Result<()> {
+        cancel_config_change_handler(ctx, proposal_id)
+    }
+
+    /// Risk-authority-signed (Task 4.5): lowers the USDC caps or the count
+    /// caps immediately and bumps the Asset State generation. Raises need
+    /// `propose_config_change`.
+    pub fn decrease_caps(ctx: Context<DecreaseCaps>, change: market::ConfigValue) -> Result<()> {
+        decrease_caps_handler(ctx, change)
+    }
+
+    /// Registers the `init_pool_state` computation definition with the MXE.
+    pub fn init_pool_state_comp_def(ctx: Context<InitPoolStateCompDef>) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Queues `init_pool_state`, which seals the all-zero Pool payload to the
+    /// MXE. Admin-only and only while the Pool is `Initializing`. Re-queueing
+    /// after a failed computation is allowed; the first authenticated callback
+    /// activates the Pool and later ones are no-ops.
+    pub fn queue_pool_state_init(
+        ctx: Context<QueuePoolStateInit>,
+        computation_offset: u64,
+    ) -> Result<()> {
+        check_pool_initializing(ctx.accounts.pool_state.status)?;
+        let pool_key = ctx.accounts.pool_state.key();
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+
+        // `init_pool_state()` takes no arguments.
+        let args = ArgBuilder::new().build();
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![InitPoolStateCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &[CallbackAccount {
+                    pubkey: pool_key,
+                    is_writable: true,
+                }],
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Stores the encrypted zero Pool payload and activates the Pool. A
+    /// callback for an already active Pool returns without writing.
+    #[arcium_callback(encrypted_ix = "init_pool_state")]
+    pub fn init_pool_state_callback(
+        ctx: Context<InitPoolStateCallback>,
+        output: SignedComputationOutputs<InitPoolStateOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(InitPoolStateOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::AbortedComputation.into()),
+        };
+
+        let pool_key = ctx.accounts.pool_state.key();
+        let activated = ctx.accounts.pool_state.activate(EncryptedPoolState {
+            nonce: o.nonce,
+            ciphertexts: o.ciphertexts,
+        })?;
+        if activated {
+            emit!(PoolStateActivated {
+                pool_state: pool_key,
+                generation: ctx.accounts.pool_state.coordination.generation,
+                nonce: o.nonce.to_le_bytes(),
+            });
+        }
+        Ok(())
+    }
+}
+
+// ---- Task 4.1: Pool State initialization accounts --------------------------
+
+#[queue_computation_accounts("init_pool_state", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64)]
+pub struct QueuePoolStateInit<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(
+        init_if_needed,
+        space = 9,
+        payer = payer,
+        seeds = [&SIGN_PDA_SEED],
+        bump,
+        address = derive_sign_pda!(),
+    )]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_INIT_POOL_STATE))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    #[account(
+        seeds = [MARKET_SEED],
+        bump = market.bump,
+        constraint = market.admin == payer.key() @ ErrorCode::NotMarketAdmin,
+    )]
+    pub market: Box<Account<'info, Market>>,
+    #[account(
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("init_pool_state")]
+#[derive(Accounts)]
+pub struct InitPoolStateCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_INIT_POOL_STATE))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(
+        mut,
+        seeds = [POOL_STATE_SEED, pool_state.market.as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+}
+
+#[init_computation_definition_accounts("init_pool_state", payer)]
+#[derive(Accounts)]
+pub struct InitPoolStateCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
 }
 
 #[queue_computation_accounts("add_together", payer)]

@@ -46,6 +46,11 @@ use arcis::*;
 ///   cannot fit a single callback transaction, forcing the `OutputTooLarge`
 ///   failure path (Requirement 2.4). It carries no financial logic.
 ///
+/// Task 4.1 adds the first production circuit:
+///
+/// * `init_pool_state` seals the all-zero `PoolSecret` to the MXE so the USDC
+///   Pool State starts with a valid `Enc<Mxe>` payload.
+///
 /// Nonce note for ADR-0003: the MXE derives each output nonce as the owning
 /// input's nonce + 1 (Arcium encryption docs). Clients therefore MUST pick a
 /// fresh random 16-byte nonce per encryption and never pick sequential nonces
@@ -209,5 +214,35 @@ mod circuits {
     pub fn oversized_output(input: Enc<Shared, u64>) -> Enc<Shared, [u64; 48]> {
         let v = input.to_arcis();
         input.owner.from_arcis([v; 48])
+    }
+
+    // ---- Task 4.1: Pool State initialization ------------------------------
+
+    /// The encrypted USDC Pool payload (design: `PoolSecret`).
+    ///
+    /// Field order is the canonical ciphertext order stored in
+    /// `PoolState.encrypted.ciphertexts`.
+    #[derive(Copy, Clone)]
+    pub struct PoolSecret {
+        cash_usdc: u128,
+        total_supply_shares: u128,
+        total_debt_shares: u128,
+        reserves_usdc: u128,
+    }
+
+    /// Produces the all-zero Pool payload sealed to the MXE (`Enc<Mxe>`).
+    ///
+    /// No client can encrypt to the MXE, so `initialize_market` leaves the Pool
+    /// `Initializing` and this computation creates the first payload. It takes
+    /// no input and reveals nothing.
+    #[instruction]
+    pub fn init_pool_state() -> Enc<Mxe, PoolSecret> {
+        let zero = PoolSecret {
+            cash_usdc: 0,
+            total_supply_shares: 0,
+            total_debt_shares: 0,
+            reserves_usdc: 0,
+        };
+        Mxe::get().from_arcis(zero)
     }
 }

@@ -20,7 +20,7 @@ pub mod coordination;
 pub mod generation;
 pub mod protected;
 
-pub use accounts::{PoolState, Position};
+pub use accounts::{EncryptedPoolState, PoolState, PoolStatus, Position, POOL_SECRET_FIELDS};
 pub use coordination::{Coordination, CoordinationSlot, LockOwner};
 pub use generation::Generation;
 pub use protected::ProtectedAccount;
