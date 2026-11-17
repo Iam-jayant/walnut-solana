@@ -274,12 +274,9 @@ pub fn initialize_market_handler(
         bump: bumps.vault_authority,
     });
 
-    accounts.recovery_position.set_inner(Position {
-        owner: market_key,
-        coordination: Coordination::default(),
-        bump: bumps.recovery_position,
-        has_debt: false,
-    });
+    accounts
+        .recovery_position
+        .set_inner(Position::recovery(market_key, bumps.recovery_position));
 
     emit!(MarketInitialized {
         market: market_key,

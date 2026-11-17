@@ -10,4 +10,8 @@ pub mod caps;
 pub mod config;
 pub mod initialize_market;
 pub mod pause;
+pub mod position;
 pub mod roles;
+pub mod rotation;
+pub mod shield;
+pub mod unshield;
