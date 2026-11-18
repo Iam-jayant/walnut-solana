@@ -7,7 +7,7 @@ import {
   accruedSupply,
   borrowAprBps,
   INDEX_SCALE,
-  projectIndexes,
+  projectIndexesAuto,
   supplyApyBps,
   utilizationBps,
   type PositionBalances,
@@ -34,9 +34,10 @@ export function indexesAt(
   if (protocol === null) return stored;
   try {
     const now = Math.max(nowSeconds, Number(pool.lastAccrualTs));
-    const p = projectIndexes(pool, now, {
+    const p = projectIndexesAuto(pool, now, {
       reserveFactorBps: protocol.reserveFactorBps,
       rates: protocol.rates,
+      band: lending.band,
     });
     return { borrow: p.borrowIndex1e9, supply: p.supplyIndex1e9 };
   } catch {
