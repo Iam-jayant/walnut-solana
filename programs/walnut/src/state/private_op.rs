@@ -910,4 +910,441 @@ mod tests {
             .iter()
             .all(|f| f.id != super::super::shield::INPUT_AMOUNT));
     }
+
+    // ---- Lifecycle (task P.8): queue, callback and abandonment ------------
+
+    use crate::state::nonce::output_nonce;
+    use crate::state::test_fixtures::{key, market, pool, position, MARKET, OWNER, POOL, POSITION};
+
+    const LIQ_OWNER: u8 = 0x12;
+    const LIQ_POSITION: u8 = 0x24;
+    const LENDING: u8 = 0x49;
+
+    struct World {
+        market: Market,
+        pool: PoolState,
+        position: Position,
+        liquidator: Position,
+        counter: OperationCounter,
+    }
+
+    fn world(kind: OperationKind) -> World {
+        let mut liquidator = position();
+        liquidator.owner = key(LIQ_OWNER);
+        liquidator.viewing_pubkey = [0x44; 32];
+        liquidator.encrypted_state.nonce = 900;
+        liquidator.coordination.generation = 11;
+        let payer = if kind == OperationKind::LiquidatePool {
+            LIQ_OWNER
+        } else {
+            OWNER
+        };
+        World {
+            market: market(),
+            pool: pool(),
+            position: position(),
+            liquidator,
+            counter: OperationCounter::new(key(payer), 255),
+        }
+    }
+
+    fn keys(w: &World, kind: OperationKind, captured: bool) -> PrivateKeys {
+        let g = |v: u64| if captured { Some(v) } else { None };
+        let liquidation = kind == OperationKind::LiquidatePool;
+        PrivateKeys {
+            payer: key(if liquidation { LIQ_OWNER } else { OWNER }),
+            market: key(MARKET),
+            asset_state: w.market.asset_state,
+            lending_pool: key(LENDING),
+            pool: (kind != OperationKind::PositionPrivate)
+                .then(|| (key(POOL), g(w.pool.coordination.generation))),
+            position: (
+                key(POSITION),
+                w.position.owner,
+                g(w.position.coordination.generation),
+            ),
+            second: liquidation.then(|| {
+                (
+                    key(LIQ_POSITION),
+                    w.liquidator.owner,
+                    g(w.liquidator.coordination.generation),
+                )
+            }),
+        }
+    }
+
+    fn params(op: u64) -> PrivateParams {
+        PrivateParams {
+            op,
+            supply_index_1e9: 1_000_000_000,
+            borrow_index_1e9: 1_000_000_000,
+            price: 100_000_000,
+            ltv_bps: 5_000,
+            liq_threshold_bps: 6_500,
+            bonus_bps: 500,
+            position_debt_cap: 1_000_000,
+            supply_cap: u64::MAX,
+        }
+    }
+
+    fn queue(w: &mut World, kind: OperationKind, op: u64) -> Result<OperationIntent, ErrorCode> {
+        let k = keys(w, kind, true);
+        let request = PrivateRequest {
+            kind,
+            intent_key: key(0x70),
+            sequence: 0,
+            computation_offset: 4_242,
+            queued_slot: 100,
+            params: params(op),
+            publish_time: None,
+        };
+        let has_pool = kind != OperationKind::PositionPrivate;
+        let liquidation = kind == OperationKind::LiquidatePool;
+        queue_private(
+            &w.market,
+            &k,
+            has_pool.then_some(&mut w.pool),
+            &mut w.position,
+            liquidation.then_some(&mut w.liquidator),
+            &mut w.counter,
+            &request,
+        )
+    }
+
+    fn sealed(viewing: [u8; 32], position_key: u8, sequence: u64) -> SealedPosition {
+        SealedPosition {
+            encryption_key: viewing,
+            nonce: output_nonce(&key(position_key), sequence),
+            ciphertexts: [[position_key; 32]; 5],
+        }
+    }
+
+    fn report(w: &World, intent: &OperationIntent, applied: bool) -> PrivateReport {
+        let kind = intent.kind;
+        PrivateReport {
+            output_authenticated: true,
+            computation_offset: intent.computation_offset,
+            intent_key: intent.key,
+            pool_output: (kind != OperationKind::PositionPrivate).then_some(EncryptedPoolState {
+                nonce: 999,
+                ciphertexts: [[9; 32]; 4],
+            }),
+            primary: sealed(w.position.viewing_pubkey, POSITION, intent.sequence),
+            second: (kind == OperationKind::LiquidatePool)
+                .then(|| sealed(w.liquidator.viewing_pubkey, LIQ_POSITION, intent.sequence)),
+            applied,
+            current_slot: intent.queued_slot + 10,
+        }
+    }
+
+    fn settle(
+        w: &mut World,
+        intent: &mut OperationIntent,
+        r: &PrivateReport,
+    ) -> Result<Option<IntentStatus>, ErrorCode> {
+        let kind = intent.kind;
+        let k = keys(w, kind, false);
+        let has_pool = kind != OperationKind::PositionPrivate;
+        let liquidation = kind == OperationKind::LiquidatePool;
+        settle_private(
+            &k,
+            has_pool.then_some(&mut w.pool),
+            &mut w.position,
+            liquidation.then_some(&mut w.liquidator),
+            intent,
+            kind,
+            r,
+        )
+    }
+
+    fn abandon(
+        w: &mut World,
+        intent: &mut OperationIntent,
+        slot: Slot,
+    ) -> Result<usize, ErrorCode> {
+        let kind = intent.kind;
+        let k = keys(w, kind, false);
+        let has_pool = kind != OperationKind::PositionPrivate;
+        let liquidation = kind == OperationKind::LiquidatePool;
+        abandon_private(
+            &k,
+            has_pool.then_some(&mut w.pool),
+            &mut w.position,
+            liquidation.then_some(&mut w.liquidator),
+            intent,
+            slot,
+        )
+    }
+
+    const KINDS: [(OperationKind, u64); 3] = [
+        (OperationKind::PoolOp, POOL_BORROW),
+        (OperationKind::PositionPrivate, COLLATERAL_WITHDRAW),
+        (OperationKind::LiquidatePool, 0),
+    ];
+
+    #[test]
+    fn queue_locks_every_protected_account_and_binds_the_params() {
+        for (kind, op) in KINDS {
+            let mut w = world(kind);
+            let intent = queue(&mut w, kind, op).unwrap();
+            assert_eq!(intent.kind, kind);
+            assert_eq!(intent.position, Some(key(POSITION)));
+            assert_eq!(PrivateParams::from_intent(&intent), params(op));
+            assert_eq!(w.counter.next_sequence, 1);
+            assert!(intent.lock_owner().holds(&w.position.coordination.lock));
+            let pool_locked = intent.lock_owner().holds(&w.pool.coordination.lock);
+            assert_eq!(pool_locked, kind != OperationKind::PositionPrivate);
+            let second_locked = intent.lock_owner().holds(&w.liquidator.coordination.lock);
+            assert_eq!(second_locked, kind == OperationKind::LiquidatePool);
+            assert_eq!(
+                intent.second_position,
+                (kind == OperationKind::LiquidatePool).then(|| key(LIQ_POSITION))
+            );
+        }
+    }
+
+    #[test]
+    fn queue_rejections_change_nothing() {
+        // A second operation while the first holds the Locks.
+        let mut w = world(OperationKind::PoolOp);
+        queue(&mut w, OperationKind::PoolOp, POOL_SUPPLY).unwrap();
+        let (pool, position, counter) = (w.pool.coordination, w.position.coordination, w.counter);
+        assert!(queue(&mut w, OperationKind::PoolOp, POOL_SUPPLY).is_err());
+        assert_eq!(
+            (
+                w.pool.coordination,
+                w.position.coordination,
+                w.counter.next_sequence
+            ),
+            (pool, position, counter.next_sequence)
+        );
+
+        // Not the owner.
+        let mut w = world(OperationKind::PoolOp);
+        w.position.owner = key(0x99);
+        assert_eq!(
+            queue(&mut w, OperationKind::PoolOp, POOL_SUPPLY),
+            Err(ErrorCode::PositionOpNotOwner)
+        );
+        assert!(!w.pool.coordination.lock.is_active());
+
+        // Unknown op, inactive Position, paused Market.
+        let mut w = world(OperationKind::PoolOp);
+        assert_eq!(
+            queue(&mut w, OperationKind::PoolOp, 4),
+            Err(ErrorCode::PrivateOpInvalid)
+        );
+        w.position.status = PositionStatus::Initializing;
+        assert!(queue(&mut w, OperationKind::PoolOp, POOL_SUPPLY).is_err());
+        let mut w = world(OperationKind::PoolOp);
+        w.market.status = MarketStatus::Uninitialized;
+        assert_eq!(
+            queue(&mut w, OperationKind::PoolOp, POOL_SUPPLY),
+            Err(ErrorCode::MarketNotActive)
+        );
+        assert_eq!(w.counter.next_sequence, 0);
+
+        // A liquidator cannot target its own Position.
+        let mut w = world(OperationKind::LiquidatePool);
+        w.position.owner = key(LIQ_OWNER);
+        assert_eq!(
+            queue(&mut w, OperationKind::LiquidatePool, 0),
+            Err(ErrorCode::PrivateLiquidationSelf)
+        );
+        assert!(!w.liquidator.coordination.lock.is_active());
+    }
+
+    #[test]
+    fn applied_stores_every_payload_bumps_every_generation_and_releases_locks() {
+        for (kind, op) in KINDS {
+            let mut w = world(kind);
+            let mut intent = queue(&mut w, kind, op).unwrap();
+            let gens = (
+                w.pool.coordination.generation,
+                w.position.coordination.generation,
+                w.liquidator.coordination.generation,
+            );
+            let r = report(&w, &intent, true);
+            assert_eq!(
+                settle(&mut w, &mut intent, &r),
+                Ok(Some(IntentStatus::Applied))
+            );
+            assert_eq!(w.position.encrypted_state.nonce, r.primary.nonce);
+            assert_eq!(
+                w.position.encrypted_state.ciphertexts,
+                r.primary.ciphertexts
+            );
+            assert_eq!(w.position.coordination.generation, gens.1 + 1);
+            assert!(!w.position.coordination.lock.is_active());
+            if kind != OperationKind::PositionPrivate {
+                assert_eq!(w.pool.encrypted, r.pool_output.unwrap());
+                assert_eq!(w.pool.coordination.generation, gens.0 + 1);
+                assert!(!w.pool.coordination.lock.is_active());
+            } else {
+                assert_eq!(w.pool.coordination.generation, gens.0);
+            }
+            if kind == OperationKind::LiquidatePool {
+                let second = r.second.unwrap();
+                assert_eq!(w.liquidator.encrypted_state.nonce, second.nonce);
+                assert_eq!(w.liquidator.coordination.generation, gens.2 + 1);
+                assert!(!w.liquidator.coordination.lock.is_active());
+            }
+            // A late repeat of the callback is ignored.
+            assert_eq!(settle(&mut w, &mut intent, &r), Ok(None));
+        }
+    }
+
+    #[test]
+    fn refused_stores_nothing_and_releases_locks() {
+        for (kind, op) in KINDS {
+            let mut w = world(kind);
+            let before = (w.position.encrypted_state, w.pool.encrypted);
+            let mut intent = queue(&mut w, kind, op).unwrap();
+            let r = report(&w, &intent, false);
+            assert_eq!(
+                settle(&mut w, &mut intent, &r),
+                Ok(Some(IntentStatus::Zero))
+            );
+            assert_eq!((w.position.encrypted_state, w.pool.encrypted), before);
+            assert!(!w.position.coordination.lock.is_active());
+            assert!(!w.pool.coordination.lock.is_active());
+            assert!(!w.liquidator.coordination.lock.is_active());
+        }
+    }
+
+    #[test]
+    fn binding_mismatches_revert_and_leave_the_intent_queued() {
+        for (kind, op) in KINDS {
+            // Sealed to a key other than the Position's Viewing key.
+            let mut w = world(kind);
+            let mut intent = queue(&mut w, kind, op).unwrap();
+            let mut r = report(&w, &intent, true);
+            r.primary.encryption_key = [0xEE; 32];
+            assert!(settle(&mut w, &mut intent, &r).is_err());
+            assert_eq!(intent.status, IntentStatus::Queued);
+            assert!(intent.lock_owner().holds(&w.position.coordination.lock));
+
+            // A wrong output nonce.
+            let mut r = report(&w, &intent, true);
+            r.primary.nonce += 1;
+            assert!(settle(&mut w, &mut intent, &r).is_err());
+
+            // Unauthenticated output.
+            let mut r = report(&w, &intent, true);
+            r.output_authenticated = false;
+            assert_eq!(
+                settle(&mut w, &mut intent, &r),
+                Err(ErrorCode::CallbackOutputNotAuthenticated)
+            );
+
+            // A missing second output for a liquidation, or an extra one.
+            let mut r = report(&w, &intent, true);
+            r.second = match kind {
+                OperationKind::LiquidatePool => None,
+                _ => Some(sealed([1; 32], LIQ_POSITION, 0)),
+            };
+            assert_eq!(
+                settle(&mut w, &mut intent, &r),
+                Err(ErrorCode::PrivateOpIntentMismatch)
+            );
+            assert_eq!(intent.status, IntentStatus::Queued);
+        }
+    }
+
+    #[test]
+    fn expired_callbacks_store_nothing() {
+        for (kind, op) in KINDS {
+            let mut w = world(kind);
+            let before = w.position.encrypted_state;
+            let mut intent = queue(&mut w, kind, op).unwrap();
+            let mut r = report(&w, &intent, true);
+            r.current_slot = intent.decision_expiry_slot + 1;
+            assert_eq!(
+                settle(&mut w, &mut intent, &r),
+                Ok(Some(IntentStatus::Expired))
+            );
+            assert_eq!(w.position.encrypted_state, before);
+            assert!(!w.position.coordination.lock.is_active());
+        }
+    }
+
+    #[test]
+    fn abandonment_waits_for_lock_expiry_then_bumps_generations() {
+        for (kind, op) in KINDS {
+            let mut w = world(kind);
+            let mut intent = queue(&mut w, kind, op).unwrap();
+            let gen = w.position.coordination.generation;
+            let expiry = intent.lock_expiry_slot;
+            assert!(abandon(&mut w, &mut intent, expiry).is_err());
+            assert_eq!(intent.status, IntentStatus::Queued);
+            let cleared = abandon(&mut w, &mut intent, expiry + 1).unwrap();
+            let expected = match kind {
+                OperationKind::PositionPrivate => 1,
+                OperationKind::PoolOp => 2,
+                _ => 3,
+            };
+            assert_eq!(cleared, expected);
+            assert_eq!(intent.status, IntentStatus::Abandoned);
+            assert_eq!(w.position.coordination.generation, gen + 1);
+            assert!(!w.position.coordination.lock.is_active());
+            assert!(!w.pool.coordination.lock.is_active());
+            assert!(!w.liquidator.coordination.lock.is_active());
+            // A late callback after abandonment is ignored.
+            let r = report(&w, &intent, true);
+            assert_eq!(settle(&mut w, &mut intent, &r), Ok(None));
+        }
+    }
+
+    #[test]
+    fn accrual_window_is_enforced() {
+        let mut lp = crate::state::lending_pool::LendingPool::new(
+            Pubkey::default(),
+            1,
+            Pubkey::new_unique(),
+            [0; 32],
+            60,
+            1_000,
+        );
+        let a = crate::state::test_fixtures::asset();
+        let bad = Err(ErrorCode::PrivateAccrualTimeInvalid);
+        assert_eq!(accrue_to(&mut lp, &a, 2_001, 2_000), bad, "future");
+        assert_eq!(accrue_to(&mut lp, &a, 1_879, 2_000), bad, "too old");
+        assert_eq!(
+            accrue_to(&mut lp, &a, 999, 1_050),
+            bad,
+            "before last accrual"
+        );
+        assert_eq!(accrue_to(&mut lp, &a, 1_900, 2_000), Ok(()));
+        assert_eq!(lp.last_accrual_ts, 1_900);
+    }
+
+    #[test]
+    fn band_mode_borrow_needs_a_fresh_band() {
+        let mut lp = crate::state::lending_pool::LendingPool::new(
+            Pubkey::default(),
+            1,
+            Pubkey::new_unique(),
+            [0; 32],
+            60,
+            0,
+        );
+        let a = crate::state::test_fixtures::asset(); // band observed at slot 90
+        let age = a.rates.band_max_age_slots;
+        let late = 90 + age + 1;
+        // Totals mode never checks the band.
+        assert!(ensure_rate_fresh(&lp, &a, OperationKind::PoolOp, POOL_BORROW, late).is_ok());
+        lp.rate_source = crate::state::lending_pool::RATE_SOURCE_BAND;
+        assert!(ensure_rate_fresh(&lp, &a, OperationKind::PoolOp, POOL_BORROW, late).is_err());
+        assert!(ensure_rate_fresh(&lp, &a, OperationKind::PoolOp, POOL_BORROW, 95).is_ok());
+        // Repay and withdrawals never wait on the band.
+        assert!(ensure_rate_fresh(&lp, &a, OperationKind::PoolOp, POOL_REPAY, late).is_ok());
+        assert!(ensure_rate_fresh(
+            &lp,
+            &a,
+            OperationKind::PositionPrivate,
+            COLLATERAL_WITHDRAW,
+            late
+        )
+        .is_ok());
+    }
 }
