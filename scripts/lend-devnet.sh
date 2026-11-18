@@ -9,8 +9,9 @@
 #   3. single program upgrade (stray buffers, extend, write-buffer, deploy)
 #   4. init_lending_pool (idempotent)
 #   5. register and upload lend_op, disclose_position, rotate_position_key
-#   6. optional: reclaim the position_op comp def (RECLAIM_POSITION_OP=1)
-#   7. summary with the final balance
+#   6. private mode (ADR-0004): band rate source and a first band observation
+#   7. optional: reclaim the position_op comp def (RECLAIM_POSITION_OP=1)
+#   8. summary with the final balance
 #
 # Progress: artifacts/lend-deploy-state.json. Re-run the same command after a
 # stop (low balance, RPC error); finished steps are skipped.
@@ -41,7 +42,7 @@ FEE_ONLY=50000000           # 0.05 SOL, enough for reclaim transaction fees
 LAMPORTS_PER_BYTE=6960      # 6.96e-6 SOL per byte (rent-exempt, 2 years)
 # Comp defs reclaimed before any upload (position_op is handled by step 6).
 RECLAIM_NAMES=(add_together init_position apply_position_delta liquidation_receipts oversized_output rotate_viewing_key)
-NEW_CIRCUITS=(lend_op disclose_position rotate_position_key)
+NEW_CIRCUITS=(lend_op disclose_position rotate_position_key pool_op position_private liquidate_pool pool_band)
 
 mkdir -p artifacts
 
@@ -309,8 +310,23 @@ else
   state_set circuits done "${NEW_CIRCUITS[*]}"
 fi
 
-# ---- 6. optional: reclaim position_op --------------------------------------
-echo "== 6. reclaim position_op (optional, RECLAIM_POSITION_OP=1) =="
+# ---- 6. private mode ---------------------------------------------------------
+echo "== 6. private mode: band rate source and first band =="
+if [ "$(state_get private_setup)" = "done" ]; then
+  echo "  already done"
+else
+  require_funds private_setup "band rate source and band update" 100000000
+  ok=0
+  for i in 1 2; do
+    if helper private-setup; then ok=1; break; fi
+    echo "  private-setup attempt $i failed, retrying"; sleep 10
+  done
+  [ "$ok" -eq 1 ] || die private_setup "private-setup failed; see messages above, then re-run"
+  state_set private_setup done "rate source band, band observed"
+fi
+
+# ---- 7. optional: reclaim position_op --------------------------------------
+echo "== 7. reclaim position_op (optional, RECLAIM_POSITION_OP=1) =="
 if [ "${RECLAIM_POSITION_OP:-0}" != "1" ]; then
   echo "  skipped (flag off): the current web app still uses position_op"
 elif [ "$(state_get reclaim_position_op)" = "done" ]; then
@@ -324,8 +340,8 @@ else
   state_set reclaim_position_op done "freed $(sol $(( $(lamports) - before ))) SOL"
 fi
 
-# ---- 7. summary -------------------------------------------------------------
-echo "== 7. summary =="
+# ---- 8. summary -------------------------------------------------------------
+echo "== 8. summary =="
 echo "program:  $ID"
 solana program show "$ID" | grep -E "Data Length|Last Deployed"
 echo "steps (artifacts/lend-deploy-state.json):"
