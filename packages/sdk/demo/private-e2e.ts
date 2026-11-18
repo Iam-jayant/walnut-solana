@@ -134,7 +134,7 @@ const PRIVATE_CIRCUITS = [
   "pool_op",
   "position_private",
   "liquidate_pool",
-  "update_utilization_band",
+  "pool_band",
 ];
 const BAND_STALE =
   /UtilizationBandStale|UtilizationBandNeverObserved|\b613[56]\b|0x17f[78]/i;
@@ -1066,17 +1066,17 @@ class PrivateE2E {
 
   // ---- band
 
-  /** Queues `update_utilization_band` (with the LendingPool) and waits. */
+  /** Queues `update_pool_band` (the light private-Pool band) and waits. */
   private async updateBand(label: string): Promise<void> {
     const poolCounterOwner = this.mk.poolState;
     const r = await this.queue(
       this.deployer.keypair,
       label,
       async ({ sequence, offset, intent }) => [
-        await this.method("updateUtilizationBand")(offset, sequence)
+        await this.method("updatePoolBand")(offset, sequence)
           .accountsPartial({
             payer: this.deployer.keypair.publicKey,
-            ...this.queueAccounts("update_utilization_band", offset),
+            ...this.queueAccounts("pool_band", offset),
             market: this.market,
             assetState: this.mk.assetState,
             poolState: this.mk.poolState,
@@ -1475,7 +1475,7 @@ class PrivateE2E {
         );
       }
       this.checks.push(
-        "comp defs pool_op, position_private, liquidate_pool, update_utilization_band exist",
+        "comp defs pool_op, position_private, liquidate_pool, pool_band exist",
       );
       this.checks.push("PoolState is active");
       // Band rate source.
