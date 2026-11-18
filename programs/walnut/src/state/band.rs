@@ -140,12 +140,27 @@ pub struct BandKeys {
     pub pool: Pubkey,
 }
 
-/// Builds the band Intent.
+/// Builds the band Intent at the Asset State's accounting index.
 pub fn build_band_intent(
     keys: &BandKeys,
     asset: &AssetState,
     pool: &PoolState,
     request: &BandRequest,
+) -> Result<OperationIntent, ErrorCode> {
+    build_band_intent_at(keys, asset, pool, request, asset.accounting_borrow_index)
+}
+
+/// Builds the band Intent that measures the Pool at `circuit_index` (WAD).
+/// The Task 7 path passes the Asset State's accounting index; the private
+/// path (ADR-0004) passes the LendingPool borrow index lifted to WAD. The
+/// index is kept in `risk_borrow_index_at_expiry`, which no dependency check
+/// reads, so the callback can rebuild the input commitment.
+pub fn build_band_intent_at(
+    keys: &BandKeys,
+    asset: &AssetState,
+    pool: &PoolState,
+    request: &BandRequest,
+    circuit_index: u128,
 ) -> Result<OperationIntent, ErrorCode> {
     let decision_expiry_slot = request
         .queued_slot
@@ -162,7 +177,7 @@ pub fn build_band_intent(
         keys.pool,
         generation,
     );
-    let inputs = band_inputs(pool, asset.accounting_borrow_index);
+    let inputs = band_inputs(pool, circuit_index);
     Ok(OperationIntent {
         key: request.intent_key,
         owner: keys.pool,
@@ -177,7 +192,7 @@ pub fn build_band_intent(
         rate_epoch_generation: asset.rate_epoch_generation,
         accounting_borrow_index: asset.accounting_borrow_index,
         accounting_index_timestamp: asset.accounting_index_timestamp,
-        risk_borrow_index_at_expiry: asset.accounting_borrow_index,
+        risk_borrow_index_at_expiry: circuit_index,
         accounts_commitment: account_commitment(&bindings),
         inputs_commitment: input_commitment(OperationKind::UtilizationBand, &inputs),
         queued_slot: request.queued_slot,
@@ -199,13 +214,34 @@ pub fn queue_band_update(
     counter: &mut OperationCounter,
     request: &BandRequest,
 ) -> Result<OperationIntent, ErrorCode> {
+    queue_band_update_at(
+        market_status,
+        keys,
+        asset,
+        pool,
+        counter,
+        request,
+        asset.accounting_borrow_index,
+    )
+}
+
+/// [`queue_band_update`] measuring the Pool at `circuit_index` (WAD).
+pub fn queue_band_update_at(
+    market_status: MarketStatus,
+    keys: &BandKeys,
+    asset: &AssetState,
+    pool: &PoolState,
+    counter: &mut OperationCounter,
+    request: &BandRequest,
+    circuit_index: u128,
+) -> Result<OperationIntent, ErrorCode> {
     if market_status != MarketStatus::Active {
         return Err(ErrorCode::MarketNotActive);
     }
     if pool.status != PoolStatus::Active {
         return Err(ErrorCode::BandPoolNotActive);
     }
-    let intent = build_band_intent(keys, asset, pool, request)?;
+    let intent = build_band_intent_at(keys, asset, pool, request, circuit_index)?;
     let mut next_counter = *counter;
     reserve_intent(&mut next_counter, &intent)?;
     *counter = next_counter;
@@ -268,7 +304,7 @@ pub fn settle_band_update(
         keys.pool,
         intent.pool_generation,
     );
-    let inputs = band_inputs(pool, intent.accounting_borrow_index);
+    let inputs = band_inputs(pool, intent.risk_borrow_index_at_expiry);
     let context = CallbackContext {
         output_authenticated: report.output_authenticated,
         computation_offset: report.computation_offset,
@@ -387,6 +423,52 @@ mod tests {
             computation_offset: 1_234,
             queued_slot,
         }
+    }
+
+    #[test]
+    fn band_at_a_lending_pool_index_binds_that_index_and_settles() {
+        let lifted = 1_000_000_123u128 * (WAD / 1_000_000_000);
+        let mut counter = OperationCounter::new(key(4), 255);
+        let mut intent = queue_band_update_at(
+            MarketStatus::Active,
+            &keys(),
+            &asset(),
+            &pool(),
+            &mut counter,
+            &request(100),
+            lifted,
+        )
+        .unwrap();
+        assert_eq!(intent.risk_borrow_index_at_expiry, lifted);
+        assert_eq!(
+            intent.inputs_commitment,
+            input_commitment(
+                OperationKind::UtilizationBand,
+                &band_inputs(&pool(), lifted)
+            )
+        );
+        // The dependency checks still use the Asset State, unchanged.
+        assert_eq!(
+            intent.accounting_borrow_index,
+            asset().accounting_borrow_index
+        );
+        let mut a = asset();
+        let settled = settle_band_update(
+            &keys(),
+            &mut a,
+            &pool(),
+            &mut intent,
+            &BandReport {
+                output_authenticated: true,
+                computation_offset: 1_234,
+                intent_key: key(9),
+                band: 11,
+                current_slot: 120,
+            },
+        )
+        .unwrap();
+        assert!(matches!(settled, BandSettlement::Applied { band: 11, .. }));
+        assert_eq!(a.utilization_band, 11);
     }
 
     fn queued() -> (OperationIntent, OperationCounter) {
