@@ -87,7 +87,6 @@ pub(super) fn pool() -> PoolState {
             nonce: 77,
             ciphertexts: [[1; 32], [2; 32], [3; 32], [4; 32]],
         },
-        unsettled_recovery_claim_count: 0,
     }
 }
 

@@ -223,10 +223,6 @@ pub struct PoolState {
     pub accounted_borrow_index: u128,
     /// The `Enc<Mxe, PoolSecret>` payload. All zero until `Active`.
     pub encrypted: EncryptedPoolState,
-    /// Public count of Recovery Claims not yet fully settled (Task 8.1).
-    /// First-supplier entry requires zero. Absorb increments it and a fully
-    /// settled Recovery Claim decrements it.
-    pub unsettled_recovery_claim_count: u64,
 }
 
 impl PoolState {
@@ -335,9 +331,9 @@ mod tests {
         assert_eq!(PoolStatus::INIT_SPACE, 1);
         assert_eq!(EncryptedPoolState::INIT_SPACE, 16 + POOL_SECRET_FIELDS * 32);
         assert_eq!(EncryptedPoolState::INIT_SPACE, 144);
-        assert_eq!(PoolState::INIT_SPACE, 57 + 1 + 1 + 1 + 32 + 16 + 144 + 8);
-        assert_eq!(PoolState::INIT_SPACE, 260);
-        assert_eq!(PoolState::ACCOUNT_LEN, 268);
+        assert_eq!(PoolState::INIT_SPACE, 57 + 1 + 1 + 1 + 32 + 16 + 144);
+        assert_eq!(PoolState::INIT_SPACE, 252);
+        assert_eq!(PoolState::ACCOUNT_LEN, 260);
     }
 
     #[test]
@@ -410,7 +406,6 @@ mod tests {
                 nonce: 0x5152_5354_5556_5758_595A_5B5C_5D5E_5F60,
                 ciphertexts: [[0x61; 32], [0x62; 32], [0x63; 32], [0x64; 32]],
             },
-            unsettled_recovery_claim_count: 0,
         };
         let mut bytes = Vec::new();
         pool.try_serialize(&mut bytes).unwrap();
@@ -450,7 +445,6 @@ mod tests {
             market: Pubkey::new_from_array([0x33; 32]),
             accounted_borrow_index: 1,
             encrypted: EncryptedPoolState::default(),
-            unsettled_recovery_claim_count: 0,
         }
     }
 

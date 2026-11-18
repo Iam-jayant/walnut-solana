@@ -704,3 +704,106 @@ pub struct SupplyFlowAbandoned {
     pub signer: Pubkey,
     pub slot: u64,
 }
+
+/// Emitted by `recover_empty_pool` when it queues (admin only, Task 8.1).
+#[event]
+pub struct EmptyPoolRecoveryQueued {
+    pub market: Pubkey,
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub admin: Pubkey,
+    pub computation_offset: u64,
+    pub pool_generation: u64,
+    pub dust_limit: u128,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted when the recovery applied: the dust residue became Reserves. No
+/// token moved and no amount is revealed.
+#[event]
+pub struct EmptyPoolRecovered {
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub accounted_borrow_index: u128,
+    pub slot: u64,
+}
+
+/// Emitted when the recovery resolved `Zero`, `Stale`, `Expired`, or `Failed`.
+#[event]
+pub struct EmptyPoolRecoveryNotApplied {
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_recover_empty_pool` (any signer, after Lock expiry).
+#[event]
+pub struct EmptyPoolRecoveryAbandoned {
+    pub pool_state: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub signer: Pubkey,
+    pub slot: u64,
+}
+
+// ---- walnut-diffn: position_op -------------------------------------------------
+
+/// Emitted by `position_op` when the operation was queued. `op` and `amount`
+/// are public by design; balances stay encrypted.
+#[event]
+pub struct PositionOpQueued {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub op: u8,
+    pub amount: u64,
+    pub price: u64,
+    pub ltv_bps: u64,
+    pub computation_offset: u64,
+    pub position_generation: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `position_op` callback when the operation applied.
+#[event]
+pub struct PositionOpApplied {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub op: u8,
+    pub amount: u64,
+    pub generation: u64,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted by the `position_op` callback when the circuit refused the
+/// operation or the attempt ended without applying (`intent_status`).
+#[event]
+pub struct PositionOpRejected {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub op: u8,
+    pub amount: u64,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_position_op` (any signer, after Lock expiry).
+#[event]
+pub struct PositionOpAbandoned {
+    pub position: Pubkey,
+    pub owner: Pubkey,
+    pub operation_intent: Pubkey,
+    pub generation: u64,
+    pub signer: Pubkey,
+    pub slot: u64,
+}

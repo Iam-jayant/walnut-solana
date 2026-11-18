@@ -33,36 +33,12 @@ import {
 import * as fs from "fs";
 import * as os from "os";
 import { expect } from "chai";
+import { awaitEvent, type SumEventPayload } from "./support/events";
 
 describe("Walnut scaffold: add_together", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const program = anchor.workspace.Walnut as Program<Walnut>;
   const provider = anchor.getProvider();
-
-  type Event = anchor.IdlEvents<(typeof program)["idl"]>;
-  const awaitEvent = async <E extends keyof Event>(
-    eventName: E,
-    timeoutMs = 120000,
-  ): Promise<Event[E]> => {
-    let listenerId: number;
-    let timeoutId: NodeJS.Timeout;
-    const event = await new Promise<Event[E]>((res, rej) => {
-      listenerId = program.addEventListener(eventName, (ev) => {
-        clearTimeout(timeoutId);
-        res(ev);
-      });
-      timeoutId = setTimeout(() => {
-        program.removeEventListener(listenerId);
-        rej(
-          new Error(
-            `Event ${String(eventName)} timed out after ${timeoutMs}ms`,
-          ),
-        );
-      }, timeoutMs);
-    });
-    await program.removeEventListener(listenerId);
-    return event;
-  };
 
   const arciumEnv = getArciumEnv();
   const clusterAccount = getClusterAccAddress(arciumEnv.arciumClusterOffset);
@@ -87,7 +63,7 @@ describe("Walnut scaffold: add_together", () => {
     const nonce = randomBytes(16);
     const ciphertext = cipher.encrypt([val1, val2], nonce);
 
-    const sumEventPromise = awaitEvent("sumEvent");
+    const sumEventPromise = awaitEvent<SumEventPayload>(program, "sumEvent");
     const computationOffset = new anchor.BN(randomBytes(8), "hex");
 
     await program.methods

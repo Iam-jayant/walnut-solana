@@ -11,6 +11,8 @@ pub mod config;
 pub mod initialize_market;
 pub mod pause;
 pub mod position;
+pub mod position_op;
+pub mod recovery;
 pub mod reserve_withdrawal;
 pub mod roles;
 pub mod rotation;

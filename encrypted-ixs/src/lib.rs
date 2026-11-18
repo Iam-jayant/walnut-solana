@@ -361,8 +361,90 @@ mod circuits {
         (owner.from_arcis(s), debit.reveal(), amount.reveal())
     }
 
-    // ---- Task 5.5: production Viewing Key rotation --------------------------
+    // ---- Demo: position_op ---------------------------------------------------
 
+    /// Demo position operation on the stored Position state: 0 add collateral,
+    /// 1 withdraw collateral, 2 borrow, 3 repay (see the walnut-diffn design).
+    /// `debt_shares_usdc` holds plain debt in USDC base units. Public `op`,
+    /// `amount`, `price` and `ltv_bps` are multiplied and compared only; there
+    /// is no division. A refusal returns the state unchanged, still resealed
+    /// to `owner`. Returns `(state, applied, op, amount)`; the echoes let the
+    /// callback rebuild the input commitment.
+    #[instruction]
+    pub fn position_op(
+        state: Enc<Shared, PositionSecret>,
+        owner: Shared,
+        op: u8,
+        amount: u64,
+        price: u64,
+        ltv_bps: u64,
+    ) -> (Enc<Shared, PositionSecret>, bool, u8, u64) {
+        let mut s = state.to_arcis();
+        let a = amount as u128;
+        let free_sol = s.free_sol as u128;
+        let free_usdc = s.free_usdc as u128;
+        let coll = s.collateral_sol as u128;
+        let debt = s.debt_shares_usdc;
+        let limit = (price as u128) * (ltv_bps as u128);
+        let scale = 10_000_000_000_000u128;
+
+        let ok0 = a <= free_sol;
+        let fits1 = a <= coll;
+        let a1 = if fits1 { a } else { 0 };
+        let rest = coll - a1;
+        let ok1 = fits1 && debt * scale <= rest * limit;
+        let ok2 =
+            (debt + a) * scale <= coll * limit && free_usdc + a <= 18_446_744_073_709_551_615u128;
+        let ok3 = a <= free_usdc && a <= debt;
+
+        let applied = (op == 0 && ok0) || (op == 1 && ok1) || (op == 2 && ok2) || (op == 3 && ok3);
+        let d = if applied { a } else { 0 };
+        let sol_to_coll = op == 0;
+        let coll_to_sol = op == 1;
+        let borrow = op == 2;
+        let repay = op == 3;
+
+        let new_free_sol = if sol_to_coll {
+            free_sol - d
+        } else if coll_to_sol {
+            free_sol + d
+        } else {
+            free_sol
+        };
+        let new_coll = if sol_to_coll {
+            coll + d
+        } else if coll_to_sol {
+            coll - d
+        } else {
+            coll
+        };
+        let new_free_usdc = if borrow {
+            free_usdc + d
+        } else if repay {
+            free_usdc - d
+        } else {
+            free_usdc
+        };
+        let new_debt = if borrow {
+            debt + d
+        } else if repay {
+            debt - d
+        } else {
+            debt
+        };
+        s.free_sol = new_free_sol as u64;
+        s.collateral_sol = new_coll as u64;
+        s.free_usdc = new_free_usdc as u64;
+        s.debt_shares_usdc = new_debt;
+        (
+            owner.from_arcis(s),
+            applied.reveal(),
+            op.reveal(),
+            amount.reveal(),
+        )
+    }
+
+    // ---- Task 5.5: production Viewing Key rotation --------------------------
     /// Re-seals the stored Position payload from its current Viewing Key to a
     /// new one, revealing nothing (Requirement 5.11).
     ///
@@ -838,6 +920,150 @@ mod circuits {
             requested.reveal(),
         )
     }
+
+    /// Scalar wrapper of [`supply_flow_values`] for the host replay of the
+    /// shared golden vectors (the secret structs have private fields).
+    /// Arguments: Pool `(cash, supply shares, debt shares, reserves)`,
+    /// Position `(free USDC, supply shares)`, then the `supply_flow_values`
+    /// inputs. Returns `(cash, supply shares, reserves, free USDC, position
+    /// shares, applied)`.
+    pub fn supply_flow_scalars(
+        pool: (u128, u128, u128, u128),
+        position: (u64, u128),
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        is_withdraw: bool,
+        requested: u128,
+        supply_cap: u64,
+        claims_clear: bool,
+    ) -> (u128, u128, u128, u64, u128, bool) {
+        let p = PoolSecret {
+            cash_usdc: pool.0,
+            total_supply_shares: pool.1,
+            total_debt_shares: pool.2,
+            reserves_usdc: pool.3,
+        };
+        let s = PositionSecret {
+            free_sol: 0,
+            free_usdc: position.0,
+            collateral_sol: 0,
+            supply_shares_usdc: position.1,
+            debt_shares_usdc: 0,
+        };
+        let (np, ns, applied) = supply_flow_values(
+            p,
+            s,
+            accounted_index,
+            accounting_index,
+            reserve_factor_bps,
+            is_withdraw,
+            requested,
+            supply_cap,
+            claims_clear,
+        );
+        (
+            np.cash_usdc,
+            np.total_supply_shares,
+            np.reserves_usdc,
+            ns.free_usdc,
+            ns.supply_shares_usdc,
+            applied,
+        )
+    }
+
+    /// Scalar wrapper of [`recover_empty_pool_values`] for the host replay of
+    /// the golden vectors. Returns `(reserves, applied)`.
+    pub fn recover_empty_pool_scalars(
+        pool: (u128, u128, u128, u128),
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        dust_limit: u128,
+        claims_clear: bool,
+    ) -> (u128, bool) {
+        let p = PoolSecret {
+            cash_usdc: pool.0,
+            total_supply_shares: pool.1,
+            total_debt_shares: pool.2,
+            reserves_usdc: pool.3,
+        };
+        let (np, applied) = recover_empty_pool_values(
+            p,
+            accounted_index,
+            accounting_index,
+            reserve_factor_bps,
+            dust_limit,
+            claims_clear,
+        );
+        (np.reserves_usdc, applied)
+    }
+
+    // ---- Task 8.1: recovery of an empty Pool's dust residue ----------------------
+
+    /// Recovery of an empty Pool's dust residue (plaintext twin:
+    /// `programs/walnut/src/math/supply.rs::recover_empty_pool`).
+    ///
+    /// FIRST the interest checkpoint, THEN all-or-zero: applies only when no
+    /// Supply Shares and no Debt Shares exist after the checkpoint, the
+    /// public `claims_clear` flag holds, and the residue `equity = cash -
+    /// reserves` is nonzero and at most the public `dust_limit`. The one
+    /// change is `reserves := cash`. A refusal returns the INPUT payload.
+    /// Returns `(pool, applied)`.
+    pub fn recover_empty_pool_values(
+        pool: PoolSecret,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        dust_limit: u128,
+        claims_clear: bool,
+    ) -> (PoolSecret, bool) {
+        let (cp, equity, ck_ok) =
+            checkpoint_pool(pool, accounted_index, accounting_index, reserve_factor_bps);
+        let applied = ck_ok
+            && claims_clear
+            && cp.total_supply_shares == 0
+            && cp.total_debt_shares == 0
+            && equity > 0
+            && equity <= dust_limit;
+        let reserves = if applied {
+            cp.cash_usdc
+        } else {
+            pool.reserves_usdc
+        };
+        let out = PoolSecret {
+            cash_usdc: pool.cash_usdc,
+            total_supply_shares: pool.total_supply_shares,
+            total_debt_shares: pool.total_debt_shares,
+            reserves_usdc: reserves,
+        };
+        (out, applied)
+    }
+
+    /// `recover_empty_pool`: the Pool payload (`Enc<Mxe>`), the public
+    /// indexes and reserve factor, the public dust limit, and the public
+    /// recovery-claims-clear flag. Returns the Pool payload to store and the
+    /// applied flag.
+    #[instruction]
+    pub fn recover_empty_pool(
+        pool: Enc<Mxe, PoolSecret>,
+        accounted_index: u128,
+        accounting_index: u128,
+        reserve_factor_bps: u128,
+        dust_limit: u128,
+        claims_clear: bool,
+    ) -> (Enc<Mxe, PoolSecret>, bool) {
+        let p = pool.to_arcis();
+        let (next, applied) = recover_empty_pool_values(
+            p,
+            accounted_index,
+            accounting_index,
+            reserve_factor_bps,
+            dust_limit,
+            claims_clear,
+        );
+        (Mxe::get().from_arcis(next), applied.reveal())
+    }
 }
 
 #[cfg(test)]
@@ -851,6 +1077,7 @@ mod tests {
     const RATE: &str = include_str!("../../packages/reference-model/vectors/rate.vectors");
     const CHECKPOINT: &str =
         include_str!("../../packages/reference-model/vectors/checkpoint.vectors");
+    const SUPPLY: &str = include_str!("../../packages/reference-model/vectors/supply.vectors");
 
     const WAD: u128 = 1_000_000_000_000_000_000;
     const MAX_SHARES: u128 = 10_000_000_000_000_000;
@@ -966,5 +1193,76 @@ mod tests {
             checked += 1;
         }
         assert!(checked >= 30, "only {checked} checkpoint vectors ran");
+    }
+
+    /// Replays the supply, withdraw-supply, and recovery vectors on the
+    /// circuit bodies (Task 8): the Arcis arithmetic equals the program-side
+    /// and the TypeScript definitions on every vector.
+    #[test]
+    fn supply_flow_and_recovery_match_the_golden_vectors() {
+        let (mut supplies, mut recoveries) = (0, 0);
+        for line in SUPPLY.lines().map(str::trim) {
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let (input, expected) = line.split_once("=>").unwrap();
+            let w: Vec<&str> = input.split_whitespace().collect();
+            let e: Vec<&str> = expected.split_whitespace().collect();
+            match w[0] {
+                "supply" => {
+                    let pool = (n(w[1]), n(w[2]), n(w[3]), n(w[4]));
+                    let position = (n(w[5]) as u64, n(w[6]));
+                    let (cash, supply, reserves, free, shares, applied) = supply_flow_scalars(
+                        pool,
+                        position,
+                        n(w[7]),
+                        n(w[8]),
+                        n(w[9]),
+                        w[10] == "1",
+                        n(w[11]),
+                        n(w[12]) as u64,
+                        w[13] == "1",
+                    );
+                    if e[0] == "zero" {
+                        assert!(!applied, "vector: {line}");
+                        assert_eq!(
+                            (cash, supply, reserves, free as u128, shares),
+                            (pool.0, pool.1, pool.3, position.0 as u128, position.1),
+                            "a refusal returns the inputs: {line}"
+                        );
+                    } else {
+                        assert!(applied, "vector: {line}");
+                        let want: Vec<u128> = e.iter().map(|x| n(x)).collect();
+                        assert_eq!(
+                            vec![cash, supply, reserves, free as u128, shares],
+                            want,
+                            "vector: {line}"
+                        );
+                    }
+                    supplies += 1;
+                }
+                "recover" => {
+                    let pool = (n(w[1]), n(w[2]), n(w[3]), n(w[4]));
+                    let (reserves, applied) = recover_empty_pool_scalars(
+                        pool,
+                        n(w[5]),
+                        n(w[6]),
+                        n(w[7]),
+                        n(w[8]),
+                        w[9] == "1",
+                    );
+                    if e[0] == "zero" {
+                        assert!(!applied, "vector: {line}");
+                        assert_eq!(reserves, pool.3, "vector: {line}");
+                    } else {
+                        assert!(applied, "vector: {line}");
+                        assert_eq!(reserves, n(e[0]), "vector: {line}");
+                    }
+                    recoveries += 1;
+                }
+                other => panic!("unknown vector {other}"),
+            }
+        }
+        assert!(supplies >= 30 && recoveries >= 9);
     }
 }

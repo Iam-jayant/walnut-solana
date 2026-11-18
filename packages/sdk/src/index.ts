@@ -15,3 +15,5 @@ export * from "./output-nonce.ts";
 export * from "./unwrap.ts";
 export * from "./viewing-key.ts";
 export * from "./oracle.ts";
+export * from "./supply.ts";
+export * from "./position-op.ts";

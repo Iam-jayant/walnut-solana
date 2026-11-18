@@ -106,6 +106,10 @@ pub enum OperationKind {
     UtilizationBand,
     /// Reserve withdrawal to the treasury (Task 7.5): Locks the Pool.
     ReserveWithdrawal,
+    /// Admin recovery of an empty Pool's dust residue (Task 8.1): Locks the Pool.
+    RecoverEmptyPool,
+    /// Demo position operation (add/withdraw collateral, borrow, repay).
+    PositionOp,
 }
 
 impl OperationKind {

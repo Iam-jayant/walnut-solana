@@ -9,8 +9,9 @@
 //! # Flow
 //!
 //! 1. Queue ([`queue_supply_flow`]): owner-signed. The Market is `Active`, the
-//!    `SUPPLY` or `WITHDRAW_SUPPLY` pause is off, the Position is `Active`, and
-//!    the request is nonzero. [`begin_pool_mutation`] accrues the accounting
+//!    `SUPPLY` or `WITHDRAW_SUPPLY` pause is off, the Position is `Active`, the
+//!    request is nonzero, and (supply only) the utilization band is fresh.
+//!    [`begin_pool_mutation`] accrues the accounting
 //!    index, captures dependencies, and Locks the Pool AND the Position
 //!    atomically (all or none).
 //! 2. The circuit checkpoints interest FIRST, then runs the all-or-zero rules
@@ -48,6 +49,7 @@ use super::shield::INPUT_STATE_CIPHERTEXT_FIRST;
 use super::{Position, Slot};
 use crate::errors::ErrorCode;
 use crate::market::{ensure_action_allowed, Action, AssetState, Market};
+use crate::math::rate::ensure_band_fresh;
 use crate::operation::callback::{
     classify_callback, CallbackContext, CallbackDecision, CallbackReport, CurrentDependencies,
 };
@@ -266,13 +268,22 @@ pub fn queue_supply_flow(
         Action::Supply
     };
     ensure_action_allowed(&asset.pauses, action, request.queued_slot)?;
+    // Supply is risk-increasing: a stale utilization band blocks it before any
+    // Lock is taken (Requirement 7.8). Withdrawal stays available.
+    if !request.is_withdraw {
+        ensure_band_fresh(
+            asset.utilization_observation_slot,
+            request.queued_slot,
+            asset.rates.band_max_age_slots,
+        )?;
+    }
 
     let owner = position.owner;
     let position_generation = position.coordination.generation;
     let accounted = pool.accounted_borrow_index;
     let reserve_factor_bps = asset.risk.reserve_factor_bps;
     let supply_cap = asset.caps.supply_cap_usdc;
-    let claims_clear = pool.unsettled_recovery_claim_count == 0;
+    let claims_clear = market.unsettled_recovery_claim_count == 0;
     let output_nonce_input = derive_output_nonce_input(&position_key, request.sequence);
     let pool_snapshot = pool.clone();
     let position_snapshot = position.clone();
@@ -420,7 +431,7 @@ pub fn settle_supply_flow(
             is_withdraw,
             requested: report.requested,
             supply_cap: asset.caps.supply_cap_usdc,
-            claims_clear: pool.unsettled_recovery_claim_count == 0,
+            claims_clear: market.unsettled_recovery_claim_count == 0,
             output_nonce_input: report.position_nonce.wrapping_sub(1),
         },
     );
@@ -506,3 +517,6 @@ pub fn abandon_supply_flow(
         current_slot,
     )
 }
+
+#[cfg(test)]
+mod tests;

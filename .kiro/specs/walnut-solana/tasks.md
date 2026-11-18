@@ -385,7 +385,7 @@ Parallelizable task waves (each wave starts after the previous wave completes):
 
 - [ ] 8. USDC supply and withdrawal
 
-  - [ ] 8.1 Implement first-supplier rules
+  - [-] 8.1 Implement first-supplier rules
     - When total Supply Shares is zero, require encrypted Cash, Debt Shares, and Reserves to be zero and public `unsettled_recovery_claim_count` to be zero.
     - Atomically maintain the claim count on accepted Absorb and fully settled Recovery Claim.
     - Return Zero and move no value if any canonical-empty condition fails.

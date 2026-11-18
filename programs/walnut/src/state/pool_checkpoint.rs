@@ -414,7 +414,6 @@ impl Real {
                 market: key(MARKET),
                 accounted_borrow_index: WAD,
                 encrypted: seal(&plain, 1),
-                unsettled_recovery_claim_count: 0,
             },
             counter: OperationCounter::new(key(POOL), 255),
             intents: Vec::new(),

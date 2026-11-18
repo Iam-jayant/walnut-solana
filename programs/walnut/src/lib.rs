@@ -52,6 +52,8 @@ pub use instructions::config::*;
 pub use instructions::initialize_market::*;
 pub use instructions::pause::*;
 pub use instructions::position::*;
+pub use instructions::position_op::*;
+pub use instructions::recovery::*;
 pub use instructions::reserve_withdrawal::*;
 pub use instructions::roles::*;
 pub use instructions::rotation::*;
@@ -67,12 +69,14 @@ pub mod position;
 
 use anchor_spl::token::{self as spl, Mint, Token, TokenAccount, TransferChecked};
 use errors::ErrorCode;
+use events::{EmptyPoolRecovered, EmptyPoolRecoveryNotApplied, EmptyPoolRecoveryQueued};
 use events::{
     LiquidationReceiptsEmitted, OversizedOutputEmitted, PoolStateActivated, PositionActivated,
     PositionCountChanged, PositionInitFailed, PositionInitQueued, PositionStateStored,
     ShieldCreditFailed, ShieldCredited, ShieldQueued, ShieldRetried, SumEvent, UnshieldApproved,
     UnshieldFailed, UnshieldQueued, UnshieldZero, ViewingKeyRotated,
 };
+use events::{PositionOpApplied, PositionOpQueued, PositionOpRejected};
 use events::{ReserveWithdrawalApproved, ReserveWithdrawalNotApplied, ReserveWithdrawalQueued};
 use events::{SupplyFlowApplied, SupplyFlowNotApplied, SupplyFlowQueued};
 use events::{UtilizationBandNotApplied, UtilizationBandQueued, UtilizationBandUpdated};
@@ -89,6 +93,10 @@ use state::position::{
     NewPosition, PositionInitCallback, PositionInitRequest, PositionInitSettlement,
     POSITION_ACCOUNT_SEED,
 };
+use state::position_op::{PositionOpReport, PositionOpRequest, PositionOpSettlement};
+use state::recovery::{
+    RecoverEmptyPoolReport, RecoverEmptyPoolRequest, RecoverEmptyPoolSettlement,
+};
 use state::reserve_withdrawal::{
     ReserveWithdrawalReport, ReserveWithdrawalRequest, ReserveWithdrawalSettlement,
 };
@@ -100,6 +108,7 @@ use state::{EncryptedPoolState, PendingShield, PoolState, Position, ShieldAsset}
 
 const COMP_DEF_OFFSET_SHIELD_CREDIT: u32 = comp_def_offset("shield_credit");
 const COMP_DEF_OFFSET_UNSHIELD: u32 = comp_def_offset("unshield");
+const COMP_DEF_OFFSET_POSITION_OP: u32 = comp_def_offset("position_op");
 const COMP_DEF_OFFSET_ROTATE_POSITION_KEY: u32 = comp_def_offset("rotate_position_key");
 const COMP_DEF_OFFSET_ADD_TOGETHER: u32 = comp_def_offset("add_together");
 const COMP_DEF_OFFSET_INIT_POSITION: u32 = comp_def_offset("init_position");
@@ -112,6 +121,7 @@ const COMP_DEF_OFFSET_INIT_POSITION_STATE: u32 = comp_def_offset("init_position_
 const COMP_DEF_OFFSET_UPDATE_UTILIZATION_BAND: u32 = comp_def_offset("update_utilization_band");
 const COMP_DEF_OFFSET_RESERVE_WITHDRAWAL: u32 = comp_def_offset("reserve_withdrawal");
 const COMP_DEF_OFFSET_SUPPLY_FLOW: u32 = comp_def_offset("supply_flow");
+const COMP_DEF_OFFSET_RECOVER_EMPTY_POOL: u32 = comp_def_offset("recover_empty_pool");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -1709,6 +1719,203 @@ pub mod walnut {
         abandon_unshield_handler(ctx)
     }
 
+    // ---- walnut-diffn: position_op -------------------------------------------
+
+    /// Registers the `position_op` computation definition with the MXE.
+    pub fn init_position_op_comp_def(ctx: Context<InitPositionOpCompDef>) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Owner-signed demo operation on the encrypted Position: `op` 0 add
+    /// collateral, 1 withdraw collateral, 2 borrow, 3 repay. `price` (USDC base
+    /// units per SOL) is caller supplied (demo shortcut); the LTV comes from
+    /// the Asset State. Pure encrypted state update, no token moves.
+    #[allow(clippy::too_many_arguments)]
+    pub fn position_op(
+        ctx: Context<PositionOpQueue>,
+        computation_offset: u64,
+        sequence: u64,
+        op: u8,
+        amount: u64,
+        price: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let owner = ctx.accounts.payer.key();
+        let market_key = ctx.accounts.market.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let ltv_bps = u64::from(ctx.accounts.asset_state.risk.ltv_bps);
+        let request = PositionOpRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            op,
+            amount,
+        };
+        let accounts = &mut *ctx.accounts;
+        let mut intent = state::position_op::queue_position_op(
+            &accounts.market,
+            market_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_counter,
+            &owner,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+
+        emit!(PositionOpQueued {
+            market: market_key,
+            position: position_key,
+            owner,
+            operation_intent: intent_key,
+            op,
+            amount,
+            price,
+            ltv_bps,
+            computation_offset,
+            position_generation: accounts.position.coordination.generation,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            lock_expiry_slot: intent.lock_expiry_slot,
+            slot: clock.slot,
+        });
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let output_nonce_input = state::nonce::derive_output_nonce_input(&position_key, sequence);
+        let args = position_op_args(
+            &ctx.accounts.position,
+            output_nonce_input,
+            op,
+            amount,
+            price,
+            ltv_bps,
+        )
+        .build();
+        let callback_accounts = [
+            CallbackAccount {
+                pubkey: market_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: position_key,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: intent_key,
+                is_writable: true,
+            },
+        ];
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![PositionOpCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the `position_op` output. `Applied` stores the new state,
+    /// bumps the generation and releases the Lock. A refusal (`Zero`),
+    /// `Stale`, and `Expired` release the Lock and store nothing.
+    /// Unauthenticated output and binding mismatches revert.
+    #[arcium_callback(encrypted_ix = "position_op")]
+    pub fn position_op_callback(
+        ctx: Context<PositionOpCallback>,
+        output: SignedComputationOutputs<PositionOpOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(PositionOpOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+        let sealed = o.field_0;
+
+        let intent_offset = ctx.accounts.operation_intent.computation_offset;
+        let computation_offset = if ctx.accounts.computation_account.key()
+            == derive_comp_pda!(intent_offset, ctx.accounts.mxe_account)
+        {
+            intent_offset
+        } else {
+            intent_offset.wrapping_add(1)
+        };
+
+        let clock = Clock::get()?;
+        let market_key = ctx.accounts.market.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let report = PositionOpReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            encryption_key: sealed.encryption_key,
+            output_nonce: sealed.nonce,
+            ciphertexts: sealed.ciphertexts,
+            applied: o.field_1,
+            op: o.field_2,
+            amount: o.field_3,
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::position_op::settle_position_op(
+            &accounts.market,
+            market_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_intent,
+            &report,
+        )?;
+        let owner = accounts.position.owner;
+        match settlement {
+            PositionOpSettlement::Applied => emit!(PositionOpApplied {
+                position: position_key,
+                owner,
+                operation_intent: intent_key,
+                op: o.field_2,
+                amount: o.field_3,
+                generation: accounts.position.coordination.generation,
+                nonce: sealed.nonce.to_le_bytes(),
+                slot: clock.slot,
+            }),
+            PositionOpSettlement::Rejected => emit!(PositionOpRejected {
+                position: position_key,
+                owner,
+                operation_intent: intent_key,
+                op: o.field_2,
+                amount: o.field_3,
+                intent_status: crate::operation::IntentStatus::Zero,
+                slot: clock.slot,
+            }),
+            PositionOpSettlement::Failed(intent_status) => emit!(PositionOpRejected {
+                position: position_key,
+                owner,
+                operation_intent: intent_key,
+                op: o.field_2,
+                amount: o.field_3,
+                intent_status,
+                slot: clock.slot,
+            }),
+            PositionOpSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
+    /// Permissionless: abandons a queued position operation after Lock expiry.
+    pub fn abandon_position_op(ctx: Context<AbandonPositionOp>) -> Result<()> {
+        abandon_position_op_handler(ctx)
+    }
+
     // ---- Task 5.5: production Viewing Key rotation -------------------------
 
     /// Registers the `rotate_position_key` computation definition with the MXE.
@@ -2363,7 +2570,7 @@ pub mod walnut {
         let accounted_index = accounts.pool_state.accounted_borrow_index;
         let reserve_factor_bps = accounts.asset_state.risk.reserve_factor_bps;
         let supply_cap = accounts.asset_state.caps.supply_cap_usdc;
-        let claims_clear = accounts.pool_state.unsettled_recovery_claim_count == 0;
+        let claims_clear = accounts.market.unsettled_recovery_claim_count == 0;
         let mut intent = state::supply::queue_supply_flow(
             &accounts.market,
             market_key,
@@ -2528,6 +2735,203 @@ pub mod walnut {
     /// expiry. Nothing moved, so there is nothing to refund.
     pub fn abandon_supply_flow(ctx: Context<AbandonSupplyFlow>) -> Result<()> {
         abandon_supply_flow_handler(ctx)
+    }
+
+    // ---- Task 8.1: separately reviewed recovery of an empty Pool -----------
+
+    /// Registers the `recover_empty_pool` computation definition.
+    pub fn init_recover_empty_pool_comp_def(
+        ctx: Context<InitRecoverEmptyPoolCompDef>,
+    ) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Admin-signed: reclassifies an empty Pool's provable dust residue as
+    /// Reserves so the treasury can withdraw it and supply can reopen. See
+    /// `state::recovery` for the review notes. Locks the Pool, accrues the
+    /// accounting Borrow Index, creates the Intent at `sequence` (Pool-owned
+    /// counter), and queues `recover_empty_pool`. No token moves.
+    pub fn recover_empty_pool(
+        ctx: Context<RecoverEmptyPoolQueue>,
+        computation_offset: u64,
+        sequence: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let signer = ctx.accounts.payer.key();
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let asset_state_key = ctx.accounts.asset_state.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        if ctx.accounts.operation_counter.owner == Pubkey::default() {
+            ctx.accounts
+                .operation_counter
+                .set_inner(OperationCounter::new(pool_key, ctx.bumps.operation_counter));
+        }
+        let request = RecoverEmptyPoolRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            now_ts: clock.unix_timestamp,
+        };
+        let accounts = &mut *ctx.accounts;
+        let accounted_index = accounts.pool_state.accounted_borrow_index;
+        let reserve_factor_bps = accounts.asset_state.risk.reserve_factor_bps;
+        let claims_clear = state::first_supplier::claims_clear(&accounts.market);
+        let mut intent = state::recovery::queue_recover_empty_pool(
+            &accounts.market,
+            market_key,
+            asset_state_key,
+            &mut accounts.asset_state,
+            &mut accounts.pool_state,
+            pool_key,
+            &mut accounts.operation_counter,
+            &signer,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(EmptyPoolRecoveryQueued {
+            market: market_key,
+            pool_state: pool_key,
+            operation_intent: intent_key,
+            admin: signer,
+            computation_offset,
+            pool_generation: accounts.pool_state.coordination.generation,
+            dust_limit: math::supply::RECOVERY_DUST_LIMIT,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            lock_expiry_slot: intent.lock_expiry_slot,
+            slot: clock.slot,
+        });
+
+        // `recover_empty_pool(pool, accounted_index, accounting_index,
+        // reserve_factor_bps, dust_limit, claims_clear)`.
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let c = &ctx.accounts.pool_state.encrypted.ciphertexts;
+        let args = ArgBuilder::new()
+            .plaintext_u128(ctx.accounts.pool_state.encrypted.nonce)
+            .encrypted_u128(c[0])
+            .encrypted_u128(c[1])
+            .encrypted_u128(c[2])
+            .encrypted_u128(c[3])
+            .plaintext_u128(accounted_index)
+            .plaintext_u128(intent.accounting_borrow_index)
+            .plaintext_u128(reserve_factor_bps as u128)
+            .plaintext_u128(math::supply::RECOVERY_DUST_LIMIT)
+            .plaintext_bool(claims_clear)
+            .build();
+        let callback_accounts = [
+            CallbackAccount {
+                pubkey: market_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: asset_state_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: pool_key,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: intent_key,
+                is_writable: true,
+            },
+        ];
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![RecoverEmptyPoolCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the `recover_empty_pool` output. `Applied` stores the Pool
+    /// payload, advances the accounted index, bumps the generation, and
+    /// releases the Lock. `Zero`, `Stale`, and `Expired` release the Lock and
+    /// store nothing. Unauthenticated output and binding mismatches revert,
+    /// so the Intent stays `Queued` for `abandon_recover_empty_pool`.
+    #[arcium_callback(encrypted_ix = "recover_empty_pool")]
+    pub fn recover_empty_pool_callback(
+        ctx: Context<RecoverEmptyPoolCallback>,
+        output: SignedComputationOutputs<RecoverEmptyPoolOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(RecoverEmptyPoolOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+        let sealed = o.field_0;
+
+        let intent_offset = ctx.accounts.operation_intent.computation_offset;
+        let computation_offset = if ctx.accounts.computation_account.key()
+            == derive_comp_pda!(intent_offset, ctx.accounts.mxe_account)
+        {
+            intent_offset
+        } else {
+            intent_offset.wrapping_add(1)
+        };
+
+        let clock = Clock::get()?;
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let report = RecoverEmptyPoolReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            output: EncryptedPoolState {
+                nonce: sealed.nonce,
+                ciphertexts: sealed.ciphertexts,
+            },
+            applied: o.field_1,
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::recovery::settle_recover_empty_pool(
+            &accounts.market,
+            market_key,
+            &accounts.asset_state,
+            &mut accounts.pool_state,
+            pool_key,
+            &mut accounts.operation_intent,
+            &report,
+        )?;
+        match settlement {
+            RecoverEmptyPoolSettlement::Recovered => emit!(EmptyPoolRecovered {
+                pool_state: pool_key,
+                operation_intent: intent_key,
+                generation: accounts.pool_state.coordination.generation,
+                accounted_borrow_index: accounts.pool_state.accounted_borrow_index,
+                slot: clock.slot,
+            }),
+            RecoverEmptyPoolSettlement::Zero | RecoverEmptyPoolSettlement::Failed(_) => {
+                emit!(EmptyPoolRecoveryNotApplied {
+                    pool_state: pool_key,
+                    operation_intent: intent_key,
+                    intent_status: accounts.operation_intent.status,
+                    slot: clock.slot,
+                })
+            }
+            RecoverEmptyPoolSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
+    /// Permissionless: abandons a queued recovery after Lock expiry.
+    pub fn abandon_recover_empty_pool(ctx: Context<AbandonRecoverEmptyPool>) -> Result<()> {
+        abandon_recover_empty_pool_handler(ctx)
     }
 }
 
@@ -2955,6 +3359,141 @@ pub struct UnshieldCallback<'info> {
 #[init_computation_definition_accounts("unshield", payer)]
 #[derive(Accounts)]
 pub struct InitUnshieldCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- walnut-diffn: position_op accounts and helpers ---------------------------
+
+/// `position_op(state, owner: Shared, op: u8, amount: u64, price: u64,
+/// ltv_bps: u64)` arguments: the stored state, the bare `Shared` output owner
+/// with the derived nonce input, then the four public values.
+fn position_op_args(
+    position: &Position,
+    output_nonce_input: u128,
+    op: u8,
+    amount: u64,
+    price: u64,
+    ltv_bps: u64,
+) -> ArgBuilder {
+    let c = &position.encrypted_state.ciphertexts;
+    ArgBuilder::new()
+        .x25519_pubkey(position.viewing_pubkey)
+        .plaintext_u128(position.encrypted_state.nonce)
+        .encrypted_u64(c[0])
+        .encrypted_u64(c[1])
+        .encrypted_u64(c[2])
+        .encrypted_u128(c[3])
+        .encrypted_u128(c[4])
+        .x25519_pubkey(position.viewing_pubkey)
+        .plaintext_u128(output_nonce_input)
+        .plaintext_u8(op)
+        .plaintext_u64(amount)
+        .plaintext_u64(price)
+        .plaintext_u64(ltv_bps)
+}
+
+#[queue_computation_accounts("position_op", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct PositionOpQueue<'info> {
+    /// The Position owner; signs, pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
+    pub sign_pda_account: Account<'info, ArciumSignerAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_POSITION_OP))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Account<'info, FeePool>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Account<'info, ClockAccount>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Read for the LTV.
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, market.key().as_ref(), payer.key().as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    #[account(
+        mut,
+        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
+        bump = operation_counter.bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, payer.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("position_op")]
+#[derive(Accounts)]
+pub struct PositionOpCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_POSITION_OP))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, position.market.as_ref(), position.owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+}
+
+#[init_computation_definition_accounts("position_op", payer)]
+#[derive(Accounts)]
+pub struct InitPositionOpCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]
@@ -4374,6 +4913,122 @@ pub struct SupplyFlowCallback<'info> {
 #[init_computation_definition_accounts("supply_flow", payer)]
 #[derive(Accounts)]
 pub struct InitSupplyFlowCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- Task 8.1: recover_empty_pool accounts -------------------------------------
+
+#[queue_computation_accounts("recover_empty_pool", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct RecoverEmptyPoolQueue<'info> {
+    /// The Market admin; signs, pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    /// Not init_if_needed (see `SupplyFlowQueue`).
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_RECOVER_EMPTY_POOL))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Written: the accounting Borrow Index accrues at queue time.
+    #[account(mut, address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    /// Locked by this operation.
+    #[account(
+        mut,
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The Pool-owned Intent counter (created on first use).
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = OperationCounter::ACCOUNT_LEN,
+        seeds = [OPERATION_COUNTER_SEED, pool_state.key().as_ref()],
+        bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, pool_state.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("recover_empty_pool")]
+#[derive(Accounts)]
+pub struct RecoverEmptyPoolCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_RECOVER_EMPTY_POOL))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        mut,
+        address = market.pool_state,
+        seeds = [POOL_STATE_SEED, market.key().as_ref()],
+        bump = pool_state.bump,
+    )]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+}
+
+#[init_computation_definition_accounts("recover_empty_pool", payer)]
+#[derive(Accounts)]
+pub struct InitRecoverEmptyPoolCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]

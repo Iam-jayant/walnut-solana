@@ -122,3 +122,66 @@ export function supplyFlow(
     applied: true,
   };
 }
+
+/** Largest residue `recoverEmptyPool` may reclassify as reserves (0.01 USDC). */
+export const RECOVERY_DUST_LIMIT = 10_000n;
+
+/**
+ * The first-supplier precondition on the (checkpointed) Pool: Supply Shares,
+ * Cash, Debt Shares, and Reserves are zero and no Recovery Claim is unsettled.
+ */
+export function isCanonicalEmpty(
+  pool: PoolPlain,
+  claimsClear: boolean,
+): boolean {
+  return (
+    pool.totalSupplyShares === 0n &&
+    pool.cash === 0n &&
+    pool.totalDebtShares === 0n &&
+    pool.reserves === 0n &&
+    claimsClear
+  );
+}
+
+export interface RecoveryOutcome {
+  pool: PoolPlain;
+  applied: boolean;
+}
+
+/**
+ * Mirror of `math::supply::recover_empty_pool`: with no Supply or Debt Shares
+ * and no unsettled claim, a nonzero residue `cash - reserves` of at most
+ * `dustLimit` becomes reserves (`reserves := cash`). Otherwise the INPUT pool.
+ */
+export function recoverEmptyPool(
+  pool: PoolPlain,
+  accountedIndex: bigint,
+  accountingIndex: bigint,
+  reserveFactorBps: number,
+  dustLimit: bigint,
+  claimsClear: boolean,
+): RecoveryOutcome {
+  const refused: RecoveryOutcome = { pool, applied: false };
+  let cp;
+  try {
+    cp = checkpoint(
+      pool,
+      accountedIndex,
+      accountingIndex,
+      BigInt(reserveFactorBps),
+    );
+  } catch {
+    return refused;
+  }
+  const p = cp.pool;
+  if (
+    p.totalSupplyShares !== 0n ||
+    p.totalDebtShares !== 0n ||
+    !claimsClear ||
+    cp.supplierEquity === 0n ||
+    cp.supplierEquity > dustLimit
+  ) {
+    return refused;
+  }
+  return { pool: { ...p, reserves: p.cash }, applied: true };
+}

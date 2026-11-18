@@ -22,12 +22,15 @@
 pub mod accounts;
 pub mod band;
 pub mod coordination;
+pub mod first_supplier;
 pub mod generation;
 pub mod nonce;
 pub mod pending_shield;
 pub mod pool_mutation;
 pub mod position;
+pub mod position_op;
 pub mod protected;
+pub mod recovery;
 pub mod reserve_withdrawal;
 pub mod rotation;
 pub mod shield;
@@ -44,6 +47,12 @@ mod balance_checkpoint;
 // reference model.
 #[cfg(test)]
 mod pool_checkpoint;
+// The Task 8.4 supply checkpoint: a model-based test that drives the real
+// supply, withdrawal, and abandonment rules next to a plaintext reference.
+#[cfg(test)]
+mod supply_checkpoint;
+#[cfg(test)]
+pub(crate) mod test_fixtures;
 
 pub use accounts::{
     EncryptedPoolState, EncryptedPositionPayload, PoolState, PoolStatus, Position, PositionStatus,

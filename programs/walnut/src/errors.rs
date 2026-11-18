@@ -16,6 +16,7 @@ use crate::state::CoordinationError;
 /// Variants are append-only: Anchor numbers them from 6000 in declaration order,
 /// so reordering or inserting would renumber existing codes.
 #[error_code]
+#[derive(PartialEq, Eq)]
 pub enum ErrorCode {
     #[msg("The computation was aborted")]
     AbortedComputation,
@@ -340,6 +341,16 @@ pub enum ErrorCode {
     SupplyZeroRequest,
     #[msg("The Operation Intent is not this Position's queued supply or withdrawal")]
     SupplyIntentMismatch,
+    #[msg("The unsettled Recovery Claim count would overflow")]
+    ClaimCountOverflow,
+    #[msg("The unsettled Recovery Claim count is already zero")]
+    ClaimCountUnderflow,
+    #[msg("Only the Position owner may run a position operation")]
+    PositionOpNotOwner,
+    #[msg("The Position is not Active")]
+    PositionOpPositionNotActive,
+    #[msg("The Operation Intent is not this Position's queued position operation")]
+    PositionOpIntentMismatch,
 }
 impl From<crate::math::fixed::MathError> for ErrorCode {
     fn from(error: crate::math::fixed::MathError) -> Self {
@@ -785,6 +796,16 @@ mod tests {
         // Task 7 appends the fixed-point, rate, and band codes.
         assert_eq!(u32::from(ErrorCode::FixedPointOverflow), 6128);
         assert_eq!(u32::from(ErrorCode::BandIntentMismatch), 6140);
+        // Task 7.5 appends the reserve withdrawal codes (6145 to 6149).
+        assert_eq!(u32::from(ErrorCode::ReserveWithdrawalApprovalInvalid), 6149);
+        // Task 8 appends the supply codes and the claim-count codes.
+        assert_eq!(u32::from(ErrorCode::SupplyNotOwner), 6150);
+        assert_eq!(u32::from(ErrorCode::SupplyIntentMismatch), 6153);
+        assert_eq!(u32::from(ErrorCode::ClaimCountOverflow), 6154);
+        assert_eq!(u32::from(ErrorCode::ClaimCountUnderflow), 6155);
+        // The walnut-diffn demo appends the position operation codes.
+        assert_eq!(u32::from(ErrorCode::PositionOpNotOwner), 6156);
+        assert_eq!(u32::from(ErrorCode::PositionOpIntentMismatch), 6158);
     }
 
     #[test]

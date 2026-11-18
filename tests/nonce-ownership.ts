@@ -57,6 +57,7 @@ import {
 import * as fs from "fs";
 import * as os from "os";
 import { expect } from "chai";
+import { awaitEvent, type LiquidationReceiptsPayload } from "./support/events";
 
 const POSITION_SEED = Buffer.from("spike_position");
 
@@ -69,31 +70,6 @@ describe("Walnut Task 2.3: nonce and ownership safety", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const program = anchor.workspace.Walnut as Program<Walnut>;
   const provider = anchor.getProvider() as anchor.AnchorProvider;
-
-  type Event = anchor.IdlEvents<(typeof program)["idl"]>;
-  const awaitEvent = async <E extends keyof Event>(
-    eventName: E,
-    timeoutMs = 120000,
-  ): Promise<Event[E]> => {
-    let listenerId: number;
-    let timeoutId: NodeJS.Timeout;
-    const event = await new Promise<Event[E]>((res, rej) => {
-      listenerId = program.addEventListener(eventName, (ev) => {
-        clearTimeout(timeoutId);
-        res(ev);
-      });
-      timeoutId = setTimeout(() => {
-        program.removeEventListener(listenerId);
-        rej(
-          new Error(
-            `Event ${String(eventName)} timed out after ${timeoutMs}ms`,
-          ),
-        );
-      }, timeoutMs);
-    });
-    await program.removeEventListener(listenerId);
-    return event;
-  };
 
   const arciumEnv = getArciumEnv();
   const clusterAccount = getClusterAccAddress(arciumEnv.arciumClusterOffset);
@@ -159,7 +135,10 @@ describe("Walnut Task 2.3: nonce and ownership safety", () => {
       liquidatorNonce,
     );
 
-    const eventPromise = awaitEvent("liquidationReceiptsEmitted");
+    const eventPromise = awaitEvent<LiquidationReceiptsPayload>(
+      program,
+      "liquidationReceiptsEmitted",
+    );
     const computationOffset = new anchor.BN(randomBytes(8), "hex");
 
     await program.methods

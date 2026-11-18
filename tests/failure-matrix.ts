@@ -63,13 +63,12 @@ import {
 import * as fs from "fs";
 import * as os from "os";
 import { expect } from "chai";
+import { watchEvent, type SumEventPayload } from "./support/events";
 
 describe("Walnut Task 2.4: failure matrix (localnet layer)", () => {
   anchor.setProvider(anchor.AnchorProvider.env());
   const program = anchor.workspace.Walnut as Program<Walnut>;
   const provider = anchor.getProvider() as anchor.AnchorProvider;
-
-  type Event = anchor.IdlEvents<(typeof program)["idl"]>;
 
   const arciumEnv = getArciumEnv();
   const clusterOffset = arciumEnv.arciumClusterOffset;
@@ -96,21 +95,6 @@ describe("Walnut Task 2.4: failure matrix (localnet layer)", () => {
       program.methods.initOversizedOutputCompDef(),
     );
   });
-
-  // Records whether a given event fired within a window, for negative controls.
-  const watchEvent = <E extends keyof Event>(eventName: E) => {
-    const state = { fired: false, payload: undefined as Event[E] | undefined };
-    const listenerId = program.addEventListener(eventName, (ev) => {
-      state.fired = true;
-      state.payload = ev;
-    });
-    return {
-      state,
-      stop: async () => {
-        await program.removeEventListener(listenerId);
-      },
-    };
-  };
 
   const standardQueueAccounts = (
     computationOffset: anchor.BN,
@@ -140,7 +124,7 @@ describe("Walnut Task 2.4: failure matrix (localnet layer)", () => {
     const ct = cipher.encrypt([val1, val2], nonce);
     const computationOffset = new anchor.BN(randomBytes(8), "hex");
 
-    const sum = watchEvent("sumEvent");
+    const sum = watchEvent<SumEventPayload>(program, "sumEvent");
     await program.methods
       .addTogether(
         computationOffset,
@@ -187,7 +171,7 @@ describe("Walnut Task 2.4: failure matrix (localnet layer)", () => {
     const ct = cipher.encrypt([BigInt(123)], nonce);
     const computationOffset = new anchor.BN(randomBytes(8), "hex");
 
-    const emitted = watchEvent("oversizedOutputEmitted");
+    const emitted = watchEvent<unknown>(program, "oversizedOutputEmitted");
     await program.methods
       .oversizedOutput(
         computationOffset,
@@ -239,7 +223,7 @@ describe("Walnut Task 2.4: failure matrix (localnet layer)", () => {
     const ct = cipher.encrypt([BigInt(2), BigInt(3)], nonce);
     const computationOffset = new anchor.BN(randomBytes(8), "hex");
 
-    const sum = watchEvent("sumEvent");
+    const sum = watchEvent<SumEventPayload>(program, "sumEvent");
     await program.methods
       .addTogetherBoundedCu(
         computationOffset,

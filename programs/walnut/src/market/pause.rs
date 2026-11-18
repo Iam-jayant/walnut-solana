@@ -317,6 +317,8 @@ impl From<OperationKind> for Action {
             OperationKind::ViewingKeyRotation => Action::ViewingKeyRotation,
             OperationKind::UtilizationBand => Action::UtilizationBandUpdate,
             OperationKind::ReserveWithdrawal => Action::ReserveWithdrawal,
+            OperationKind::RecoverEmptyPool => Action::ReserveWithdrawal,
+            OperationKind::PositionOp => Action::Probe,
         }
     }
 }

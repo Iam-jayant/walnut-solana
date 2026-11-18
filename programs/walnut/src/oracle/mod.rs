@@ -404,7 +404,9 @@ pub fn operation_is_price_sensitive(kind: OperationKind) -> bool {
         | OperationKind::Repay
         | OperationKind::ViewingKeyRotation
         | OperationKind::UtilizationBand
-        | OperationKind::ReserveWithdrawal => false,
+        | OperationKind::ReserveWithdrawal
+        | OperationKind::RecoverEmptyPool
+        | OperationKind::PositionOp => false,
     }
 }
 
