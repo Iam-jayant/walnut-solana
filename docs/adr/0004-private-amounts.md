@@ -37,7 +37,19 @@ Instructions: `pool_op(op, accrue_to_ts, input_pubkey, input_nonce, input_cipher
 - **Locks.** `pool_op` locks the Pool and the Position, `position_private` the Position, `liquidate_pool` the Pool, the target and the liquidator's Position, all or none. `Applied` stores every payload and bumps every generation.
 - **Binding.** The accounts commitment covers payer, Market, Asset State, LendingPool, Pool, and both Positions with generations. The inputs commitment covers the stored payloads, Viewing keys, epochs, output-nonce inputs and the public parameters. The client ciphertext is immutable inside the queued computation and is not bound separately.
 - **Events.** `PrivateOpQueued`, `PrivateOpSettled` (one `applied` bit) and `PrivateOpAbandoned` carry the kind and op code only.
-- **Not yet enforced on the private path:** the total-debt cap (the debt total is encrypted) and the public `LendingPool` totals, which the private path leaves untouched. Interest therefore still follows the public-path utilization until P.5 moves the rate to the utilization band.
+- **Not enforced on the private path:** the total-debt cap (the debt total is encrypted). The per-Position debt cap and the supply cap are enforced inside the circuits.
+
+## Interest from the band (task P.5)
+
+- `LendingPool.rate_source` (byte 189, formerly reserved and zero, so existing accounts read as `0`): `0` accrues from the public totals (walnut-lend path), `1` from the revealed utilization band. The admin switches it with `set_lending_rate_source`, which first accrues to now with the old source.
+- Band mode (`LendingPool::accrue_banded`): borrow index at the kinked rate of the band's upper edge, rounded up; supply index at `rate(lower edge) * lower edge * (1 - reserve factor)`, rounded down. A property test checks that suppliers are never credited more than borrowers pay for any utilization inside the band. Reserves are the implicit surplus inside the encrypted Pool.
+- The existing `update_utilization_band` circuit is reused unchanged. When an optional `lending_pool` account in band mode is passed, the band is measured at `borrow_index_1e9 * 1e9` (WAD), which is exact for debt shares booked at the 1e9 index. The circuit index is bound through `risk_borrow_index_at_expiry`.
+- A band-mode borrow requires a fresh band (`band_max_age_slots`), so borrowers never accrue at a stale band. Repay, withdrawals and collateral never wait on the band.
+- Every accrual (`lend_op`, `check_health`, `liquidate` and the private path) goes through `accrue_auto`, so both paths move the same indexes the same way.
+
+## SDK (task P.6)
+
+`packages/sdk/src/private-op.ts`: conversions and mirrors of the circuit checks, `encryptPrivateInput` (fresh ephemeral x25519 key and nonce per input), `chooseAccrualTs`, and builders for `pool_op`, `position_private`, `liquidate_pool`, `abandon_private_op` and `set_lending_rate_source`. `lending-pool.ts` decodes `rateSource` and mirrors band-mode accrual (`projectIndexesBanded`, `projectIndexesAuto`), with golden vectors shared with the Rust tests.
 
 ## Consequences
 
