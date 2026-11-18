@@ -6,7 +6,7 @@
 //   max_price_age_seconds u32 105..109, total_supply_shares u128 109..125,
 //   total_debt_shares u128 125..141, supply_index_1e9 u128 141..157,
 //   borrow_index_1e9 u128 157..173, last_accrual_ts i64 173..181,
-//   reserves_usdc u64 181..189, reserved 189..253.
+//   reserves_usdc u64 181..189, rate_source u8 189, reserved 190..253.
 import { PublicKey, type Connection } from "@solana/web3.js";
 import {
   debtValue,
@@ -40,7 +40,14 @@ export interface LendingPool {
   borrowIndex1e9: bigint;
   lastAccrualTs: bigint;
   reservesUsdc: bigint;
+  /** {@link RATE_SOURCE_TOTALS} or {@link RATE_SOURCE_BAND}. */
+  rateSource: number;
 }
+
+/** Rates follow the public totals. */
+export const RATE_SOURCE_TOTALS = 0;
+/** Rates follow the revealed utilization band of the encrypted Pool (ADR-0004). */
+export const RATE_SOURCE_BAND = 1;
 
 function getU128(view: DataView, at: number): bigint {
   return view.getBigUint64(at, true) | (view.getBigUint64(at + 8, true) << 64n);
@@ -66,6 +73,7 @@ export function decodeLendingPool(data: Uint8Array): LendingPool {
     borrowIndex1e9: getU128(view, 157),
     lastAccrualTs: view.getBigInt64(173, true),
     reservesUsdc: view.getBigUint64(181, true),
+    rateSource: data[189] as number,
   };
 }
 
@@ -232,6 +240,87 @@ export function projectIndexes(
     supplyIndex1e9: newSupply,
     reservesUsdc: newReserves,
   };
+}
+
+/** The band's `[lower, upper]` utilization edges in bps (5% bands, 0..=19). */
+export function bandEdgesBps(band: number): [bigint, bigint] {
+  const b = BigInt(Math.min(Math.max(Math.trunc(band), 0), 19));
+  const upper = (b + 1n) * 500n;
+  return [b * 500n, upper > BPS ? BPS : upper];
+}
+
+/**
+ * Mirror of `LendingPool::accrue_banded` (ADR-0004): the borrow index grows
+ * at the rate of the band's upper edge (rounded up), the supply index at
+ * `rate(lower) * lower * (1 - reserve factor)` (rounded down). Reserves are
+ * implicit and stay unchanged. Throws where the program rejects.
+ */
+export function projectIndexesBanded(
+  pool: LendingPool,
+  now: bigint | number,
+  options: AccrualOptions & { band: number },
+): ProjectedIndexes {
+  const nowTs = BigInt(now);
+  const rates = options.rates ?? LAUNCH_RATE_PARAMS;
+  const rf = options.reserveFactorBps;
+  if (nowTs < pool.lastAccrualTs) throw new RangeError("time regression");
+  if (rf < 0n || rf > BPS) throw new RangeError("invalid reserve factor");
+  for (const i of [pool.borrowIndex1e9, pool.supplyIndex1e9]) {
+    if (i < INDEX_SCALE || i > MAX_INDEX_1E9) {
+      throw new RangeError("index out of range");
+    }
+  }
+  const unchanged: ProjectedIndexes = {
+    borrowIndex1e9: pool.borrowIndex1e9,
+    supplyIndex1e9: pool.supplyIndex1e9,
+    reservesUsdc: pool.reservesUsdc,
+  };
+  if (nowTs === pool.lastAccrualTs) return unchanged;
+  const [lower, upper] = bandEdgesBps(options.band);
+  const projectedBorrow = projectIndexWad(
+    pool.borrowIndex1e9 * WAD_PER_INDEX,
+    pool.lastAccrualTs,
+    nowTs,
+    ratePerSecondWad(borrowRateBps(rates, upper)),
+  );
+  let newBorrow = divCeil(projectedBorrow, WAD_PER_INDEX);
+  if (newBorrow < pool.borrowIndex1e9) newBorrow = pool.borrowIndex1e9;
+  const supplyRate =
+    (((borrowRateBps(rates, lower) * lower) / BPS) * (BPS - rf)) / BPS;
+  let newSupply = pool.supplyIndex1e9;
+  if (supplyRate !== 0n) {
+    const projected = projectIndexWad(
+      pool.supplyIndex1e9 * WAD_PER_INDEX,
+      pool.lastAccrualTs,
+      nowTs,
+      ratePerSecondWad(supplyRate),
+    );
+    const floor = projected / WAD_PER_INDEX;
+    newSupply = floor > pool.supplyIndex1e9 ? floor : pool.supplyIndex1e9;
+  }
+  if (newBorrow > MAX_INDEX_1E9 || newSupply > MAX_INDEX_1E9) {
+    throw new RangeError("index out of range");
+  }
+  return {
+    borrowIndex1e9: newBorrow,
+    supplyIndex1e9: newSupply,
+    reservesUsdc: pool.reservesUsdc,
+  };
+}
+
+/**
+ * Mirror of `LendingPool::accrue_auto`: band mode when the pool's
+ * `rateSource` is {@link RATE_SOURCE_BAND}, else the public-totals accrual.
+ * `band` is the Asset State's last revealed utilization band.
+ */
+export function projectIndexesAuto(
+  pool: LendingPool,
+  now: bigint | number,
+  options: AccrualOptions & { band: number },
+): ProjectedIndexes {
+  return pool.rateSource === RATE_SOURCE_BAND
+    ? projectIndexesBanded(pool, now, options)
+    : projectIndexes(pool, now, options);
 }
 
 /**

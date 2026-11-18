@@ -178,6 +178,7 @@ function pool(supply: bigint, debt: bigint): LendingPool {
     borrowIndex1e9: INDEX_SCALE,
     lastAccrualTs: 0n,
     reservesUsdc: 0n,
+    rateSource: 0,
   };
 }
 
