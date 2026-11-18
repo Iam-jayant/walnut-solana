@@ -428,6 +428,54 @@ export function buildAbandonPrivateOpInstruction(p: {
     .instruction();
 }
 
+/** Pool-owned Operation counter PDA (`["operation_counter", pool_state]`). */
+export function derivePoolCounterPda(
+  programId: PublicKey,
+  poolState: PublicKey,
+): PublicKey {
+  return deriveOperationCounterPda(programId, poolState);
+}
+
+/**
+ * Builds `update_pool_band(computation_offset, sequence)`: the light band
+ * circuit over the private Pool at the LendingPool borrow index. Anyone may
+ * sign; `sequence` is the Pool-owned counter's next sequence (0 when the
+ * counter does not exist yet).
+ */
+export function buildUpdatePoolBandInstruction(p: {
+  program: Program;
+  payer: PublicKey;
+  market: PublicKey;
+  assetState: PublicKey;
+  poolState?: PublicKey;
+  sequence: bigint | number;
+  computationOffset: ComputationOffsetInput;
+  clusterOffset: number;
+}): Promise<TransactionInstruction> {
+  const programId = p.program.programId;
+  const poolState = p.poolState ?? derivePoolStatePda(programId, p.market);
+  return methods(p.program)["updatePoolBand"]!(
+    toComputationOffsetBn(p.computationOffset),
+    toComputationOffsetBn(p.sequence),
+  )
+    .accountsPartial({
+      ...deriveArciumQueueAccounts({
+        programId,
+        clusterOffset: p.clusterOffset,
+        computationOffset: p.computationOffset,
+        circuit: "pool_band",
+      }),
+      payer: p.payer,
+      market: p.market,
+      assetState: p.assetState,
+      poolState,
+      lendingPool: deriveLendingPoolPda(programId, p.market),
+      operationCounter: derivePoolCounterPda(programId, poolState),
+      operationIntent: deriveIntentPda(programId, poolState, p.sequence),
+    })
+    .instruction();
+}
+
 /** Builds `set_lending_rate_source(rate_source)` (admin). */
 export function buildSetLendingRateSourceInstruction(p: {
   program: Program;
