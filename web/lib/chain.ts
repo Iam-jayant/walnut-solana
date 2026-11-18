@@ -7,8 +7,12 @@ import { AnchorProvider, BN, Program, type Idl } from "@anchor-lang/core";
 import { getMXEPublicKey } from "@arcium-hq/client";
 import {
   decodeLendingPool,
+  deriveArciumQueueAccounts,
   deriveLendingPoolPda,
+  derivePoolStatePda,
   hexToBytes,
+  MAX_LEND_PRICE,
+  normalizePrice,
   parsePriceUpdateV2,
   PYTH_FEED_IDS,
   u64ToLeBytes,
@@ -22,7 +26,12 @@ import {
   type Transaction,
   type VersionedTransaction,
 } from "@solana/web3.js";
-import { FALLBACK_SOL_PRICE, MARKET_ADDRESS, PROGRAM_ID } from "./config.ts";
+import {
+  CLUSTER_OFFSET,
+  FALLBACK_SOL_PRICE,
+  MARKET_ADDRESS,
+  PROGRAM_ID,
+} from "./config.ts";
 
 // ------------------------------------------------------------------ retry
 
@@ -176,6 +185,14 @@ export interface AssetStateAccount {
     optimalUtilizationBps: number;
   };
   caps: { positionDebtCapUsdc: BN };
+  /** Latest revealed utilization band (5% steps, 0 to 19). */
+  utilizationBand: number;
+  /** Slot of the latest band observation (0 when never observed). */
+  utilizationObservationSlot: BN;
+}
+
+export interface PoolStateAccount {
+  status: Json;
 }
 
 export interface LockView {
@@ -201,6 +218,10 @@ export interface IntentAccount {
   status: Json;
   sequence: BN;
   lockExpirySlot: BN;
+  /** Primary Position of the operation. */
+  position: PublicKey | null;
+  /** Second Position (the liquidator, for a private liquidation). */
+  secondPosition: PublicKey | null;
 }
 
 export interface OperationCounterAccount {
@@ -284,13 +305,20 @@ export interface LendingView {
   pool: LendingPool;
   /** Vault USDC minus protocol reserves, in base units. */
   liquidity: bigint;
+  /** Latest revealed utilization band (AssetState). */
+  band: number;
+  /** Slot of the latest band observation; 0 when never observed. */
+  bandObservationSlot: number;
+  /** Cluster slot when this view was read. */
+  slot: number;
 }
 
 /** Reads the LendingPool; null while it has not been created on chain. */
 export async function loadLendingView(
-  connection: Connection,
+  chain: Pick<Chain, "connection" | "program">,
   protocol: Protocol,
 ): Promise<LendingView | null> {
+  const { connection } = chain;
   const address = deriveLendingPoolPda(PROGRAM_ID, protocol.marketAddress);
   const info = await withRetry(() =>
     connection.getAccountInfo(address, "confirmed"),
@@ -298,14 +326,70 @@ export async function loadLendingView(
   if (info === null) return null;
   const pool = decodeLendingPool(info.data);
   const vault = await tokenBalanceOf(connection, protocol.market.usdcVault);
+  const asset = await fetchAccount<AssetStateAccount>(
+    chain.program,
+    "assetState",
+    protocol.market.assetState,
+  );
+  const slot = await withRetry(() => connection.getSlot("confirmed"));
   const held = vault ?? 0n;
   return {
     address,
     pool,
     liquidity: held > pool.reservesUsdc ? held - pool.reservesUsdc : 0n,
+    band: asset?.utilizationBand ?? 0,
+    bandObservationSlot: Number(
+      asset?.utilizationObservationSlot.toString() ?? "0",
+    ),
+    slot,
   };
 }
 
+/** Circuits of the private path (ADR-0004). */
+const PRIVATE_CIRCUITS = ["pool_op", "position_private", "liquidate_pool"];
+
+/**
+ * Whether the encrypted-amount path is live: the three computation
+ * definitions exist and the encrypted Pool State is Active.
+ */
+export async function detectPrivateMode(
+  chain: Pick<Chain, "connection" | "program">,
+  protocol: Protocol,
+): Promise<boolean> {
+  const compDefs = PRIVATE_CIRCUITS.map(
+    (circuit) =>
+      deriveArciumQueueAccounts({
+        programId: PROGRAM_ID,
+        clusterOffset: CLUSTER_OFFSET,
+        computationOffset: 0n,
+        circuit,
+      }).compDefAccount,
+  );
+  const infos = await withRetry(() =>
+    chain.connection.getMultipleAccountsInfo(compDefs, "confirmed"),
+  );
+  if (infos.some((i) => i === null)) return false;
+  const poolState = await fetchAccount<PoolStateAccount>(
+    chain.program,
+    "poolState",
+    derivePoolStatePda(PROGRAM_ID, protocol.marketAddress),
+  );
+  return poolState !== null && variantName(poolState.status) === "active";
+}
+
+/**
+ * The cluster's unix time, from the block time of the latest slot. The
+ * program checks `accrue_to_ts` against this clock, never the browser's.
+ */
+export async function chainNowSeconds(connection: Connection): Promise<bigint> {
+  for (let i = 0; i < 4; i += 1) {
+    const slot = await withRetry(() => connection.getSlot("confirmed"));
+    const time = await withRetry(() => connection.getBlockTime(slot));
+    if (time !== null) return BigInt(time);
+    await sleep(500);
+  }
+  throw new Error("The cluster time is unavailable. Please try again.");
+}
 // -------------------------------------------------------------------- price
 
 /** Pyth push-oracle program: owns the sponsored feed account of a feed id. */
@@ -359,6 +443,36 @@ export async function fetchSolPrice(
   } catch {
     return { price: FALLBACK_SOL_PRICE, source: "fallback" };
   }
+}
+
+/**
+ * The low-bound price the program uses for collateral (`price - conf`, USDC
+ * base units per SOL), read from the pool oracle account.
+ */
+export async function fetchPoolLowPrice(
+  connection: Connection,
+  oracle: PublicKey,
+): Promise<bigint> {
+  const info = await withRetry(() =>
+    connection.getAccountInfo(oracle, "confirmed"),
+  );
+  if (info === null) throw new Error("The price account is missing.");
+  const parsed = parsePriceUpdateV2(info.data);
+  if (parsed.price <= parsed.conf) {
+    throw new Error("The SOL price is too uncertain right now.");
+  }
+  // Same steps as the program's `pool_price`: normalize the low bound to the
+  // 1e8 USD scale, drop to USDC base units, clamp to the circuit bound.
+  const normalized = normalizePrice(
+    parsed.price - parsed.conf,
+    parsed.exponent,
+    false,
+  );
+  if (!normalized.ok) {
+    throw new Error("The SOL price is out of range right now.");
+  }
+  const price = normalized.value / 100n;
+  return price > MAX_LEND_PRICE ? MAX_LEND_PRICE : price;
 }
 
 // ---------------------------------------------------------------- addresses
