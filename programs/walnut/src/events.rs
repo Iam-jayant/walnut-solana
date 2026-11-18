@@ -992,3 +992,13 @@ pub struct PrivateOpAbandoned {
     pub signer: Pubkey,
     pub slot: u64,
 }
+
+/// Emitted by `set_lending_rate_source` (admin, ADR-0004).
+#[event]
+pub struct LendingRateSourceSet {
+    pub market: Pubkey,
+    pub lending_pool: Pubkey,
+    pub previous: u8,
+    pub rate_source: u8,
+    pub slot: u64,
+}

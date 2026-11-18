@@ -80,3 +80,51 @@ pub fn init_lending_pool_handler(
     });
     Ok(())
 }
+
+/// Accounts of `set_lending_rate_source`.
+#[derive(Accounts)]
+pub struct SetLendingRateSource<'info> {
+    /// The Market admin.
+    pub admin: Signer<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Risk and rate parameters and the last revealed utilization band.
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, crate::market::AssetState>>,
+    #[account(
+        mut,
+        seeds = [LENDING_POOL_SEED, market.key().as_ref()],
+        bump = lending_pool.bump,
+    )]
+    pub lending_pool: Box<Account<'info, LendingPool>>,
+}
+
+/// Admin: switches how the LendingPool indexes accrue (ADR-0004).
+/// `RATE_SOURCE_TOTALS` (0) uses the public totals; `RATE_SOURCE_BAND` (1)
+/// uses the revealed utilization band of the encrypted Pool. Interest up to
+/// now accrues with the old source first, so no period is counted twice.
+pub fn set_lending_rate_source_handler(
+    ctx: Context<SetLendingRateSource>,
+    rate_source: u8,
+) -> Result<()> {
+    use crate::state::lending_pool::{RATE_SOURCE_BAND, RATE_SOURCE_TOTALS};
+    let clock = Clock::get()?;
+    let accounts = &mut *ctx.accounts;
+    authorize(&accounts.market, Role::Admin, &accounts.admin.key())?;
+    if rate_source != RATE_SOURCE_TOTALS && rate_source != RATE_SOURCE_BAND {
+        return Err(ErrorCode::LendPoolConfigInvalid.into());
+    }
+    accounts
+        .lending_pool
+        .accrue_auto(clock.unix_timestamp, &accounts.asset_state)?;
+    let previous = accounts.lending_pool.rate_source;
+    accounts.lending_pool.rate_source = rate_source;
+    emit!(crate::events::LendingRateSourceSet {
+        market: accounts.market.key(),
+        lending_pool: accounts.lending_pool.key(),
+        previous,
+        rate_source,
+        slot: clock.slot,
+    });
+    Ok(())
+}
