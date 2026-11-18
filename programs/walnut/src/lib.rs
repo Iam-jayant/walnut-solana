@@ -7646,8 +7646,7 @@ pub struct LiquidatePoolQueue<'info> {
     pub asset_state: Box<Account<'info, AssetState>>,
     #[account(
         mut,
-        seeds = [LENDING_POOL_SEED, market.key().as_ref()],
-        bump = lending_pool.bump,
+        constraint = lending_pool.market == market.key() @ ErrorCode::PrivateOpIntentMismatch,
     )]
     pub lending_pool: Box<Account<'info, LendingPool>>,
     #[account(mut, address = market.pool_state)]
@@ -7666,10 +7665,10 @@ pub struct LiquidatePoolQueue<'info> {
         constraint = liquidator_position.owner == payer.key() @ ErrorCode::PositionOpNotOwner,
     )]
     pub liquidator_position: Box<Account<'info, Position>>,
+    /// `reserve_intent` also requires `operation_counter.owner == payer`.
     #[account(
         mut,
-        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
-        bump = operation_counter.bump,
+        constraint = operation_counter.owner == payer.key() @ ErrorCode::PositionOpNotOwner,
     )]
     pub operation_counter: Box<Account<'info, OperationCounter>>,
     #[account(
