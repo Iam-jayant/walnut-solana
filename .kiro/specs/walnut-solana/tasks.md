@@ -617,9 +617,9 @@ Parallelizable task waves (each wave starts after the previous wave completes):
   - [x] P.2 Position-only encrypted ops (`position_private`): add collateral, withdraw collateral with encrypted amount; 6.44e8 CU
   - [x] P.3 Program: comp defs, queue and callback for `pool_op` (ops supply, withdraw supply, borrow, repay) with ciphertext args, Pool and Position locked together, Intent commitment over ciphertexts, no amounts in events
   - [x] P.4 Program: `liquidate_pool` queue and callback (borrower, liquidator, Pool), no escrow and no SPL transfer
-  - [ ] P.5 Index policy and band: public indexes advance from the revealed band (borrow upper edge, supply lower edge), adapt `update_utilization_band` to the new Pool meaning, remove public totals from the private path
-  - [ ] P.6 SDK: encrypt `OpInput` and `LiqInput`, share and seize conversions, builders, golden vectors shared with the circuits
-  - [ ] P.7 Web: encrypted-amount forms, band-based market card, liquidator Position setup, copy matches what is hidden
+  - [x] P.5 Index policy and band: public indexes advance from the revealed band (borrow upper edge, supply lower edge), adapt `update_utilization_band` to the new Pool meaning, remove public totals from the private path
+  - [x] P.6 SDK: encrypt `OpInput` and `LiqInput`, share and seize conversions, builders, golden vectors shared with the circuits
+  - [x] P.7 Web: encrypted-amount forms, band-based market card, liquidator Position setup, copy matches what is hidden
   - [ ] P.8 Tests: property tests for the verified conversions, Pool and Position conservation, failure matrix; one devnet end-to-end run
   - [ ] P.9 Deploy once (new program upgrade and circuit uploads), run the end-to-end demo, then update the landing page claims
 - [ ] 14. SDK and keeper completion
