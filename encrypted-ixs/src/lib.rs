@@ -578,18 +578,16 @@ mod circuits {
         seize: u64,
     }
 
-    /// Pool operation with an ENCRYPTED amount. `op`: 0 supply, 1 withdraw
-    /// supply, 2 borrow, 3 repay. The Pool (`Enc<Mxe>`) and the owner's
-    /// Position change together or not at all. Share conversions use the public
-    /// indexes and are verified, never computed: supply `shares =
-    /// floor(a*1e9/sidx)`, withdraw and borrow `shares = ceil(a*1e9/idx)`,
-    /// repay `shares = floor(a*1e9/bidx)`. Only `applied` is revealed.
-    #[instruction]
-    pub fn pool_op(
-        pool: Enc<Mxe, PoolSecret>,
-        state: Enc<Shared, PositionSecret>,
-        input: Enc<Shared, OpInput>,
-        owner: Shared,
+    /// Rules of `pool_op` (plaintext twin for host tests: [`pool_op_scalars`]).
+    /// `op`: 0 supply, 1 withdraw supply, 2 borrow, 3 repay. Share
+    /// conversions use the public indexes and are verified, never computed:
+    /// supply `shares = floor(a*1e9/sidx)`, withdraw and borrow `shares =
+    /// ceil(a*1e9/idx)`, repay `shares = floor(a*1e9/bidx)`. A refusal returns
+    /// the inputs unchanged. Returns `(pool, position, applied)`.
+    pub fn pool_op_values(
+        pool: PoolSecret,
+        state: PositionSecret,
+        inp: OpInput,
         op: u64,
         supply_index_1e9: u64,
         borrow_index_1e9: u64,
@@ -597,10 +595,9 @@ mod circuits {
         ltv_bps: u64,
         position_debt_cap: u64,
         supply_cap: u64,
-    ) -> (Enc<Mxe, PoolSecret>, Enc<Shared, PositionSecret>, bool) {
-        let mut p = pool.to_arcis();
-        let mut s = state.to_arcis();
-        let inp = input.to_arcis();
+    ) -> (PoolSecret, PositionSecret, bool) {
+        let mut p = pool;
+        let mut s = state;
         let a = inp.amount as u128;
         let sh = inp.shares as u128;
         let sidx = supply_index_1e9 as u128;
@@ -684,6 +681,38 @@ mod circuits {
         p.cash_usdc = new_cash;
         p.total_supply_shares = new_tss;
         p.total_debt_shares = new_tds;
+        (p, s, applied)
+    }
+
+    /// Pool operation with an ENCRYPTED amount (rules: [`pool_op_values`]).
+    /// The Pool (`Enc<Mxe>`) and the owner's Position change together or not
+    /// at all. Only `applied` is revealed.
+    #[instruction]
+    pub fn pool_op(
+        pool: Enc<Mxe, PoolSecret>,
+        state: Enc<Shared, PositionSecret>,
+        input: Enc<Shared, OpInput>,
+        owner: Shared,
+        op: u64,
+        supply_index_1e9: u64,
+        borrow_index_1e9: u64,
+        price: u64,
+        ltv_bps: u64,
+        position_debt_cap: u64,
+        supply_cap: u64,
+    ) -> (Enc<Mxe, PoolSecret>, Enc<Shared, PositionSecret>, bool) {
+        let (p, s, applied) = pool_op_values(
+            pool.to_arcis(),
+            state.to_arcis(),
+            input.to_arcis(),
+            op,
+            supply_index_1e9,
+            borrow_index_1e9,
+            price,
+            ltv_bps,
+            position_debt_cap,
+            supply_cap,
+        );
         (
             Mxe::get().from_arcis(p),
             owner.from_arcis(s),
@@ -691,35 +720,28 @@ mod circuits {
         )
     }
 
-    /// Private liquidation. The liquidator pays `amount` USDC from its own
-    /// encrypted free balance and receives `seize` lamports of the target's
-    /// collateral into its own encrypted free SOL; the Pool books the repaid
-    /// cash and burns the debt shares. The liquidator supplies the conversions
+    /// Rules of `liquidate_pool` (host twin: [`liquidate_pool_scalars`]). The
+    /// liquidator pays `amount` USDC from its own free balance and receives
+    /// `seize` lamports of the target's collateral into its own free SOL; the
+    /// Pool books the repaid cash and burns the debt shares. The conversions
     /// (`burn_shares = floor(a*1e9/bidx)`, `seize =
-    /// floor(a*1e9*(10_000+bonus)/(price*10_000))`) and the circuit verifies
-    /// them. Only `applied` is revealed.
-    #[instruction]
-    pub fn liquidate_pool(
-        pool: Enc<Mxe, PoolSecret>,
-        target: Enc<Shared, PositionSecret>,
-        liquidator: Enc<Shared, PositionSecret>,
-        input: Enc<Shared, LiqInput>,
-        target_owner: Shared,
-        liquidator_owner: Shared,
+    /// floor(a*1e9*(10_000+bonus)/(price*10_000))`) are verified. Requires the
+    /// target to be past `liq_threshold_bps` and the close factor (at most
+    /// half the debt, or all of it). Returns `(pool, target, liquidator,
+    /// applied)`.
+    pub fn liquidate_pool_values(
+        pool: PoolSecret,
+        target: PositionSecret,
+        liquidator: PositionSecret,
+        inp: LiqInput,
         borrow_index_1e9: u64,
         price: u64,
         liq_threshold_bps: u64,
         bonus_bps: u64,
-    ) -> (
-        Enc<Mxe, PoolSecret>,
-        Enc<Shared, PositionSecret>,
-        Enc<Shared, PositionSecret>,
-        bool,
-    ) {
-        let mut p = pool.to_arcis();
-        let mut t = target.to_arcis();
-        let mut l = liquidator.to_arcis();
-        let inp = input.to_arcis();
+    ) -> (PoolSecret, PositionSecret, PositionSecret, bool) {
+        let mut p = pool;
+        let mut t = target;
+        let mut l = liquidator;
         let a = inp.amount as u128;
         let sh = inp.burn_shares as u128;
         let z = inp.seize as u128;
@@ -755,6 +777,39 @@ mod circuits {
         l.free_sol = ((l.free_sol as u128) + dz) as u64;
         p.cash_usdc += da;
         p.total_debt_shares -= ds;
+        (p, t, l, applied)
+    }
+
+    /// Private liquidation (rules: [`liquidate_pool_values`]). Only `applied`
+    /// is revealed.
+    #[instruction]
+    pub fn liquidate_pool(
+        pool: Enc<Mxe, PoolSecret>,
+        target: Enc<Shared, PositionSecret>,
+        liquidator: Enc<Shared, PositionSecret>,
+        input: Enc<Shared, LiqInput>,
+        target_owner: Shared,
+        liquidator_owner: Shared,
+        borrow_index_1e9: u64,
+        price: u64,
+        liq_threshold_bps: u64,
+        bonus_bps: u64,
+    ) -> (
+        Enc<Mxe, PoolSecret>,
+        Enc<Shared, PositionSecret>,
+        Enc<Shared, PositionSecret>,
+        bool,
+    ) {
+        let (p, t, l, applied) = liquidate_pool_values(
+            pool.to_arcis(),
+            target.to_arcis(),
+            liquidator.to_arcis(),
+            input.to_arcis(),
+            borrow_index_1e9,
+            price,
+            liq_threshold_bps,
+            bonus_bps,
+        );
         (
             Mxe::get().from_arcis(p),
             target_owner.from_arcis(t),
@@ -763,22 +818,19 @@ mod circuits {
         )
     }
 
-    /// Position-only operation with an ENCRYPTED amount (no Pool involved).
+    /// Rules of `position_private` (host twin: [`position_private_scalars`]).
     /// `op`: 0 add collateral (free SOL to collateral), 1 withdraw collateral
     /// (collateral to free SOL, only while the remaining collateral still
-    /// covers the debt at `ltv_bps`). Only `applied` is revealed.
-    #[instruction]
-    pub fn position_private(
-        state: Enc<Shared, PositionSecret>,
-        input: Enc<Shared, OpInput>,
-        owner: Shared,
+    /// covers the debt at `ltv_bps`). Returns `(position, applied)`.
+    pub fn position_private_values(
+        state: PositionSecret,
+        inp: OpInput,
         op: u64,
         borrow_index_1e9: u64,
         price: u64,
         ltv_bps: u64,
-    ) -> (Enc<Shared, PositionSecret>, bool) {
-        let mut s = state.to_arcis();
-        let inp = input.to_arcis();
+    ) -> (PositionSecret, bool) {
+        let mut s = state;
         let a = inp.amount as u128;
         let max64 = 18_446_744_073_709_551_615u128;
         let free_sol = s.free_sol as u128;
@@ -799,7 +851,159 @@ mod circuits {
             free_sol + da
         }) as u64;
         s.collateral_sol = (if op == 0 { coll + da } else { coll - da }) as u64;
+        (s, applied)
+    }
+
+    /// Position-only operation with an ENCRYPTED amount (rules:
+    /// [`position_private_values`]). Only `applied` is revealed.
+    #[instruction]
+    pub fn position_private(
+        state: Enc<Shared, PositionSecret>,
+        input: Enc<Shared, OpInput>,
+        owner: Shared,
+        op: u64,
+        borrow_index_1e9: u64,
+        price: u64,
+        ltv_bps: u64,
+    ) -> (Enc<Shared, PositionSecret>, bool) {
+        let (s, applied) = position_private_values(
+            state.to_arcis(),
+            input.to_arcis(),
+            op,
+            borrow_index_1e9,
+            price,
+            ltv_bps,
+        );
         (owner.from_arcis(s), applied.reveal())
+    }
+
+    // Host-test forms: a Position is `(free_sol, free_usdc, collateral_sol,
+    // supply_shares, debt_shares)` and the Pool `(cash, supply_shares,
+    // debt_shares, reserves)`.
+
+    pub fn position_of(t: (u64, u64, u64, u128, u128)) -> PositionSecret {
+        PositionSecret {
+            free_sol: t.0,
+            free_usdc: t.1,
+            collateral_sol: t.2,
+            supply_shares_usdc: t.3,
+            debt_shares_usdc: t.4,
+        }
+    }
+
+    pub fn tuple_of_position(s: PositionSecret) -> (u64, u64, u64, u128, u128) {
+        (
+            s.free_sol,
+            s.free_usdc,
+            s.collateral_sol,
+            s.supply_shares_usdc,
+            s.debt_shares_usdc,
+        )
+    }
+
+    pub fn pool_of(t: (u128, u128, u128, u128)) -> PoolSecret {
+        PoolSecret {
+            cash_usdc: t.0,
+            total_supply_shares: t.1,
+            total_debt_shares: t.2,
+            reserves_usdc: t.3,
+        }
+    }
+
+    pub fn tuple_of_pool(p: PoolSecret) -> (u128, u128, u128, u128) {
+        (
+            p.cash_usdc,
+            p.total_supply_shares,
+            p.total_debt_shares,
+            p.reserves_usdc,
+        )
+    }
+
+    /// Scalar wrapper of [`pool_op_values`] for host tests.
+    pub fn pool_op_scalars(
+        pool: (u128, u128, u128, u128),
+        position: (u64, u64, u64, u128, u128),
+        amount: u64,
+        shares: u64,
+        op: u64,
+        supply_index_1e9: u64,
+        borrow_index_1e9: u64,
+        price: u64,
+        ltv_bps: u64,
+        position_debt_cap: u64,
+        supply_cap: u64,
+    ) -> ((u128, u128, u128, u128), (u64, u64, u64, u128, u128), bool) {
+        let (p, s, applied) = pool_op_values(
+            pool_of(pool),
+            position_of(position),
+            OpInput { amount, shares },
+            op,
+            supply_index_1e9,
+            borrow_index_1e9,
+            price,
+            ltv_bps,
+            position_debt_cap,
+            supply_cap,
+        );
+        (tuple_of_pool(p), tuple_of_position(s), applied)
+    }
+
+    /// Scalar wrapper of [`liquidate_pool_values`] for host tests.
+    pub fn liquidate_pool_scalars(
+        pool: (u128, u128, u128, u128),
+        target: (u64, u64, u64, u128, u128),
+        liquidator: (u64, u64, u64, u128, u128),
+        input: (u64, u64, u64),
+        borrow_index_1e9: u64,
+        price: u64,
+        liq_threshold_bps: u64,
+        bonus_bps: u64,
+    ) -> (
+        (u128, u128, u128, u128),
+        (u64, u64, u64, u128, u128),
+        (u64, u64, u64, u128, u128),
+        bool,
+    ) {
+        let (p, t, l, applied) = liquidate_pool_values(
+            pool_of(pool),
+            position_of(target),
+            position_of(liquidator),
+            LiqInput {
+                amount: input.0,
+                burn_shares: input.1,
+                seize: input.2,
+            },
+            borrow_index_1e9,
+            price,
+            liq_threshold_bps,
+            bonus_bps,
+        );
+        (
+            tuple_of_pool(p),
+            tuple_of_position(t),
+            tuple_of_position(l),
+            applied,
+        )
+    }
+
+    /// Scalar wrapper of [`position_private_values`] for host tests.
+    pub fn position_private_scalars(
+        position: (u64, u64, u64, u128, u128),
+        amount: u64,
+        op: u64,
+        borrow_index_1e9: u64,
+        price: u64,
+        ltv_bps: u64,
+    ) -> ((u64, u64, u64, u128, u128), bool) {
+        let (s, applied) = position_private_values(
+            position_of(position),
+            OpInput { amount, shares: 0 },
+            op,
+            borrow_index_1e9,
+            price,
+            ltv_bps,
+        );
+        (tuple_of_position(s), applied)
     }
 
     // ---- Task 5.5: production Viewing Key rotation --------------------------
@@ -1652,5 +1856,311 @@ mod tests {
             }
         }
         assert!(supplies >= 30 && recoveries >= 9);
+    }
+
+    // ---- walnut-private (ADR-0004, task P.8): the private circuit rules -----
+
+    const SCALE: u128 = 1_000_000_000;
+
+    /// Deterministic 64-bit LCG (Knuth MMIX).
+    struct Rng(u64);
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 = self
+                .0
+                .wrapping_mul(6_364_136_223_846_793_005)
+                .wrapping_add(1_442_695_040_888_963_407);
+            self.0
+        }
+        fn below(&mut self, n: u64) -> u64 {
+            if n == 0 {
+                0
+            } else {
+                self.next() % n
+            }
+        }
+    }
+
+    /// The share count the client sends (what `pool_op` verifies).
+    fn client_shares(op: u64, amount: u64, sidx: u64, bidx: u64) -> u64 {
+        let a = amount as u128 * SCALE;
+        let idx = if op <= 1 { sidx } else { bidx } as u128;
+        (match op {
+            0 | 3 => a / idx,
+            _ => a.div_ceil(idx),
+        }) as u64
+    }
+
+    const CAP: u64 = u64::MAX;
+
+    #[test]
+    fn pool_op_conserves_value_or_changes_nothing() {
+        let mut r = Rng(42);
+        let mut applied_count = [0u32; 4];
+        for _ in 0..20_000 {
+            let sidx = SCALE as u64 + r.below(9 * SCALE as u64);
+            let bidx = SCALE as u64 + r.below(9 * SCALE as u64);
+            let price = 1 + r.below(1_000_000_000);
+            let position = (
+                0,
+                r.below(1_000_000_000_000),
+                r.below(1_000_000_000_000_000),
+                r.below(1_000_000_000_000) as u128,
+                r.below(1_000_000_000_000) as u128,
+            );
+            let pool = (
+                r.below(10_000_000_000_000) as u128,
+                position.3 + r.below(1_000_000_000_000) as u128,
+                position.4 + r.below(1_000_000_000_000) as u128,
+                0,
+            );
+            let op = r.below(4);
+            // Mostly within the balances, sometimes above them.
+            let range = if r.below(4) == 0 {
+                2_000_000_000_000
+            } else {
+                100_000_000
+            };
+            let amount = 1 + r.below(range);
+            let shares = client_shares(op, amount, sidx, bidx);
+            let (np, ns, applied) = pool_op_scalars(
+                pool, position, amount, shares, op, sidx, bidx, price, 5_000, CAP, CAP,
+            );
+            if !applied {
+                assert_eq!((np, ns), (pool, position), "refusal changed state");
+                continue;
+            }
+            applied_count[op as usize] += 1;
+            // Free USDC and Pool cash move by the same amount in opposite
+            // directions; share totals move with the Position's shares.
+            assert_eq!(
+                ns.1 as u128 + np.0,
+                position.1 as u128 + pool.0,
+                "usdc conservation op {op}"
+            );
+            assert_eq!(ns.3 + pool.1, np.1 + position.3, "supply shares op {op}");
+            assert_eq!(ns.4 + pool.2, np.2 + position.4, "debt shares op {op}");
+            assert_eq!((ns.0, ns.2, np.3), (position.0, position.2, pool.3));
+            let moved = (position.1 as i128 - ns.1 as i128).unsigned_abs();
+            assert_eq!(moved, amount as u128, "op {op} moved a different amount");
+        }
+        assert!(
+            applied_count.iter().all(|&n| n > 500),
+            "too few applied: {applied_count:?}"
+        );
+    }
+
+    #[test]
+    fn pool_op_refuses_any_other_share_count() {
+        let mut r = Rng(7);
+        for _ in 0..5_000 {
+            let sidx = SCALE as u64 + r.below(9 * SCALE as u64);
+            let bidx = SCALE as u64 + r.below(9 * SCALE as u64);
+            let op = r.below(4);
+            let amount = 1_000 + r.below(1_000_000_000);
+            let good = client_shares(op, amount, sidx, bidx);
+            let rich = (
+                u64::MAX,
+                u64::MAX / 2,
+                u64::MAX / 2,
+                1u128 << 60,
+                1u128 << 60,
+            );
+            let pool = (1u128 << 80, 1u128 << 61, 1u128 << 61, 0);
+            for bad in [good + 1, good.saturating_sub(1), 0] {
+                if bad == good {
+                    continue;
+                }
+                let (np, ns, applied) =
+                    pool_op_scalars(pool, rich, amount, bad, op, sidx, bidx, 1, 5_000, CAP, CAP);
+                assert!(!applied, "op {op} accepted shares {bad} for {good}");
+                assert_eq!((np, ns), (pool, rich));
+            }
+        }
+    }
+
+    #[test]
+    fn borrow_is_bounded_by_ltv_debt_cap_and_cash() {
+        // 1 SOL at 100 USDC, LTV 50%: at most 50 USDC of debt at index 1.0.
+        let coll = 1_000_000_000u64;
+        let price = 100_000_000u64;
+        let position = (0, 0, coll, 0, 0);
+        let pool = (1_000_000_000_000u128, 0, 0, 0);
+        let borrow = |amount: u64, cap: u64, pool| {
+            pool_op_scalars(
+                pool,
+                position,
+                amount,
+                amount,
+                2,
+                SCALE as u64,
+                SCALE as u64,
+                price,
+                5_000,
+                cap,
+                CAP,
+            )
+            .2
+        };
+        assert!(borrow(50_000_000, CAP, pool));
+        assert!(!borrow(50_000_001, CAP, pool));
+        assert!(!borrow(10_000_000, 9, pool), "position debt cap");
+        assert!(!borrow(10_000_000, CAP, (9_999_999, 0, 0, 0)), "pool cash");
+    }
+
+    #[test]
+    fn supply_respects_the_supply_cap() {
+        let position = (0, 1_000_000, 0, 0, 0);
+        let pool = (0u128, 9_000_000, 0, 0);
+        let supply = |cap: u64| {
+            pool_op_scalars(
+                pool,
+                position,
+                1_000_000,
+                1_000_000,
+                0,
+                SCALE as u64,
+                SCALE as u64,
+                0,
+                5_000,
+                CAP,
+                cap,
+            )
+            .2
+        };
+        assert!(supply(10_000_000));
+        assert!(!supply(9_999_999));
+    }
+
+    #[test]
+    fn liquidation_needs_an_unhealthy_target_and_conserves_value() {
+        let bidx = SCALE as u64;
+        let price = 100_000_000u64; // 100 USDC per SOL
+        let bonus = 500u64;
+        // 1 SOL collateral, 70 USDC debt: past a 65% threshold.
+        let target = (0, 0, 1_000_000_000, 0, 70_000_000u128);
+        let liquidator = (0, 100_000_000, 0, 0, 0);
+        let pool = (0u128, 0, 70_000_000, 0);
+        let input = |amount: u64| {
+            let a = amount as u128 * SCALE;
+            let seize = (a * (10_000 + bonus as u128) / (price as u128 * 10_000)) as u64;
+            (amount, (a / bidx as u128) as u64, seize)
+        };
+        let (np, nt, nl, applied) = liquidate_pool_scalars(
+            pool,
+            target,
+            liquidator,
+            input(35_000_000),
+            bidx,
+            price,
+            6_500,
+            bonus,
+        );
+        assert!(applied);
+        // repay 35 USDC -> seize 35 * 1.05 / 100 SOL = 0.3675 SOL
+        assert_eq!(nt.2, 1_000_000_000 - 367_500_000);
+        assert_eq!(nl.0, 367_500_000);
+        assert_eq!(nt.2 as u128 + nl.0 as u128, target.2 as u128);
+        assert_eq!(nl.1 as u128 + np.0, liquidator.1 as u128 + pool.0);
+        assert_eq!(nt.4 + pool.2, np.2 + target.4);
+
+        // Above the close factor (more than half, not all): refused, unchanged.
+        let (np, nt, nl, applied) = liquidate_pool_scalars(
+            pool,
+            target,
+            liquidator,
+            input(36_000_000),
+            bidx,
+            price,
+            6_500,
+            bonus,
+        );
+        assert!(!applied);
+        assert_eq!((np, nt, nl), (pool, target, liquidator));
+
+        // A healthy target (threshold 80%): refused.
+        let (_, _, _, applied) = liquidate_pool_scalars(
+            pool,
+            target,
+            liquidator,
+            input(35_000_000),
+            bidx,
+            price,
+            8_000,
+            bonus,
+        );
+        assert!(!applied);
+
+        // The liquidator cannot pay more than its free USDC.
+        let poor = (0, 34_999_999, 0, 0, 0);
+        let (_, _, _, applied) = liquidate_pool_scalars(
+            pool,
+            target,
+            poor,
+            input(35_000_000),
+            bidx,
+            price,
+            6_500,
+            bonus,
+        );
+        assert!(!applied);
+
+        // A wrong seize amount is refused.
+        let (a, b, z) = input(35_000_000);
+        let (_, _, _, applied) = liquidate_pool_scalars(
+            pool,
+            target,
+            liquidator,
+            (a, b, z + 1),
+            bidx,
+            price,
+            6_500,
+            bonus,
+        );
+        assert!(!applied);
+    }
+
+    #[test]
+    fn collateral_moves_conserve_sol_and_respect_ltv() {
+        let mut r = Rng(3);
+        for _ in 0..5_000 {
+            let position = (
+                r.below(1_000_000_000_000),
+                0,
+                r.below(1_000_000_000_000),
+                0,
+                r.below(1_000_000_000) as u128,
+            );
+            let op = r.below(2);
+            let amount = r.below(1_000_000_000_000);
+            let price = 1 + r.below(1_000_000_000);
+            let (ns, applied) =
+                position_private_scalars(position, amount, op, SCALE as u64, price, 5_000);
+            if !applied {
+                assert_eq!(ns, position);
+                continue;
+            }
+            assert_eq!(
+                ns.0 as u128 + ns.2 as u128,
+                position.0 as u128 + position.2 as u128
+            );
+            if op == 1 {
+                // Still healthy at the LTV after the withdrawal.
+                assert!(
+                    ns.4 * SCALE * 10_000 <= ns.2 as u128 * price as u128 * 5_000,
+                    "withdrawal broke the LTV"
+                );
+            }
+        }
+        // Withdrawing past the LTV is refused: 1 SOL at 100, 50 USDC debt.
+        let (_, applied) = position_private_scalars(
+            (0, 0, 1_000_000_000, 0, 50_000_000),
+            1,
+            1,
+            SCALE as u64,
+            100_000_000,
+            5_000,
+        );
+        assert!(!applied);
     }
 }
