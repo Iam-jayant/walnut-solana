@@ -32,6 +32,11 @@ const NEW_CIRCUITS: ReadonlyArray<readonly [circuit: string, init: string]> = [
   ["lend_op", "initLendOpCompDef"],
   ["disclose_position", "initDisclosePositionCompDef"],
   ["rotate_position_key", "initRotatePositionKeyCompDef"],
+  // ADR-0004 private track.
+  ["pool_op", "initPoolOpCompDef"],
+  ["position_private", "initPositionPrivateCompDef"],
+  ["liquidate_pool", "initLiquidatePoolCompDef"],
+  ["pool_band", "initPoolBandCompDef"],
 ];
 
 /** Pyth push-oracle program that owns the shard-0 sponsored feed PDAs. */
@@ -234,14 +239,140 @@ async function compDefs(ctx: BenchContext, mode: string): Promise<void> {
   }
 }
 
+// ---------------------------------------------------------------------------
+// private mode (ADR-0004): band rate source and a first band observation
+// ---------------------------------------------------------------------------
+
+type LooseAccounts = Record<
+  string,
+  { fetchNullable(a: PublicKey): Promise<Record<string, unknown> | null> }
+>;
+
+function enumKey(value: unknown): string {
+  return value !== null && typeof value === "object"
+    ? (Object.keys(value)[0] ?? "")
+    : String(value);
+}
+
+async function send(
+  ctx: BenchContext,
+  ix: import("@solana/web3.js").TransactionInstruction,
+): Promise<string> {
+  const { ComputeBudgetProgram, Transaction } = await import("@solana/web3.js");
+  const tx = new Transaction()
+    .add(ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }))
+    .add(ix);
+  return ctx.provider.sendAndConfirm(tx, [ctx.payer], {
+    commitment: "confirmed",
+  });
+}
+
+/**
+ * `private-setup`: requires an Active PoolState, switches the LendingPool to
+ * the band rate source (admin) when needed, then queues `update_pool_band`
+ * and waits for the band. Idempotent.
+ */
+async function privateSetup(ctx: BenchContext): Promise<void> {
+  const {
+    buildSetLendingRateSourceInstruction,
+    buildUpdatePoolBandInstruction,
+    decodeLendingPool,
+    deriveLendingPoolPda,
+    derivePoolStatePda,
+    derivePoolCounterPda,
+    deriveIntentPda,
+    RATE_SOURCE_BAND,
+  } = await import("../src/index.ts");
+  const program = ctx.program;
+  const accounts = program.account as unknown as LooseAccounts;
+  const market = PublicKey.findProgramAddressSync(
+    [new TextEncoder().encode("market")],
+    ctx.programId,
+  )[0];
+  const marketAcc = await accounts["market"]!.fetchNullable(market);
+  if (marketAcc === null) throw new Error("Market account not found");
+  const assetState = marketAcc["assetState"] as PublicKey;
+  const poolState = derivePoolStatePda(ctx.programId, market);
+  const pool = await accounts["poolState"]!.fetchNullable(poolState);
+  if (pool === null || enumKey(pool["status"]) !== "active") {
+    throw new Error(
+      `PoolState is not active (${pool === null ? "missing" : enumKey(pool["status"])})`,
+    );
+  }
+  console.log("private-setup: PoolState active");
+
+  const lpAddr = deriveLendingPoolPda(ctx.programId, market);
+  const lpInfo = await ctx.connection.getAccountInfo(lpAddr, "confirmed");
+  if (lpInfo === null) throw new Error("LendingPool not found");
+  if (decodeLendingPool(lpInfo.data).rateSource !== RATE_SOURCE_BAND) {
+    const sig = await send(
+      ctx,
+      await buildSetLendingRateSourceInstruction({
+        program,
+        admin: ctx.payer.publicKey,
+        market,
+        assetState,
+        rateSource: RATE_SOURCE_BAND,
+      }),
+    );
+    console.log(`private-setup: rate source set to band (${sig})`);
+  } else {
+    console.log("private-setup: rate source already band");
+  }
+
+  const counter = await accounts["operationCounter"]!.fetchNullable(
+    derivePoolCounterPda(ctx.programId, poolState),
+  );
+  const sequence = BigInt(
+    String(
+      (counter?.["nextSequence"] as { toString(): string } | undefined) ?? 0,
+    ),
+  );
+  const offset = BigInt(Math.floor(Math.random() * 2 ** 48));
+  const sig = await send(
+    ctx,
+    await buildUpdatePoolBandInstruction({
+      program,
+      payer: ctx.payer.publicKey,
+      market,
+      assetState,
+      poolState,
+      sequence,
+      computationOffset: offset,
+      clusterOffset: ctx.clusterOffset,
+    }),
+  );
+  console.log(`private-setup: band update queued (${sig})`);
+  const intent = deriveIntentPda(ctx.programId, poolState, sequence);
+  const deadline = Date.now() + 300_000;
+  for (;;) {
+    const acc = await accounts["operationIntent"]!.fetchNullable(intent);
+    const status = acc === null ? "missing" : enumKey(acc["status"]);
+    if (status !== "queued" && status !== "missing") {
+      const asset = await accounts["assetState"]!.fetchNullable(assetState);
+      console.log(
+        `private-setup: band intent ${status}, band ${String(asset?.["utilizationBand"])}`,
+      );
+      if (status !== "applied") throw new Error(`band update ended ${status}`);
+      return;
+    }
+    if (Date.now() > deadline) throw new Error("band update timed out");
+    await new Promise((r) => setTimeout(r, 3_000));
+  }
+}
+
 async function main(): Promise<void> {
   const [command, mode] = process.argv.slice(2);
   const ctx = await createContext(resolveOptions([]));
   if (command === "init-pool") await initLendingPool(ctx);
   else if (command === "comp-defs" && (mode === "status" || mode === "run")) {
     await compDefs(ctx, mode);
+  } else if (command === "private-setup") {
+    await privateSetup(ctx);
   } else {
-    throw new Error("usage: lend-deploy.ts init-pool | comp-defs status|run");
+    throw new Error(
+      "usage: lend-deploy.ts init-pool | comp-defs status|run | private-setup",
+    );
   }
 }
 
