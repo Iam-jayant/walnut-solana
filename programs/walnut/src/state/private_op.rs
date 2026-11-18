@@ -150,6 +150,28 @@ pub fn needs_price(kind: OperationKind, op: u64) -> bool {
     )
 }
 
+/// In band mode a borrow (risk-increasing) needs a fresh utilization band, so
+/// borrowers never accrue at a band that is older than `band_max_age_slots`.
+pub fn ensure_rate_fresh(
+    pool: &LendingPool,
+    asset: &AssetState,
+    kind: OperationKind,
+    op: u64,
+    slot: Slot,
+) -> Result<(), ErrorCode> {
+    if pool.rate_source == super::lending_pool::RATE_SOURCE_BAND
+        && kind == OperationKind::PoolOp
+        && op == POOL_BORROW
+    {
+        crate::math::rate::ensure_band_fresh(
+            asset.utilization_observation_slot,
+            slot,
+            asset.rates.band_max_age_slots,
+        )?;
+    }
+    Ok(())
+}
+
 /// Accrues `pool` to the client-chosen `accrue_to_ts` (see the module docs).
 pub fn accrue_to(
     pool: &mut LendingPool,
@@ -163,7 +185,7 @@ pub fn accrue_to(
     {
         return Err(ErrorCode::PrivateAccrualTimeInvalid);
     }
-    pool.accrue(accrue_to_ts, &asset.rates, asset.risk.reserve_factor_bps)?;
+    pool.accrue_auto(accrue_to_ts, asset)?;
     Ok(())
 }
 
