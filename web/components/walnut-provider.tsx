@@ -7,7 +7,9 @@ import {
   deriveViewingKey,
   viewingKeyMessageBytes,
   ViewingKeySession,
+  type CollateralOp,
   type LendOp,
+  type PoolOp,
   type PositionBalances,
   type WalletEventSource,
 } from "@walnut/sdk";
@@ -27,6 +29,7 @@ import {
   ataAddress,
   createChain,
   createConnection,
+  detectPrivateMode,
   fetchAccount,
   fetchSolPrice,
   loadLendingView,
@@ -53,11 +56,15 @@ import {
   checkHealth,
   deposit,
   disclose,
+  estimateSeize,
   findStuckOperation,
   friendlyError,
   initializePosition,
   lendOp,
   liquidate,
+  privateCollateral,
+  privateLiquidate,
+  privatePoolOp,
   rotateKey,
   unwrapWsol,
   withdraw,
@@ -103,6 +110,11 @@ export interface WalnutState {
   lending: LendingView | null;
   /** The first LendingPool read finished (it may still be absent). */
   lendingChecked: boolean;
+  /**
+   * The encrypted-amount path is live: its computation definitions exist and
+   * the encrypted Pool is Active. Otherwise actions use the public-amount path.
+   */
+  privateMode: boolean;
   price: PriceInfo;
   accountState: AccountState;
   unlocked: boolean;
@@ -120,6 +132,23 @@ export interface WalnutState {
   deposit(asset: Asset, amount: bigint): Promise<void>;
   withdraw(asset: Asset, amount: bigint): Promise<void>;
   lendOp(op: LendOp, label: string, amount: bigint): Promise<void>;
+  /** Supply, withdraw supply, borrow or repay with an encrypted amount. True when applied. */
+  privatePoolOp(
+    op: PoolOp,
+    label: string,
+    amount: bigint,
+    shareCap?: bigint,
+  ): Promise<boolean>;
+  /** Add or remove collateral with an encrypted amount. True when applied. */
+  privateCollateral(
+    op: CollateralOp,
+    label: string,
+    lamports: bigint,
+  ): Promise<boolean>;
+  /** Liquidates with an encrypted amount from the signer's own free USDC. */
+  privateLiquidate(borrower: string, usdcAmount: bigint): Promise<boolean>;
+  /** SOL (lamports) a private liquidation of `usdcAmount` would seize; null if unknown. */
+  estimateSeize(usdcAmount: bigint): Promise<bigint | null>;
   /** Queues a health check of the borrower's account (a wallet address). */
   checkHealth(borrower: string): Promise<HealthResult | undefined>;
   liquidate(borrower: string, repayAmount: bigint): Promise<void>;
@@ -157,6 +186,7 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
   const [protocolError, setProtocolError] = useState<string | null>(null);
   const [lending, setLending] = useState<LendingView | null>(null);
   const [lendingChecked, setLendingChecked] = useState(false);
+  const [privateMode, setPrivateMode] = useState(false);
   const [price, setPrice] = useState<PriceInfo>({
     price: FALLBACK_SOL_PRICE,
     source: "fallback",
@@ -207,10 +237,14 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     if (protocol === null) return;
     let cancelled = false;
     const load = () =>
-      loadLendingView(chain.connection, protocol)
-        .then((view) => {
+      Promise.all([
+        loadLendingView(chain, protocol),
+        detectPrivateMode(chain, protocol).catch(() => false),
+      ])
+        .then(([view, priv]) => {
           if (cancelled) return;
           setLending(view);
+          setPrivateMode(view !== null && priv);
           setLendingChecked(true);
         })
         .catch(() => {
@@ -276,9 +310,13 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     try {
       const owner = publicKey;
       const wsolAddress = ataAddress(owner, WSOL_MINT);
-      void loadLendingView(chain.connection, protocol)
-        .then((view) => {
+      void Promise.all([
+        loadLendingView(chain, protocol),
+        detectPrivateMode(chain, protocol).catch(() => false),
+      ])
+        .then(([view, priv]) => {
           setLending(view);
+          setPrivateMode(view !== null && priv);
           setLendingChecked(true);
         })
         .catch(() => undefined);
@@ -548,6 +586,7 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     protocolError,
     lending,
     lendingChecked,
+    privateMode,
     price,
     accountState,
     unlocked,
@@ -581,6 +620,50 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
       await track(label, (report, ctx) =>
         lendOp(ctx, requireLending(), op, label, amount, report),
       );
+    },
+    privatePoolOp: async (op, label, amount, shareCap) => {
+      const outcome = await track(label, (report, ctx) =>
+        privatePoolOp(
+          ctx,
+          requireLending(),
+          op,
+          label,
+          amount,
+          report,
+          shareCap,
+        ),
+      );
+      return outcome === "applied";
+    },
+    privateCollateral: async (op, label, lamports) => {
+      const outcome = await track(label, (report, ctx) =>
+        privateCollateral(ctx, requireLending(), op, label, lamports, report),
+      );
+      return outcome === "applied";
+    },
+    privateLiquidate: async (borrower, usdcAmount) => {
+      const result = await track("Liquidate", (report, ctx) =>
+        privateLiquidate(
+          ctx,
+          requireLending(),
+          parseAddress(borrower),
+          usdcAmount,
+          report,
+        ),
+      );
+      return result?.outcome === "applied";
+    },
+    estimateSeize: async (usdcAmount) => {
+      if (protocol === null || lending === null) return null;
+      try {
+        return await estimateSeize(
+          { connection: chain.connection, protocol },
+          lending,
+          usdcAmount,
+        );
+      } catch {
+        return null;
+      }
     },
     checkHealth: (borrower) =>
       track("Check health", (report, ctx) =>
