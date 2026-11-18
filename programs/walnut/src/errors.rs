@@ -388,6 +388,16 @@ pub enum ErrorCode {
     DisclosureIntentMismatch,
     #[msg("The disclosure output is not sealed to the committed auditor key")]
     DisclosureAuditorMismatch,
+    #[msg("The private operation code is not valid for this instruction")]
+    PrivateOpInvalid,
+    #[msg("The accrual timestamp is in the future, too old, or before the last accrual")]
+    PrivateAccrualTimeInvalid,
+    #[msg("The Operation Intent is not this private operation")]
+    PrivateOpIntentMismatch,
+    #[msg("The liquidator cannot liquidate its own Position")]
+    PrivateLiquidationSelf,
+    #[msg("The encrypted input key must not be all zero")]
+    PrivateInputKeyInvalid,
 }
 impl From<crate::math::fixed::MathError> for ErrorCode {
     fn from(error: crate::math::fixed::MathError) -> Self {
@@ -848,6 +858,9 @@ mod tests {
         assert_eq!(u32::from(ErrorCode::OracleAccountMismatch), 6167);
         assert_eq!(u32::from(ErrorCode::LendPoolConfigInvalid), 6169);
         assert_eq!(u32::from(ErrorCode::DisclosureAuditorMismatch), 6176);
+        // walnut-private (ADR-0004) appends the private-operation codes.
+        assert_eq!(u32::from(ErrorCode::PrivateOpInvalid), 6177);
+        assert_eq!(u32::from(ErrorCode::PrivateInputKeyInvalid), 6181);
     }
 
     #[test]

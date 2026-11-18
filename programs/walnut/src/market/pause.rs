@@ -318,9 +318,12 @@ impl From<OperationKind> for Action {
             OperationKind::UtilizationBand => Action::UtilizationBandUpdate,
             OperationKind::ReserveWithdrawal => Action::ReserveWithdrawal,
             OperationKind::RecoverEmptyPool => Action::ReserveWithdrawal,
-            OperationKind::PositionOp | OperationKind::LendOp | OperationKind::Disclose => {
-                Action::Probe
-            }
+            OperationKind::PositionOp
+            | OperationKind::LendOp
+            | OperationKind::Disclose
+            | OperationKind::PoolOp
+            | OperationKind::PositionPrivate => Action::Probe,
+            OperationKind::LiquidatePool => Action::Liquidation,
         }
     }
 }

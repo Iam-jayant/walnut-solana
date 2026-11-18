@@ -949,3 +949,46 @@ pub struct DisclosureAbandoned {
     pub signer: Pubkey,
     pub slot: u64,
 }
+
+// ---- walnut-private (ADR-0004): no event carries an amount or share count ----
+
+/// Emitted when a private operation is queued. `kind` is the Intent kind tag
+/// and `op` the public operation code; amounts stay encrypted.
+#[event]
+pub struct PrivateOpQueued {
+    pub market: Pubkey,
+    pub position: Pubkey,
+    pub second_position: Option<Pubkey>,
+    pub payer: Pubkey,
+    pub operation_intent: Pubkey,
+    pub kind: u8,
+    pub op: u64,
+    pub computation_offset: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by a private operation callback. `applied` is the one revealed bit.
+#[event]
+pub struct PrivateOpSettled {
+    pub position: Pubkey,
+    pub second_position: Option<Pubkey>,
+    pub operation_intent: Pubkey,
+    pub kind: u8,
+    pub op: u64,
+    pub applied: bool,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by the abandonment of a private operation after Lock expiry.
+#[event]
+pub struct PrivateOpAbandoned {
+    pub position: Pubkey,
+    pub second_position: Option<Pubkey>,
+    pub operation_intent: Pubkey,
+    pub kind: u8,
+    pub signer: Pubkey,
+    pub slot: u64,
+}

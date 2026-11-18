@@ -753,14 +753,53 @@ mod circuits {
         t.debt_shares_usdc = debt - ds;
         l.free_usdc = ((l.free_usdc as u128) - da) as u64;
         l.free_sol = ((l.free_sol as u128) + dz) as u64;
-        p.cash_usdc = p.cash_usdc + da;
-        p.total_debt_shares = p.total_debt_shares - ds;
+        p.cash_usdc += da;
+        p.total_debt_shares -= ds;
         (
             Mxe::get().from_arcis(p),
             target_owner.from_arcis(t),
             liquidator_owner.from_arcis(l),
             applied.reveal(),
         )
+    }
+
+    /// Position-only operation with an ENCRYPTED amount (no Pool involved).
+    /// `op`: 0 add collateral (free SOL to collateral), 1 withdraw collateral
+    /// (collateral to free SOL, only while the remaining collateral still
+    /// covers the debt at `ltv_bps`). Only `applied` is revealed.
+    #[instruction]
+    pub fn position_private(
+        state: Enc<Shared, PositionSecret>,
+        input: Enc<Shared, OpInput>,
+        owner: Shared,
+        op: u64,
+        borrow_index_1e9: u64,
+        price: u64,
+        ltv_bps: u64,
+    ) -> (Enc<Shared, PositionSecret>, bool) {
+        let mut s = state.to_arcis();
+        let inp = input.to_arcis();
+        let a = inp.amount as u128;
+        let max64 = 18_446_744_073_709_551_615u128;
+        let free_sol = s.free_sol as u128;
+        let coll = s.collateral_sol as u128;
+        let debt_value = s.debt_shares_usdc * (borrow_index_1e9 as u128) * 10_000u128;
+        let fits1 = a <= coll;
+        let a1 = if fits1 { a } else { 0 };
+        let ok0 = a > 0 && a <= free_sol && coll + a <= max64;
+        let ok1 = a > 0
+            && fits1
+            && free_sol + a <= max64
+            && debt_value <= (coll - a1) * (price as u128) * (ltv_bps as u128);
+        let applied = (op == 0 && ok0) || (op == 1 && ok1);
+        let da = if applied { a } else { 0 };
+        s.free_sol = (if op == 0 {
+            free_sol - da
+        } else {
+            free_sol + da
+        }) as u64;
+        s.collateral_sol = (if op == 0 { coll + da } else { coll - da }) as u64;
+        (owner.from_arcis(s), applied.reveal())
     }
 
     // ---- Task 5.5: production Viewing Key rotation --------------------------

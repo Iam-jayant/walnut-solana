@@ -114,6 +114,15 @@ pub enum OperationKind {
     LendOp,
     /// Selective disclosure of a Position to an auditor key (non-locking).
     Disclose,
+    /// Private Pool operation with an encrypted amount (`pool_op`: supply,
+    /// withdraw supply, borrow, repay). Locks the Pool and the Position.
+    PoolOp,
+    /// Private collateral operation with an encrypted amount
+    /// (`position_private`). Locks the Position.
+    PositionPrivate,
+    /// Private liquidation (`liquidate_pool`). Locks the Pool, the target and
+    /// the liquidator's Position.
+    LiquidatePool,
 }
 
 impl OperationKind {

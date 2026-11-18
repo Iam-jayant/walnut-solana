@@ -478,7 +478,13 @@ pub fn ensure_price_sensitive_allowed(status: OracleStatus) -> Result<(), Oracle
 /// [`OperationKind`] (collateral withdrawal, Absorb) must classify it here.
 pub fn operation_is_price_sensitive(kind: OperationKind) -> bool {
     match kind {
-        OperationKind::Borrow | OperationKind::Health | OperationKind::Liquidation => true,
+        OperationKind::Borrow
+        | OperationKind::Health
+        | OperationKind::Liquidation
+        | OperationKind::LiquidatePool => true,
+        // Op-dependent: borrow and collateral withdrawal read a price inside
+        // these kinds; the queue reads it per op.
+        OperationKind::PoolOp | OperationKind::PositionPrivate => false,
         OperationKind::Probe
         | OperationKind::PositionInit
         | OperationKind::Shield

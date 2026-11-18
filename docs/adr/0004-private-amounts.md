@@ -25,7 +25,19 @@ Status: accepted (feasibility passed). Supersedes the public-amount arguments of
 | `pool_op` (supply, withdraw supply, borrow, repay; Pool + Position + encrypted input) | 798,522,416   | 5,086 | `supply_flow` 20,736,187,008; `lend_op` 558,589,580 (deployed) |
 | `liquidate_pool` (Pool + borrower + liquidator + encrypted input)                     | 1,037,952,272 | 4,923 |                                                                |
 
-Both are about 20 times below the rejected `supply_flow` and in the range of the deployed circuits.
+| `position_private` (add and withdraw collateral, encrypted lamports) | 644,454,740 | 4,392 | |
+
+All three are about 20 times below the rejected `supply_flow` and in the range of the deployed circuits.
+
+## Program (tasks P.3 and P.4)
+
+Instructions: `pool_op(op, accrue_to_ts, input_pubkey, input_nonce, input_ciphertexts[2])`, `position_private(op, accrue_to_ts, input_*[2])`, `liquidate_pool(accrue_to_ts, input_*[3])`, their callbacks, `init_*_comp_def`, and `abandon_private_op`. Rules: `programs/walnut/src/state/private_op.rs`.
+
+- **Index agreement.** The client picks `accrue_to_ts` (not in the future, at most 120 s old, not before the last accrual) and projects the LendingPool indexes to it. The queue accrues to exactly that time, so both sides use the same indexes. A mismatch only makes the circuit refuse.
+- **Locks.** `pool_op` locks the Pool and the Position, `position_private` the Position, `liquidate_pool` the Pool, the target and the liquidator's Position, all or none. `Applied` stores every payload and bumps every generation.
+- **Binding.** The accounts commitment covers payer, Market, Asset State, LendingPool, Pool, and both Positions with generations. The inputs commitment covers the stored payloads, Viewing keys, epochs, output-nonce inputs and the public parameters. The client ciphertext is immutable inside the queued computation and is not bound separately.
+- **Events.** `PrivateOpQueued`, `PrivateOpSettled` (one `applied` bit) and `PrivateOpAbandoned` carry the kind and op code only.
+- **Not yet enforced on the private path:** the total-debt cap (the debt total is encrypted) and the public `LendingPool` totals, which the private path leaves untouched. Interest therefore still follows the public-path utilization until P.5 moves the rate to the utilization band.
 
 ## Consequences
 

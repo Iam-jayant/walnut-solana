@@ -15,6 +15,7 @@ pub mod lending_pool;
 pub mod pause;
 pub mod position;
 pub mod position_op;
+pub mod private_op;
 pub mod recovery;
 pub mod reserve_withdrawal;
 pub mod roles;

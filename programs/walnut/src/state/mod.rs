@@ -32,6 +32,7 @@ pub mod pending_shield;
 pub mod pool_mutation;
 pub mod position;
 pub mod position_op;
+pub mod private_op;
 pub mod protected;
 pub mod recovery;
 pub mod reserve_withdrawal;
