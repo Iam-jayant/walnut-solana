@@ -27,6 +27,7 @@
     "demo:balance": "node demo/balance-demo.ts",
     "demo:loan": "node demo/loan-demo.ts",
     "demo:lend": "node demo/lend-e2e.ts",
+    "demo:private": "node demo/private-e2e.ts",
     "demo:supply": "node demo/supply-demo.ts",
     "demo:oracle": "node demo/oracle-devnet.ts",
     "bench:selftest": "node --test bench/stats.test.ts",
