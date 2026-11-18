@@ -8,3 +8,4 @@ dist/
 .anchor/
 test-ledger/
 pnpm-lock.yaml
+web/lib/idl/

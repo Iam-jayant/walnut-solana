@@ -12,7 +12,9 @@ Build the private loan flow in three code tasks and one run task. No intermediat
     { "id": 0, "tasks": ["1"] },
     { "id": 1, "tasks": ["2"] },
     { "id": 2, "tasks": ["3"] },
-    { "id": 3, "tasks": ["4"] }
+    { "id": 3, "tasks": ["4"] },
+    { "id": 4, "tasks": ["5"] },
+    { "id": 5, "tasks": ["6"] }
   ]
 }
 ```
@@ -41,6 +43,16 @@ Build the private loan flow in three code tasks and one run task. No intermediat
   - Run build, fmt, clippy, Rust unit tests, typecheck, lint, format check and JS unit tests, and fix failures.
   - _Requirements: 3.4_
 
+- [x] 5. Build the Web App on devnet
+  - Build the Next.js app in `web/` with wallet connect (Phantom, Solflare, Backpack via Wallet Standard), Viewing Key unlock by wallet signature, and local decryption of the Position.
+  - Add Position setup, deposit and withdraw (shield and unshield for SOL and USDC, with the wSOL unwrap), add and withdraw collateral, borrow and repay, each with live MPC status.
+  - Add `scripts/diffn-liquidity.sh` that mints test USDC into the market vault for borrowers.
+  - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.3_
+
+- [-] 6. Check and push the Web App
+  - Run the web build, typecheck, lint and format check plus the existing JS checks, and fix failures.
+  - Commit to the `v2` branch and push.
+  - _Requirements: 3.4_
 ## Notes
 
 - Testing-only demo spec; production rules stay in the walnut-solana spec.

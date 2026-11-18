@@ -2,15 +2,27 @@
   "name": "@walnut/web",
   "version": "0.0.0",
   "private": true,
-  "description": "Walnut-Solana Web App (Next.js App Router; design system, Task 15.1)",
+  "description": "Walnut-Solana Web App (Next.js App Router, Solana devnet)",
   "type": "module",
   "scripts": {
-    "dev": "next dev",
-    "build": "next build",
+    "sdk:build": "pnpm --filter @walnut/sdk build",
+    "dev": "pnpm sdk:build && next dev -p 3000",
+    "build": "pnpm sdk:build && next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "smoke": "node scripts/smoke-chain.ts",
+    "typecheck": "pnpm sdk:build && tsc --noEmit"
   },
   "dependencies": {
+    "@anchor-lang/core": "1.0.2",
+    "@arcium-hq/client": "0.16.0",
+    "@noble/hashes": "^1.7.1",
+    "@solana/wallet-adapter-base": "^0.9.28",
+    "@solana/wallet-adapter-react": "^0.15.40",
+    "@solana/wallet-adapter-react-ui": "^0.9.40",
+    "@solana/web3.js": "^1.95.4",
+    "@walnut/sdk": "workspace:*",
+    "bs58": "^6.0.0",
+    "buffer": "^6.0.3",
     "next": "^16.0.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"

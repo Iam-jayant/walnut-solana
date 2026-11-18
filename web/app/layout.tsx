@@ -3,7 +3,7 @@ import localFont from "next/font/local";
 import "./globals.css";
 
 /*
- * Telegraf is loaded locally (Task 15.1) so no font request leaves the origin
+ * Telegraf is loaded locally so no font request leaves the origin
  * while a Viewing Key is unlocked (Requirement 14, strict CSP). The three
  * weights map to the design scale: 200 UltraLight, 400 Regular, 800 UltraBold.
  */
@@ -23,9 +23,9 @@ const telegraf = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Walnut — Confidential lending on Solana",
+  title: "Walnut - Private lending on Solana",
   description:
-    "Walnut is a private SOL/USDC lending protocol on Solana, with balances and positions kept encrypted through Arcium MPC.",
+    "Walnut is private lending on Solana powered by Arcium MPC. Balances, collateral and debt are encrypted, and only you can decrypt them with your Viewing Key.",
 };
 
 export default function RootLayout({
