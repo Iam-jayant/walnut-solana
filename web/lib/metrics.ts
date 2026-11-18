@@ -12,13 +12,14 @@ export interface BorrowMetrics {
   usedPercent: number;
 }
 
+/** debt is the USDC value of the debt shares at the current index. */
 export function borrowMetrics(
   balances: PositionBalances,
   price: bigint,
   ltvBps: bigint,
+  debt: bigint,
 ): BorrowMetrics {
   const limit = (balances.collateralSol * price * ltvBps) / 10_000n / LAMPORTS;
-  const debt = balances.debtSharesUsdc;
   const available = limit > debt ? limit - debt : 0n;
   let usedPercent = 0;
   if (limit > 0n)
@@ -32,8 +33,8 @@ export function maxRemovableCollateral(
   balances: PositionBalances,
   price: bigint,
   ltvBps: bigint,
+  debt: bigint,
 ): bigint {
-  const debt = balances.debtSharesUsdc;
   if (debt === 0n) return balances.collateralSol;
   const perLamport = price * ltvBps;
   if (perLamport === 0n) return 0n;

@@ -807,3 +807,145 @@ pub struct PositionOpAbandoned {
     pub signer: Pubkey,
     pub slot: u64,
 }
+
+/// Emitted by `init_lending_pool` (walnut-lend).
+#[event]
+pub struct LendingPoolInitialized {
+    pub market: Pubkey,
+    pub lending_pool: Pubkey,
+    pub oracle: Pubkey,
+    pub feed_id: [u8; 32],
+    pub max_price_age_seconds: u32,
+    /// `true` when this call created the pool and seeded the totals.
+    pub created: bool,
+    pub total_supply_shares: u128,
+    pub slot: u64,
+}
+
+/// Emitted by `lend_op`, `liquidate` and `check_health` when queued. Op,
+/// amount and shares are public by design; balances stay encrypted.
+#[event]
+pub struct LendOpQueued {
+    pub market: Pubkey,
+    pub lending_pool: Pubkey,
+    pub position: Pubkey,
+    pub payer: Pubkey,
+    pub operation_intent: Pubkey,
+    pub op: u64,
+    pub amount: u64,
+    pub shares: u64,
+    pub borrow_index_1e9: u64,
+    pub supply_index_1e9: u128,
+    pub price: u64,
+    pub computation_offset: u64,
+    pub position_generation: u64,
+    pub decision_expiry_slot: u64,
+    pub lock_expiry_slot: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `lend_op` callback when the operation applied.
+#[event]
+pub struct LendOpApplied {
+    pub position: Pubkey,
+    pub operation_intent: Pubkey,
+    pub op: u64,
+    pub amount: u64,
+    pub shares: u64,
+    pub total_supply_shares: u128,
+    pub total_debt_shares: u128,
+    pub generation: u64,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted by the `lend_op` callback when the circuit refused the operation
+/// or the attempt ended without applying (`intent_status`).
+#[event]
+pub struct LendOpRejected {
+    pub position: Pubkey,
+    pub operation_intent: Pubkey,
+    pub op: u64,
+    pub amount: u64,
+    pub intent_status: crate::operation::IntentStatus,
+    /// USDC returned to the Liquidator (liquidations only, else 0).
+    pub refunded_usdc: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `lend_op` callback for a health check.
+#[event]
+pub struct HealthChecked {
+    pub position: Pubkey,
+    pub operation_intent: Pubkey,
+    pub unhealthy: bool,
+    pub slot: u64,
+}
+
+/// Emitted by the `lend_op` callback when a liquidation applied.
+#[event]
+pub struct LiquidationApplied {
+    pub position: Pubkey,
+    pub liquidator: Pubkey,
+    pub operation_intent: Pubkey,
+    pub repay_amount: u64,
+    pub debt_shares_burned: u64,
+    pub seized_lamports: u64,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_lend_op` (any signer, after Lock expiry).
+#[event]
+pub struct LendOpAbandoned {
+    pub position: Pubkey,
+    pub operation_intent: Pubkey,
+    pub op: u64,
+    pub refunded_usdc: u64,
+    pub signer: Pubkey,
+    pub slot: u64,
+}
+
+/// Emitted by `disclose_position` when queued.
+#[event]
+pub struct DisclosureQueued {
+    pub position: Pubkey,
+    pub disclosure: Pubkey,
+    pub owner: Pubkey,
+    pub auditor: [u8; 32],
+    pub mask: u64,
+    pub operation_intent: Pubkey,
+    pub computation_offset: u64,
+    pub position_generation: u64,
+    pub slot: u64,
+}
+
+/// Emitted by the `disclose_position` callback when the Disclosure is stored.
+#[event]
+pub struct PositionDisclosed {
+    pub position: Pubkey,
+    pub disclosure: Pubkey,
+    pub owner: Pubkey,
+    pub auditor: [u8; 32],
+    pub mask: u8,
+    pub position_generation: u64,
+    pub nonce: [u8; 16],
+    pub slot: u64,
+}
+
+/// Emitted by the `disclose_position` callback when nothing was stored.
+#[event]
+pub struct DisclosureNotStored {
+    pub position: Pubkey,
+    pub operation_intent: Pubkey,
+    pub intent_status: crate::operation::IntentStatus,
+    pub slot: u64,
+}
+
+/// Emitted by `abandon_disclosure`.
+#[event]
+pub struct DisclosureAbandoned {
+    pub position: Pubkey,
+    pub operation_intent: Pubkey,
+    pub signer: Pubkey,
+    pub slot: u64,
+}

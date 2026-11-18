@@ -17,3 +17,6 @@ export * from "./viewing-key.ts";
 export * from "./oracle.ts";
 export * from "./supply.ts";
 export * from "./position-op.ts";
+export * from "./lend-op.ts";
+export * from "./lending-pool.ts";
+export * from "./disclosure.ts";

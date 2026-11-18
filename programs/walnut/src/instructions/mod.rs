@@ -8,7 +8,10 @@
 
 pub mod caps;
 pub mod config;
+pub mod disclose;
 pub mod initialize_market;
+pub mod lend_op;
+pub mod lending_pool;
 pub mod pause;
 pub mod position;
 pub mod position_op;

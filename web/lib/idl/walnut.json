@@ -8,6 +8,152 @@
   },
   "instructions": [
     {
+      "name": "abandon_disclosure",
+      "docs": [
+        "Permissionless: closes a queued disclosure whose callback never arrived."
+      ],
+      "discriminator": [
+        232,
+        86,
+        124,
+        138,
+        32,
+        26,
+        142,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "Any signer; nothing moves."
+          ],
+          "signer": true
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The queued disclosure."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "abandon_lend_op",
+      "docs": [
+        "Permissionless: abandons a queued lend operation after Lock expiry and",
+        "refunds a queued liquidation's USDC to the Liquidator (six liquidation",
+        "accounts as `remaining_accounts`, see `instructions::lend_op`)."
+      ],
+      "discriminator": [
+        244,
+        178,
+        89,
+        129,
+        89,
+        179,
+        61,
+        250
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "Any signer. Abandonment cannot redirect value: a liquidation refund",
+            "goes to the committed Liquidator account."
+          ],
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lending_pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The queued operation; `state::lend_op` checks it."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "abandon_position_init",
       "docs": [
         "Permissionless: abandons a queued initialization after Lock expiry;",
@@ -1457,6 +1603,280 @@
       ]
     },
     {
+      "name": "check_health",
+      "docs": [
+        "Permissionless health check: queues op 6 with the Pyth low-bound price",
+        "and the accrued Borrow Index. The Position is not locked and never",
+        "changes; the callback emits `HealthChecked { position, unhealthy }`."
+      ],
+      "discriminator": [
+        71,
+        59,
+        207,
+        58,
+        136,
+        156,
+        153,
+        7
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "Anyone; pays rent and the computation fee."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_state"
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The Position being checked (not locked)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_counter",
+          "docs": [
+            "The caller's sequence counter, created on first use."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "sequence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update",
+          "docs": [
+            "The Pyth `PriceUpdateV2` account (`lending_pool.oracle`)."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "sequence",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "clear_guardian_pause",
       "docs": [
         "Risk-authority-signed: clears every guardian pause."
@@ -1684,6 +2104,399 @@
           "type": {
             "defined": {
               "name": "ConfigValue"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "disclose_position",
+      "docs": [
+        "Owner-signed: queues `disclose_position`, which re-seals a field-masked",
+        "copy of the Position to `auditor_pubkey`. `mask` bit 0 free SOL, 1 free",
+        "USDC, 2 collateral, 3 supply shares, 4 debt shares. The Position is not",
+        "locked or changed. The callback writes the `Disclosure` PDA",
+        "`[\"disclosure\", position, auditor]`, overwriting an earlier one."
+      ],
+      "discriminator": [
+        80,
+        177,
+        204,
+        10,
+        31,
+        105,
+        56,
+        37
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "The Position owner; signs, pays rent and the computation fee."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The owner's own Position (read only; not locked)."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The Intent address uses the counter's next sequence."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "account",
+                "path": "operation_counter.next_sequence",
+                "account": "OperationCounter"
+              }
+            ]
+          }
+        },
+        {
+          "name": "disclosure",
+          "docs": [
+            "PDA `[\"disclosure\", position, auditor]`; created on first use and",
+            "overwritten by a later Disclosure to the same auditor."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  99,
+                  108,
+                  111,
+                  115,
+                  117,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position"
+              },
+              {
+                "kind": "arg",
+                "path": "auditor_pubkey"
+              }
+            ]
+          }
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "auditor_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "mask",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "disclose_position_callback",
+      "docs": [
+        "Verifies the `disclose_position` output (sealed to the committed",
+        "auditor key) and writes the Disclosure only on `Applied`. `Stale`,",
+        "`Expired` and failed outcomes leave the previous Disclosure in place."
+      ],
+      "discriminator": [
+        139,
+        194,
+        229,
+        72,
+        75,
+        190,
+        156,
+        188
+      ],
+      "accounts": [
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "computation_account"
+        },
+        {
+          "name": "cluster_account"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "position",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "disclosure",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  105,
+                  115,
+                  99,
+                  108,
+                  111,
+                  115,
+                  117,
+                  114,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "disclosure.position",
+                "account": "Disclosure"
+              },
+              {
+                "kind": "account",
+                "path": "disclosure.auditor",
+                "account": "Disclosure"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The attempt's Operation Intent; `classify_callback` verifies it."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "output",
+          "type": {
+            "defined": {
+              "name": "SignedComputationOutputs",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": {
+                    "defined": {
+                      "name": "DisclosePositionOutput"
+                    }
+                  }
+                }
+              ]
             }
           }
         }
@@ -1967,6 +2780,206 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "init_disclose_position_comp_def",
+      "docs": [
+        "Registers the `disclose_position` computation definition with the MXE."
+      ],
+      "discriminator": [
+        65,
+        228,
+        173,
+        133,
+        213,
+        19,
+        62,
+        211
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mxe_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account",
+          "writable": true
+        },
+        {
+          "name": "address_lookup_table",
+          "writable": true
+        },
+        {
+          "name": "lut_program",
+          "address": "AddressLookupTab1e1111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_lend_op_comp_def",
+      "docs": [
+        "Registers the `lend_op` computation definition with the MXE."
+      ],
+      "discriminator": [
+        224,
+        174,
+        120,
+        22,
+        112,
+        245,
+        164,
+        159
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mxe_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account",
+          "writable": true
+        },
+        {
+          "name": "address_lookup_table",
+          "writable": true
+        },
+        {
+          "name": "lut_program",
+          "address": "AddressLookupTab1e1111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_lending_pool",
+      "docs": [
+        "Admin, idempotent: creates the `LendingPool` (seeding the supply totals",
+        "from the USDC vault balance) and records the oracle account, feed id and",
+        "maximum price age; a repeat call updates only that configuration."
+      ],
+      "discriminator": [
+        118,
+        212,
+        188,
+        24,
+        23,
+        233,
+        205,
+        214
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The Market admin; pays the account rent."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_vault",
+          "docs": [
+            "The USDC vault whose balance seeds the supply totals."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "max_price_age_seconds",
+          "type": "u32"
+        },
+        {
+          "name": "oracle",
+          "type": "pubkey"
+        },
+        {
+          "name": "feed_id",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        }
+      ]
     },
     {
       "name": "init_liquidation_receipts_comp_def",
@@ -3591,6 +4604,735 @@
         {
           "name": "nonce",
           "type": "u128"
+        }
+      ]
+    },
+    {
+      "name": "lend_op",
+      "docs": [
+        "Owner-signed lending operation on the encrypted Position: `op` 0 add",
+        "collateral, 1 withdraw collateral, 2 borrow, 3 repay, 4 supply, 5",
+        "withdraw supply. `amount` is a public USDC amount (lamports for ops 0",
+        "and 1). The Program accrues interest, checks pause, caps and liquidity,",
+        "computes the share amount publicly, reads the Pyth price from",
+        "`price_update` for ops 1 and 2 (any account otherwise), locks the",
+        "Position and queues `lend_op`. No caller-supplied price."
+      ],
+      "discriminator": [
+        89,
+        237,
+        57,
+        79,
+        118,
+        123,
+        161,
+        16
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "The Position owner; signs, pays rent and the computation fee."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_state",
+          "docs": [
+            "Risk parameters, caps and pauses."
+          ]
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_vault",
+          "docs": [
+            "Read for the liquidity check of borrow and withdraw supply."
+          ]
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "sequence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update",
+          "docs": [
+            "The Pyth `PriceUpdateV2` account (`lending_pool.oracle`); read for ops",
+            "1 and 2, any account otherwise."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "sequence",
+          "type": "u64"
+        },
+        {
+          "name": "op",
+          "type": "u8"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "lend_op_callback",
+      "docs": [
+        "Verifies the `lend_op` output. `Applied` stores the new state, bumps the",
+        "generation, releases the Lock, updates the pool totals and (for a",
+        "liquidation) sends the seized wSOL to the Liquidator. A refusal or an",
+        "unapplied attempt releases the Lock, stores nothing and (for a",
+        "liquidation) refunds the Liquidator's USDC. A health check only emits",
+        "`HealthChecked`. A failing vault transfer reverts the callback, so the",
+        "Intent stays queued for `abandon_lend_op`. Unauthenticated output and",
+        "binding mismatches revert."
+      ],
+      "discriminator": [
+        121,
+        65,
+        95,
+        101,
+        36,
+        123,
+        160,
+        166
+      ],
+      "accounts": [
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "computation_account"
+        },
+        {
+          "name": "cluster_account"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The attempt's Operation Intent; `classify_callback` verifies it."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "output",
+          "type": {
+            "defined": {
+              "name": "SignedComputationOutputs",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": {
+                    "defined": {
+                      "name": "LendOpOutput"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "liquidate",
+      "docs": [
+        "Permissionless liquidation. The Liquidator pays `repay_amount` USDC into",
+        "the vault now; the Program computes the debt burn and the wSOL seize",
+        "publicly from the accrued index, the Pyth low-bound price and the",
+        "liquidation bonus, locks the target Position and queues `lend_op` op 7.",
+        "`remaining_accounts` must be `[liquidator_usdc, liquidator_wsol]`.",
+        "On `applied` the callback sends the seized wSOL to the Liquidator; on",
+        "any other outcome (healthy, close factor, seize above collateral,",
+        "stale, expired) it refunds the USDC. `abandon_lend_op` refunds after",
+        "Lock expiry."
+      ],
+      "discriminator": [
+        223,
+        179,
+        226,
+        125,
+        48,
+        46,
+        39,
+        74
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "The Liquidator; signs, pays the repay amount, rent and the fee."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_state"
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "usdc_vault",
+          "docs": [
+            "Receives the repay USDC."
+          ],
+          "writable": true
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The target Position (locked until the callback)."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_counter",
+          "docs": [
+            "The Liquidator's sequence counter, created on first use."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "sequence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update",
+          "docs": [
+            "The Pyth `PriceUpdateV2` account (`lending_pool.oracle`)."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "sequence",
+          "type": "u64"
+        },
+        {
+          "name": "repay_amount",
+          "type": "u64"
         }
       ]
     },
@@ -8928,6 +10670,32 @@
       ]
     },
     {
+      "name": "Disclosure",
+      "discriminator": [
+        29,
+        165,
+        1,
+        230,
+        237,
+        219,
+        131,
+        139
+      ]
+    },
+    {
+      "name": "LendingPool",
+      "discriminator": [
+        208,
+        40,
+        242,
+        82,
+        186,
+        18,
+        75,
+        36
+      ]
+    },
+    {
       "name": "Market",
       "discriminator": [
         219,
@@ -9138,6 +10906,45 @@
       ]
     },
     {
+      "name": "DisclosureAbandoned",
+      "discriminator": [
+        40,
+        85,
+        87,
+        147,
+        51,
+        167,
+        218,
+        31
+      ]
+    },
+    {
+      "name": "DisclosureNotStored",
+      "discriminator": [
+        233,
+        109,
+        216,
+        100,
+        9,
+        130,
+        225,
+        200
+      ]
+    },
+    {
+      "name": "DisclosureQueued",
+      "discriminator": [
+        237,
+        237,
+        102,
+        207,
+        134,
+        89,
+        176,
+        211
+      ]
+    },
+    {
       "name": "EmptyPoolRecovered",
       "discriminator": [
         30,
@@ -9187,6 +10994,97 @@
         42,
         73,
         142
+      ]
+    },
+    {
+      "name": "HealthChecked",
+      "discriminator": [
+        158,
+        109,
+        186,
+        27,
+        1,
+        81,
+        244,
+        40
+      ]
+    },
+    {
+      "name": "LendOpAbandoned",
+      "discriminator": [
+        137,
+        114,
+        89,
+        58,
+        3,
+        192,
+        42,
+        86
+      ]
+    },
+    {
+      "name": "LendOpApplied",
+      "discriminator": [
+        103,
+        89,
+        182,
+        250,
+        95,
+        114,
+        1,
+        50
+      ]
+    },
+    {
+      "name": "LendOpQueued",
+      "discriminator": [
+        27,
+        81,
+        37,
+        215,
+        252,
+        31,
+        130,
+        124
+      ]
+    },
+    {
+      "name": "LendOpRejected",
+      "discriminator": [
+        165,
+        253,
+        142,
+        17,
+        114,
+        66,
+        178,
+        110
+      ]
+    },
+    {
+      "name": "LendingPoolInitialized",
+      "discriminator": [
+        50,
+        209,
+        106,
+        255,
+        58,
+        0,
+        239,
+        152
+      ]
+    },
+    {
+      "name": "LiquidationApplied",
+      "discriminator": [
+        36,
+        102,
+        222,
+        145,
+        192,
+        150,
+        20,
+        41
       ]
     },
     {
@@ -9291,6 +11189,19 @@
         179,
         61,
         164
+      ]
+    },
+    {
+      "name": "PositionDisclosed",
+      "discriminator": [
+        240,
+        124,
+        219,
+        40,
+        129,
+        1,
+        214,
+        227
       ]
     },
     {
@@ -10570,6 +12481,96 @@
       "code": 6158,
       "name": "PositionOpIntentMismatch",
       "msg": "The Operation Intent is not this Position's queued position operation"
+    },
+    {
+      "code": 6159,
+      "name": "LendOpWrongEntry",
+      "msg": "This instruction does not run that lending operation"
+    },
+    {
+      "code": 6160,
+      "name": "LendOpInvalid",
+      "msg": "Unknown lending operation"
+    },
+    {
+      "code": 6161,
+      "name": "LendOpZeroAmount",
+      "msg": "The lending operation amount must be nonzero"
+    },
+    {
+      "code": 6162,
+      "name": "LendOpZeroShares",
+      "msg": "The lending operation converts to zero shares"
+    },
+    {
+      "code": 6163,
+      "name": "LendSupplyCapExceeded",
+      "msg": "The supply would exceed the supply cap"
+    },
+    {
+      "code": 6164,
+      "name": "LendDebtCapExceeded",
+      "msg": "The borrow would exceed the total debt cap"
+    },
+    {
+      "code": 6165,
+      "name": "LendAssetCapExceeded",
+      "msg": "The amount exceeds the per-asset cap"
+    },
+    {
+      "code": 6166,
+      "name": "LendInsufficientLiquidity",
+      "msg": "The vault does not hold enough unreserved USDC"
+    },
+    {
+      "code": 6167,
+      "name": "OracleAccountMismatch",
+      "msg": "The price account is not the oracle configured on the LendingPool"
+    },
+    {
+      "code": 6168,
+      "name": "OraclePriceAccountInvalid",
+      "msg": "The price account is not a verified Pyth PriceUpdateV2"
+    },
+    {
+      "code": 6169,
+      "name": "LendPoolConfigInvalid",
+      "msg": "The LendingPool configuration is invalid"
+    },
+    {
+      "code": 6170,
+      "name": "LendPoolTotalsUnderflow",
+      "msg": "A LendingPool total would go below zero"
+    },
+    {
+      "code": 6171,
+      "name": "LendPoolTotalsOverflow",
+      "msg": "A LendingPool total would overflow"
+    },
+    {
+      "code": 6172,
+      "name": "LiquidationAccountsInvalid",
+      "msg": "The liquidation accounts are missing or do not match the Market"
+    },
+    {
+      "code": 6173,
+      "name": "LiquidationAmountInvalid",
+      "msg": "The liquidation amount is zero or outside the debt and vault bounds"
+    },
+    {
+      "code": 6174,
+      "name": "DisclosureMaskInvalid",
+      "msg": "The disclosure mask selects unknown fields"
+    },
+    {
+      "code": 6175,
+      "name": "DisclosureIntentMismatch",
+      "msg": "The Operation Intent is not this Position's queued disclosure"
+    },
+    {
+      "code": 6176,
+      "name": "DisclosureAuditorMismatch",
+      "msg": "The disclosure output is not sealed to the committed auditor key"
     }
   ],
   "types": [
@@ -11991,6 +13992,226 @@
       }
     },
     {
+      "name": "DisclosePositionOutput",
+      "docs": [
+        "The output of the callback instruction. Provided as a struct with ordered fields",
+        "as anchor does not support tuples and tuple structs yet."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "SharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "5"
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "Disclosure",
+      "docs": [
+        "The Disclosure account."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "docs": [
+              "The disclosed Position."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "The Position owner."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "auditor",
+            "docs": [
+              "The auditor's x25519 public key."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "mask",
+            "docs": [
+              "Selected fields, one bit per field (unselected fields are zero)."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "nonce",
+            "docs": [
+              "Output nonce of the sealed fields."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "ciphertexts",
+            "docs": [
+              "free_sol, free_usdc, collateral, supply_shares, debt_shares."
+            ],
+            "type": {
+              "array": [
+                {
+                  "array": [
+                    "u8",
+                    32
+                  ]
+                },
+                5
+              ]
+            }
+          },
+          {
+            "name": "position_generation",
+            "docs": [
+              "Position generation the Disclosure was taken at."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "docs": [
+              "Slot the Disclosure was stored."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisclosureAbandoned",
+      "docs": [
+        "Emitted by `abandon_disclosure`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "signer",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisclosureNotStored",
+      "docs": [
+        "Emitted by the `disclose_position` callback when nothing was stored."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "intent_status",
+            "type": {
+              "defined": {
+                "name": "IntentStatus"
+              }
+            }
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DisclosureQueued",
+      "docs": [
+        "Emitted by `disclose_position` when queued."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "disclosure",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "auditor",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "mask",
+            "type": "u64"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "computation_offset",
+            "type": "u64"
+          },
+          {
+            "name": "position_generation",
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "EmptyPoolRecovered",
       "docs": [
         "Emitted when the recovery applied: the dust residue became Reserves. No",
@@ -12287,6 +14508,33 @@
       }
     },
     {
+      "name": "HealthChecked",
+      "docs": [
+        "Emitted by the `lend_op` callback for a health check."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "unhealthy",
+            "type": "bool"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "InitPoolStateOutput",
       "docs": [
         "The output of the callback instruction. Provided as a struct with ordered fields",
@@ -12534,6 +14782,473 @@
                 }
               }
             }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendOpAbandoned",
+      "docs": [
+        "Emitted by `abandon_lend_op` (any signer, after Lock expiry)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "op",
+            "type": "u64"
+          },
+          {
+            "name": "refunded_usdc",
+            "type": "u64"
+          },
+          {
+            "name": "signer",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendOpApplied",
+      "docs": [
+        "Emitted by the `lend_op` callback when the operation applied."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "op",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "total_supply_shares",
+            "type": "u128"
+          },
+          {
+            "name": "total_debt_shares",
+            "type": "u128"
+          },
+          {
+            "name": "generation",
+            "type": "u64"
+          },
+          {
+            "name": "nonce",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendOpOutput",
+      "docs": [
+        "The output of the callback instruction. Provided as a struct with ordered fields",
+        "as anchor does not support tuples and tuple structs yet."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "LendOpOutputStruct0"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendOpOutputStruct0",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "SharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "5"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_1",
+            "type": "bool"
+          },
+          {
+            "name": "field_2",
+            "type": "u64"
+          },
+          {
+            "name": "field_3",
+            "type": "u64"
+          },
+          {
+            "name": "field_4",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendOpQueued",
+      "docs": [
+        "Emitted by `lend_op`, `liquidate` and `check_health` when queued. Op,",
+        "amount and shares are public by design; balances stay encrypted."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "lending_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "op",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "shares",
+            "type": "u64"
+          },
+          {
+            "name": "borrow_index_1e9",
+            "type": "u64"
+          },
+          {
+            "name": "supply_index_1e9",
+            "type": "u128"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          },
+          {
+            "name": "computation_offset",
+            "type": "u64"
+          },
+          {
+            "name": "position_generation",
+            "type": "u64"
+          },
+          {
+            "name": "decision_expiry_slot",
+            "type": "u64"
+          },
+          {
+            "name": "lock_expiry_slot",
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendOpRejected",
+      "docs": [
+        "Emitted by the `lend_op` callback when the circuit refused the operation",
+        "or the attempt ended without applying (`intent_status`)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "op",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "intent_status",
+            "type": {
+              "defined": {
+                "name": "IntentStatus"
+              }
+            }
+          },
+          {
+            "name": "refunded_usdc",
+            "docs": [
+              "USDC returned to the Liquidator (liquidations only, else 0)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendingPool",
+      "docs": [
+        "Public lending pool state."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "Owning Market."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "PDA bump."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "oracle",
+            "docs": [
+              "Pyth SOL/USD price account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "feed_id",
+            "docs": [
+              "Pyth feed id."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "max_price_age_seconds",
+            "docs": [
+              "Maximum accepted price age (devnet: 86_400)."
+            ],
+            "type": "u32"
+          },
+          {
+            "name": "total_supply_shares",
+            "docs": [
+              "Total supply shares."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "total_debt_shares",
+            "docs": [
+              "Total debt shares."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "supply_index_1e9",
+            "docs": [
+              "Supply index, `1e9` = 1.0."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "borrow_index_1e9",
+            "docs": [
+              "Borrow index, `1e9` = 1.0."
+            ],
+            "type": "u128"
+          },
+          {
+            "name": "last_accrual_ts",
+            "docs": [
+              "Timestamp of the last accrual."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "reserves_usdc",
+            "docs": [
+              "Protocol reserves in USDC base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "reserved",
+            "docs": [
+              "Reserved for later layout additions."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                64
+              ]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendingPoolInitialized",
+      "docs": [
+        "Emitted by `init_lending_pool` (walnut-lend)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "lending_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "oracle",
+            "type": "pubkey"
+          },
+          {
+            "name": "feed_id",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "max_price_age_seconds",
+            "type": "u32"
+          },
+          {
+            "name": "created",
+            "docs": [
+              "`true` when this call created the pool and seeded the totals."
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "total_supply_shares",
+            "type": "u128"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidationApplied",
+      "docs": [
+        "Emitted by the `lend_op` callback when a liquidation applied."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "liquidator",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "repay_amount",
+            "type": "u64"
+          },
+          {
+            "name": "debt_shares_burned",
+            "type": "u64"
+          },
+          {
+            "name": "seized_lamports",
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
           }
         ]
       }
@@ -13605,6 +16320,12 @@
           },
           {
             "name": "PositionOp"
+          },
+          {
+            "name": "LendOp"
+          },
+          {
+            "name": "Disclose"
           }
         ]
       }
@@ -14437,6 +17158,59 @@
           {
             "name": "cap",
             "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionDisclosed",
+      "docs": [
+        "Emitted by the `disclose_position` callback when the Disclosure is stored."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "disclosure",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "auditor",
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "mask",
+            "type": "u8"
+          },
+          {
+            "name": "position_generation",
+            "type": "u64"
+          },
+          {
+            "name": "nonce",
+            "type": {
+              "array": [
+                "u8",
+                16
+              ]
+            }
           },
           {
             "name": "slot",

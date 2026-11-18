@@ -6,10 +6,14 @@ import "./polyfill.ts";
 import { AnchorProvider, BN, Program, type Idl } from "@anchor-lang/core";
 import { getMXEPublicKey } from "@arcium-hq/client";
 import {
+  decodeLendingPool,
+  deriveLendingPoolPda,
   hexToBytes,
   parsePriceUpdateV2,
   PYTH_FEED_IDS,
   u64ToLeBytes,
+  type LendingPool,
+  type RateParams,
 } from "@walnut/sdk";
 import {
   Connection,
@@ -150,6 +154,7 @@ export async function fetchAccount<T>(
 
 export interface MarketAccount {
   assetState: PublicKey;
+  vaultAuthority: PublicKey;
   wsolMint: PublicKey;
   usdcMint: PublicKey;
   wsolVault: PublicKey;
@@ -157,7 +162,20 @@ export interface MarketAccount {
 }
 
 export interface AssetStateAccount {
-  risk: { ltvBps: number };
+  risk: {
+    ltvBps: number;
+    liquidationThresholdBps: number;
+    liquidationBonusBps: number;
+    closeFactorBps: number;
+    reserveFactorBps: number;
+  };
+  rates: {
+    baseRateBps: number;
+    slope1Bps: number;
+    slope2Bps: number;
+    optimalUtilizationBps: number;
+  };
+  caps: { positionDebtCapUsdc: BN };
 }
 
 export interface LockView {
@@ -179,6 +197,7 @@ export interface PositionAccount {
 
 export interface IntentAccount {
   kind: Json;
+  payer: PublicKey;
   status: Json;
   sequence: BN;
   lockExpirySlot: BN;
@@ -203,6 +222,14 @@ export interface Protocol {
   marketAddress: PublicKey;
   market: MarketAccount;
   ltvBps: bigint;
+  liquidationThresholdBps: bigint;
+  liquidationBonusBps: bigint;
+  closeFactorBps: bigint;
+  reserveFactorBps: bigint;
+  /** Borrow rate curve of the AssetState (used for APR and APY). */
+  rates: RateParams;
+  /** Per-Position debt cap in USDC base units. */
+  positionDebtCap: bigint;
   mxePublicKey: Uint8Array;
 }
 
@@ -234,7 +261,48 @@ export async function loadProtocol(chain: Chain): Promise<Protocol> {
     marketAddress: MARKET_ADDRESS,
     market,
     ltvBps: BigInt(assetState.risk.ltvBps),
+    liquidationThresholdBps: BigInt(assetState.risk.liquidationThresholdBps),
+    liquidationBonusBps: BigInt(assetState.risk.liquidationBonusBps),
+    closeFactorBps: BigInt(assetState.risk.closeFactorBps),
+    reserveFactorBps: BigInt(assetState.risk.reserveFactorBps),
+    rates: {
+      baseRateBps: BigInt(assetState.rates.baseRateBps),
+      slope1Bps: BigInt(assetState.rates.slope1Bps),
+      slope2Bps: BigInt(assetState.rates.slope2Bps),
+      optimalUtilizationBps: BigInt(assetState.rates.optimalUtilizationBps),
+    },
+    positionDebtCap: BigInt(assetState.caps.positionDebtCapUsdc.toString()),
     mxePublicKey,
+  };
+}
+
+// ------------------------------------------------------------- lending pool
+
+/** The Market's LendingPool with the USDC the vault can pay out now. */
+export interface LendingView {
+  address: PublicKey;
+  pool: LendingPool;
+  /** Vault USDC minus protocol reserves, in base units. */
+  liquidity: bigint;
+}
+
+/** Reads the LendingPool; null while it has not been created on chain. */
+export async function loadLendingView(
+  connection: Connection,
+  protocol: Protocol,
+): Promise<LendingView | null> {
+  const address = deriveLendingPoolPda(PROGRAM_ID, protocol.marketAddress);
+  const info = await withRetry(() =>
+    connection.getAccountInfo(address, "confirmed"),
+  );
+  if (info === null) return null;
+  const pool = decodeLendingPool(info.data);
+  const vault = await tokenBalanceOf(connection, protocol.market.usdcVault);
+  const held = vault ?? 0n;
+  return {
+    address,
+    pool,
+    liquidity: held > pool.reservesUsdc ? held - pool.reservesUsdc : 0n,
   };
 }
 

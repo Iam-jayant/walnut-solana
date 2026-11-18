@@ -28,6 +28,7 @@
 
 pub mod checkpoint;
 pub mod fixed;
+pub mod lend;
 pub mod rate;
 pub mod supply;
 

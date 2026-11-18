@@ -22,8 +22,11 @@
 pub mod accounts;
 pub mod band;
 pub mod coordination;
+pub mod disclosure;
 pub mod first_supplier;
 pub mod generation;
+pub mod lend_op;
+pub mod lending_pool;
 pub mod nonce;
 pub mod pending_shield;
 pub mod pool_mutation;

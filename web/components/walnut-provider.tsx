@@ -4,14 +4,15 @@
 // decrypted Position, wallet balances, and the operation actions with live status.
 import "../lib/polyfill.ts";
 import {
-  PositionOp,
+  deriveViewingKey,
   viewingKeyMessageBytes,
   ViewingKeySession,
+  type LendOp,
   type PositionBalances,
   type WalletEventSource,
 } from "@walnut/sdk";
 import { useWallet } from "@solana/wallet-adapter-react";
-import type { Transaction } from "@solana/web3.js";
+import { PublicKey, type Connection, type Transaction } from "@solana/web3.js";
 import {
   createContext,
   useCallback,
@@ -28,11 +29,13 @@ import {
   createConnection,
   fetchAccount,
   fetchSolPrice,
+  loadLendingView,
   loadProtocol,
   positionAddress,
   tokenBalanceOf,
   variantName,
   type Chain,
+  type LendingView,
   type PositionAccount,
   type PriceInfo,
   type Protocol,
@@ -45,16 +48,22 @@ import {
   WSOL_MINT,
 } from "../lib/config.ts";
 import {
+  abandonLiquidation,
   abandonStuck,
+  checkHealth,
   deposit,
+  disclose,
   findStuckOperation,
   friendlyError,
   initializePosition,
-  positionOp,
+  lendOp,
+  liquidate,
+  rotateKey,
   unwrapWsol,
   withdraw,
   type Asset,
-  type OpOutcome,
+  type HealthResult,
+  type PendingLiquidation,
   type OpsContext,
   type Progress,
   type Report,
@@ -87,14 +96,20 @@ export type AccountState =
   "loading" | "none" | "initializing" | "active" | "failed";
 
 export interface WalnutState {
+  connection: Connection;
   protocol: Protocol | null;
   protocolError: string | null;
+  /** The LendingPool; null until it exists on chain. */
+  lending: LendingView | null;
+  /** The first LendingPool read finished (it may still be absent). */
+  lendingChecked: boolean;
   price: PriceInfo;
   accountState: AccountState;
   unlocked: boolean;
   balances: PositionBalances | null;
   walletBalances: WalletBalances | null;
   stuck: StuckOperation | null;
+  pendingLiquidation: PendingLiquidation | null;
   activity: ActivityItem[];
   busy: boolean;
   error: string | null;
@@ -104,7 +119,15 @@ export interface WalnutState {
   createAccount(): Promise<void>;
   deposit(asset: Asset, amount: bigint): Promise<void>;
   withdraw(asset: Asset, amount: bigint): Promise<void>;
-  positionOp(op: PositionOp, label: string, amount: bigint): Promise<void>;
+  lendOp(op: LendOp, label: string, amount: bigint): Promise<void>;
+  /** Queues a health check of the borrower's account (a wallet address). */
+  checkHealth(borrower: string): Promise<HealthResult | undefined>;
+  liquidate(borrower: string, repayAmount: bigint): Promise<void>;
+  abandonLiquidation(): Promise<void>;
+  /** Rotates the Viewing Key; the session switches to the new key on success. */
+  rotateKey(): Promise<void>;
+  /** Seals the chosen fields to the auditor's x25519 public key. */
+  disclose(auditorPublicKey: Uint8Array, mask: number): Promise<boolean>;
   unwrapPending(): Promise<void>;
   abandonStuck(): Promise<void>;
   refresh(): Promise<void>;
@@ -132,6 +155,8 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
   );
   const [protocol, setProtocol] = useState<Protocol | null>(null);
   const [protocolError, setProtocolError] = useState<string | null>(null);
+  const [lending, setLending] = useState<LendingView | null>(null);
+  const [lendingChecked, setLendingChecked] = useState(false);
   const [price, setPrice] = useState<PriceInfo>({
     price: FALLBACK_SOL_PRICE,
     source: "fallback",
@@ -143,6 +168,8 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     null,
   );
   const [stuck, setStuck] = useState<StuckOperation | null>(null);
+  const [pendingLiquidation, setPendingLiquidation] =
+    useState<PendingLiquidation | null>(null);
   const [activity, setActivity] = useState<ActivityItem[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -174,6 +201,28 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
       clearInterval(timer);
     };
   }, [chain]);
+
+  // ---- lending pool (no wallet needed)
+  useEffect(() => {
+    if (protocol === null) return;
+    let cancelled = false;
+    const load = () =>
+      loadLendingView(chain.connection, protocol)
+        .then((view) => {
+          if (cancelled) return;
+          setLending(view);
+          setLendingChecked(true);
+        })
+        .catch(() => {
+          /* keep the last known pool; the next poll retries */
+        });
+    void load();
+    const timer = setInterval(() => void load(), 30_000);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [chain, protocol]);
 
   // ---- session custody
   const clearSession = useCallback(() => {
@@ -227,6 +276,12 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     try {
       const owner = publicKey;
       const wsolAddress = ataAddress(owner, WSOL_MINT);
+      void loadLendingView(chain.connection, protocol)
+        .then((view) => {
+          setLending(view);
+          setLendingChecked(true);
+        })
+        .catch(() => undefined);
       const [position, lamports, usdc, wsol] = await Promise.all([
         fetchAccount<PositionAccount>(
           chain.program,
@@ -312,11 +367,11 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
 
   // ---- activity tracking
   const track = useCallback(
-    async (
+    async <T,>(
       label: string,
-      run: (report: Report, ctx: OpsContext) => Promise<OpOutcome | void>,
-    ) => {
-      if (busyRef.current) return;
+      run: (report: Report, ctx: OpsContext) => Promise<T>,
+    ): Promise<T | undefined> => {
+      if (busyRef.current) return undefined;
       busyRef.current = true;
       setBusy(true);
       setError(null);
@@ -349,13 +404,14 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
           return next;
         });
       try {
-        await run(report, opsContext());
+        return await run(report, opsContext());
       } catch (err) {
         patch((item) => ({
           ...item,
           stage: "failed",
           detail: friendlyError(err),
         }));
+        return undefined;
       } finally {
         busyRef.current = false;
         setBusy(false);
@@ -418,15 +474,87 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     });
   }, [track, unlock]);
 
+  const requireLending = useCallback((): LendingView => {
+    if (lending === null) {
+      throw new Error("The lending market is being initialized.");
+    }
+    return lending;
+  }, [lending]);
+
+  const parseAddress = (text: string): PublicKey => {
+    try {
+      return new PublicKey(text.trim());
+    } catch {
+      throw new Error("Enter a valid wallet address.");
+    }
+  };
+
+  const rotate = useCallback(async () => {
+    await track("Rotate Viewing Key", async (report, ctx) => {
+      const session = sessionRef.current;
+      if (session === null || !session.isUnlocked) {
+        throw new Error("Unlock private balances first.");
+      }
+      if (wallet.signMessage === undefined) {
+        throw new Error("This wallet cannot sign messages.");
+      }
+      const position = await fetchAccount<PositionAccount>(
+        chain.program,
+        "position",
+        positionAddress(ctx.signer.publicKey),
+      );
+      if (position === null) throw new Error("No private account found.");
+      const oldEpoch = BigInt(position.viewingKeyEpoch.toString());
+      const expectedBalances = session.decryptPosition(
+        {
+          nonce: BigInt(position.encryptedState.nonce.toString()),
+          ciphertexts: position.encryptedState.ciphertexts,
+        },
+        ctx.protocol.mxePublicKey,
+      );
+      const signature = await wallet.signMessage(
+        viewingKeyMessageBytes({
+          programId: PROGRAM_ID,
+          network: NETWORK,
+          positionPda: positionAddress(ctx.signer.publicKey),
+          epoch: oldEpoch + 1n,
+        }),
+      );
+      const newKey = await deriveViewingKey(signature, {
+        wipeSignature: true,
+      });
+      try {
+        return await rotateKey(
+          ctx,
+          {
+            newKey,
+            oldEpoch,
+            oldPublicKey: session.publicKey,
+            expectedBalances,
+            commitKey: (key) => adoptSession(new ViewingKeySession(key)),
+          },
+          report,
+        );
+      } catch (err) {
+        newKey.wipe();
+        throw err;
+      }
+    });
+  }, [adoptSession, chain, track, wallet]);
+
   const value: WalnutState = {
+    connection: chain.connection,
     protocol,
     protocolError,
+    lending,
+    lendingChecked,
     price,
     accountState,
     unlocked,
     balances,
     walletBalances,
     stuck,
+    pendingLiquidation,
     activity,
     busy,
     error,
@@ -437,26 +565,64 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
       clearSession();
     },
     createAccount,
-    deposit: (asset, amount) =>
-      track(asset === "sol" ? "Deposit SOL" : "Deposit USDC", (report, ctx) =>
-        deposit(ctx, asset, amount, report),
+    deposit: async (asset, amount) => {
+      await track(
+        asset === "sol" ? "Deposit SOL" : "Deposit USDC",
+        (report, ctx) => deposit(ctx, asset, amount, report),
+      );
+    },
+    withdraw: async (asset, amount) => {
+      await track(
+        asset === "sol" ? "Withdraw SOL" : "Withdraw USDC",
+        (report, ctx) => withdraw(ctx, asset, amount, report),
+      );
+    },
+    lendOp: async (op, label, amount) => {
+      await track(label, (report, ctx) =>
+        lendOp(ctx, requireLending(), op, label, amount, report),
+      );
+    },
+    checkHealth: (borrower) =>
+      track("Check health", (report, ctx) =>
+        checkHealth(ctx, requireLending(), parseAddress(borrower), report),
       ),
-    withdraw: (asset, amount) =>
-      track(asset === "sol" ? "Withdraw SOL" : "Withdraw USDC", (report, ctx) =>
-        withdraw(ctx, asset, amount, report),
-      ),
-    positionOp: (op, label, amount) =>
-      track(label, (report, ctx) =>
-        positionOp(ctx, op, label, amount, price.price, report),
-      ),
-    unwrapPending: () =>
-      track("Unwrap to SOL", (report, ctx) => unwrapWsol(ctx, report)),
-    abandonStuck: () =>
-      track("Release stuck operation", async (report, ctx) => {
+    liquidate: async (borrower, repayAmount) => {
+      const result = await track("Liquidate", (report, ctx) =>
+        liquidate(
+          ctx,
+          requireLending(),
+          parseAddress(borrower),
+          repayAmount,
+          report,
+        ),
+      );
+      if (result !== undefined) setPendingLiquidation(result.pending);
+    },
+    abandonLiquidation: async () => {
+      const pending = pendingLiquidation;
+      if (pending === null) return;
+      await track("Release liquidation", async (report, ctx) => {
+        await abandonLiquidation(ctx, pending, report);
+        setPendingLiquidation(null);
+      });
+    },
+    rotateKey: rotate,
+    disclose: async (auditorPublicKey, mask) => {
+      const outcome = await track("Disclose to auditor", (report, ctx) =>
+        disclose(ctx, auditorPublicKey, mask, report),
+      );
+      return outcome === "applied";
+    },
+    unwrapPending: async () => {
+      await track("Unwrap to SOL", (report, ctx) => unwrapWsol(ctx, report));
+    },
+    abandonStuck: async () => {
+      await track("Release stuck operation", async (report, ctx) => {
         const position = positionRef.current;
         if (stuck === null || position === null) return;
         await abandonStuck(ctx, stuck, position, report);
-      }),
+      });
+    },
     refresh,
   };
 
@@ -464,7 +630,6 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     <WalnutContext.Provider value={value}>{children}</WalnutContext.Provider>
   );
 }
-
 function equalBytes(a: Uint8Array, b: ArrayLike<number>): boolean {
   if (a.length !== b.length) return false;
   for (let i = 0; i < a.length; i += 1) if (a[i] !== b[i]) return false;

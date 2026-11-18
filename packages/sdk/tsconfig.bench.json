@@ -5,5 +5,5 @@
     "allowImportingTsExtensions": true,
     "types": ["node"]
   },
-  "include": ["bench", "demo"]
+  "include": ["bench", "demo", "scripts"]
 }

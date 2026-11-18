@@ -1,5 +1,5 @@
-import { ClientRoot } from "../components/client-root.tsx";
+import { LandingPage } from "../components/landing/landing-page.tsx";
 
 export default function Page() {
-  return <ClientRoot />;
+  return <LandingPage />;
 }

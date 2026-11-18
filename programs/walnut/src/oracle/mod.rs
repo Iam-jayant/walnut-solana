@@ -319,6 +319,90 @@ pub fn validate_price(
     price_use: PriceUse,
 ) -> Result<ValidatedPrice, OracleError> {
     params.validate()?;
+    validate_price_inner(view, expected_feed_id, params, now, price_use)
+}
+
+/// [`validate_price`] with an explicit maximum age (walnut-lend: the
+/// `LendingPool` carries a devnet-tolerant age above the governed 300 s
+/// bound). Confidence and deviation bounds are still validated; only the age
+/// bound of [`OracleParams::validate`] is replaced by `max_age_seconds > 0`.
+pub fn validate_price_with_max_age(
+    view: &PythPriceView,
+    expected_feed_id: &[u8; 32],
+    max_age_seconds: u32,
+    max_confidence_bps: u16,
+    max_deviation_bps: u16,
+    now: i64,
+    price_use: PriceUse,
+) -> Result<ValidatedPrice, OracleError> {
+    if max_age_seconds == 0 {
+        return Err(OracleError::InvalidOracleParams);
+    }
+    // Validate confidence and deviation with an in-range age placeholder.
+    OracleParams {
+        max_age_seconds: MIN_ORACLE_MAX_AGE_SECONDS,
+        max_confidence_bps,
+        max_deviation_bps,
+    }
+    .validate()?;
+    let params = OracleParams {
+        max_age_seconds,
+        max_confidence_bps,
+        max_deviation_bps,
+    };
+    validate_price_inner(view, expected_feed_id, &params, now, price_use)
+}
+
+/// Offset of the verification-level tag inside a `PriceUpdateV2` account
+/// (8-byte discriminator plus the 32-byte write authority).
+const PRICE_UPDATE_V2_LEVEL_OFFSET: usize = 40;
+
+/// Anchor discriminator of Pyth's `PriceUpdateV2` account
+/// (`sha256("account:PriceUpdateV2")[..8]`).
+pub const PRICE_UPDATE_V2_DISCRIMINATOR: [u8; 8] = [34, 241, 35, 99, 157, 126, 244, 205];
+
+/// Reads a fully verified `PriceUpdateV2` account (discriminator, `Full`
+/// verification level, `PriceFeedMessage`) without the Pyth SDK. Returns
+/// `None` for any other shape. Layout after the discriminator: write
+/// authority (32), verification level (tag byte, `1` = Full), then feed id
+/// (32), price (i64), conf (u64), exponent (i32), publish time (i64), previous
+/// publish time (i64), EMA price (i64), EMA conf (u64), all little-endian.
+pub fn price_view_from_account(
+    account: Pubkey,
+    owner: Pubkey,
+    data: &[u8],
+) -> Option<PythPriceView> {
+    if data.len() < PRICE_UPDATE_V2_LEVEL_OFFSET + 1 + 84
+        || data[..8] != PRICE_UPDATE_V2_DISCRIMINATOR
+        || data[PRICE_UPDATE_V2_LEVEL_OFFSET] != 1
+    {
+        return None;
+    }
+    let m = PRICE_UPDATE_V2_LEVEL_OFFSET + 1;
+    let i64_at = |at: usize| i64::from_le_bytes(data[at..at + 8].try_into().unwrap());
+    let u64_at = |at: usize| u64::from_le_bytes(data[at..at + 8].try_into().unwrap());
+    let mut feed_id = [0u8; 32];
+    feed_id.copy_from_slice(&data[m..m + 32]);
+    Some(PythPriceView {
+        account,
+        owner,
+        feed_id,
+        price: i64_at(m + 32),
+        conf: u64_at(m + 40),
+        exponent: i32::from_le_bytes(data[m + 48..m + 52].try_into().unwrap()),
+        publish_time: i64_at(m + 52),
+        ema_price: i64_at(m + 68),
+        ema_conf: u64_at(m + 76),
+    })
+}
+
+fn validate_price_inner(
+    view: &PythPriceView,
+    expected_feed_id: &[u8; 32],
+    params: &OracleParams,
+    now: i64,
+    price_use: PriceUse,
+) -> Result<ValidatedPrice, OracleError> {
     check_receiver_and_feed(view, expected_feed_id)?;
     check_age(view.publish_time, now, params.max_age_seconds)?;
     check_confidence(view.price, view.conf, params.max_confidence_bps)?;
@@ -406,7 +490,9 @@ pub fn operation_is_price_sensitive(kind: OperationKind) -> bool {
         | OperationKind::UtilizationBand
         | OperationKind::ReserveWithdrawal
         | OperationKind::RecoverEmptyPool
-        | OperationKind::PositionOp => false,
+        | OperationKind::PositionOp
+        | OperationKind::LendOp
+        | OperationKind::Disclose => false,
     }
 }
 

@@ -180,3 +180,35 @@ export function deriveArciumQueueAccounts(params: {
     compDefAccount: getCompDefAccAddress(programId, compDefOffsetOf(circuit)),
   };
 }
+
+/** Seed constant of the Walnut-Lend `LendingPool` PDA. */
+export const LENDING_POOL_SEED = "lending_pool";
+/** Seed constant of a Walnut-Lend `Disclosure` PDA. */
+export const DISCLOSURE_SEED = "disclosure";
+
+/** Derives the `LendingPool` PDA: `["lending_pool", market]`. */
+export function deriveLendingPoolPda(
+  programId: PublicKey,
+  market: PublicKey,
+): PublicKey {
+  return derive(
+    [textEncoder.encode(LENDING_POOL_SEED), market.toBytes()],
+    programId,
+  ).address;
+}
+
+/** Derives the `Disclosure` PDA: `["disclosure", position, auditor]`. */
+export function deriveDisclosurePda(
+  programId: PublicKey,
+  position: PublicKey,
+  auditor: PublicKey,
+): PublicKey {
+  return derive(
+    [
+      textEncoder.encode(DISCLOSURE_SEED),
+      position.toBytes(),
+      auditor.toBytes(),
+    ],
+    programId,
+  ).address;
+}

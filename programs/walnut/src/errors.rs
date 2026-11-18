@@ -351,6 +351,43 @@ pub enum ErrorCode {
     PositionOpPositionNotActive,
     #[msg("The Operation Intent is not this Position's queued position operation")]
     PositionOpIntentMismatch,
+    // walnut-lend appends the lending, liquidation and disclosure codes.
+    #[msg("This instruction does not run that lending operation")]
+    LendOpWrongEntry,
+    #[msg("Unknown lending operation")]
+    LendOpInvalid,
+    #[msg("The lending operation amount must be nonzero")]
+    LendOpZeroAmount,
+    #[msg("The lending operation converts to zero shares")]
+    LendOpZeroShares,
+    #[msg("The supply would exceed the supply cap")]
+    LendSupplyCapExceeded,
+    #[msg("The borrow would exceed the total debt cap")]
+    LendDebtCapExceeded,
+    #[msg("The amount exceeds the per-asset cap")]
+    LendAssetCapExceeded,
+    #[msg("The vault does not hold enough unreserved USDC")]
+    LendInsufficientLiquidity,
+    #[msg("The price account is not the oracle configured on the LendingPool")]
+    OracleAccountMismatch,
+    #[msg("The price account is not a verified Pyth PriceUpdateV2")]
+    OraclePriceAccountInvalid,
+    #[msg("The LendingPool configuration is invalid")]
+    LendPoolConfigInvalid,
+    #[msg("A LendingPool total would go below zero")]
+    LendPoolTotalsUnderflow,
+    #[msg("A LendingPool total would overflow")]
+    LendPoolTotalsOverflow,
+    #[msg("The liquidation accounts are missing or do not match the Market")]
+    LiquidationAccountsInvalid,
+    #[msg("The liquidation amount is zero or outside the debt and vault bounds")]
+    LiquidationAmountInvalid,
+    #[msg("The disclosure mask selects unknown fields")]
+    DisclosureMaskInvalid,
+    #[msg("The Operation Intent is not this Position's queued disclosure")]
+    DisclosureIntentMismatch,
+    #[msg("The disclosure output is not sealed to the committed auditor key")]
+    DisclosureAuditorMismatch,
 }
 impl From<crate::math::fixed::MathError> for ErrorCode {
     fn from(error: crate::math::fixed::MathError) -> Self {
@@ -806,6 +843,11 @@ mod tests {
         // The walnut-diffn demo appends the position operation codes.
         assert_eq!(u32::from(ErrorCode::PositionOpNotOwner), 6156);
         assert_eq!(u32::from(ErrorCode::PositionOpIntentMismatch), 6158);
+        // walnut-lend appends the lending, liquidation and disclosure codes.
+        assert_eq!(u32::from(ErrorCode::LendOpWrongEntry), 6159);
+        assert_eq!(u32::from(ErrorCode::OracleAccountMismatch), 6167);
+        assert_eq!(u32::from(ErrorCode::LendPoolConfigInvalid), 6169);
+        assert_eq!(u32::from(ErrorCode::DisclosureAuditorMismatch), 6176);
     }
 
     #[test]

@@ -49,7 +49,10 @@ pub mod oracle;
 
 pub use instructions::caps::*;
 pub use instructions::config::*;
+pub use instructions::disclose::*;
 pub use instructions::initialize_market::*;
+pub use instructions::lend_op::*;
+pub use instructions::lending_pool::*;
 pub use instructions::pause::*;
 pub use instructions::position::*;
 pub use instructions::position_op::*;
@@ -67,8 +70,12 @@ pub use instructions::unshield::*;
 // feasibility scaffolding, not the production Position (Task 5).
 pub mod position;
 
-use anchor_spl::token::{self as spl, Mint, Token, TokenAccount, TransferChecked};
+use anchor_spl::token::{self as spl, Mint, Token, TokenAccount, Transfer, TransferChecked};
 use errors::ErrorCode;
+use events::{
+    DisclosureNotStored, DisclosureQueued, HealthChecked, LendOpApplied, LendOpQueued,
+    LendOpRejected, LiquidationApplied, PositionDisclosed,
+};
 use events::{EmptyPoolRecovered, EmptyPoolRecoveryNotApplied, EmptyPoolRecoveryQueued};
 use events::{
     LiquidationReceiptsEmitted, OversizedOutputEmitted, PoolStateActivated, PositionActivated,
@@ -85,9 +92,19 @@ use market::{
     check_pool_initializing, AssetState, Market, VaultAuthority, MARKET_SEED, POOL_STATE_SEED,
     VAULT_AUTHORITY_SEED,
 };
+use math::lend::{
+    OP_BORROW, OP_HEALTH_CHECK, OP_LIQUIDATE, OP_WITHDRAW_COLLATERAL, OP_WITHDRAW_SUPPLY,
+};
 use operation::{OperationCounter, OperationIntent, OPERATION_COUNTER_SEED, OPERATION_INTENT_SEED};
 use position::{EncryptedPositionState, SpikePosition, POSITION_SECRET_FIELDS};
 use state::band::{BandKeys, BandReport, BandRequest, BandSettlement};
+use state::disclosure::{
+    DiscloseReport, DiscloseRequest, DiscloseSettlement, Disclosure, DISCLOSURE_SEED,
+};
+use state::lend_op::{
+    LendParams, LendReport, LendRequest, LendSettlement, LiquidationKeys, MAX_POSITION_DEBT_CAP,
+};
+use state::lending_pool::{LendingPool, LENDING_POOL_SEED};
 use state::pending_shield::{NewPendingShield, PENDING_SHIELD_SEED};
 use state::position::{
     NewPosition, PositionInitCallback, PositionInitRequest, PositionInitSettlement,
@@ -122,6 +139,8 @@ const COMP_DEF_OFFSET_UPDATE_UTILIZATION_BAND: u32 = comp_def_offset("update_uti
 const COMP_DEF_OFFSET_RESERVE_WITHDRAWAL: u32 = comp_def_offset("reserve_withdrawal");
 const COMP_DEF_OFFSET_SUPPLY_FLOW: u32 = comp_def_offset("supply_flow");
 const COMP_DEF_OFFSET_RECOVER_EMPTY_POOL: u32 = comp_def_offset("recover_empty_pool");
+const COMP_DEF_OFFSET_LEND_OP: u32 = comp_def_offset("lend_op");
+const COMP_DEF_OFFSET_DISCLOSE_POSITION: u32 = comp_def_offset("disclose_position");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -2103,6 +2122,778 @@ pub mod walnut {
         abandon_rotation_handler(ctx)
     }
 
+    // ---- walnut-lend ---------------------------------------------------------
+
+    /// Admin, idempotent: creates the `LendingPool` (seeding the supply totals
+    /// from the USDC vault balance) and records the oracle account, feed id and
+    /// maximum price age; a repeat call updates only that configuration.
+    pub fn init_lending_pool(
+        ctx: Context<InitLendingPool>,
+        max_price_age_seconds: u32,
+        oracle: Pubkey,
+        feed_id: [u8; 32],
+    ) -> Result<()> {
+        init_lending_pool_handler(ctx, max_price_age_seconds, oracle, feed_id)
+    }
+
+    /// Registers the `lend_op` computation definition with the MXE.
+    pub fn init_lend_op_comp_def(ctx: Context<InitLendOpCompDef>) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Registers the `disclose_position` computation definition with the MXE.
+    pub fn init_disclose_position_comp_def(
+        ctx: Context<InitDisclosePositionCompDef>,
+    ) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Owner-signed lending operation on the encrypted Position: `op` 0 add
+    /// collateral, 1 withdraw collateral, 2 borrow, 3 repay, 4 supply, 5
+    /// withdraw supply. `amount` is a public USDC amount (lamports for ops 0
+    /// and 1). The Program accrues interest, checks pause, caps and liquidity,
+    /// computes the share amount publicly, reads the Pyth price from
+    /// `price_update` for ops 1 and 2 (any account otherwise), locks the
+    /// Position and queues `lend_op`. No caller-supplied price.
+    pub fn lend_op(
+        ctx: Context<LendOpQueue>,
+        computation_offset: u64,
+        sequence: u64,
+        op: u8,
+        amount: u64,
+    ) -> Result<()> {
+        let op = u64::from(op);
+        if op > OP_WITHDRAW_SUPPLY {
+            return Err(ErrorCode::LendOpWrongEntry.into());
+        }
+        let clock = Clock::get()?;
+        let owner = ctx.accounts.payer.key();
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.lending_pool.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let (price, publish_time) = if matches!(op, OP_WITHDRAW_COLLATERAL | OP_BORROW) {
+            let (price, time) = read_price(
+                &ctx.accounts.lending_pool,
+                &ctx.accounts.asset_state,
+                &ctx.accounts.price_update,
+                clock.unix_timestamp,
+            )?;
+            (price, Some(time))
+        } else {
+            (0, None)
+        };
+        let accounts = &mut *ctx.accounts;
+        let shares = state::lend_op::plan_owner_op(
+            &mut accounts.lending_pool,
+            &accounts.asset_state,
+            op,
+            amount,
+            clock.unix_timestamp,
+            clock.slot,
+            accounts.usdc_vault.amount,
+        )?;
+        let params = lend_params(
+            &accounts.lending_pool,
+            &accounts.asset_state,
+            op,
+            amount,
+            shares,
+            price,
+        )?;
+        let request = LendRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            params,
+            repay_amount: 0,
+            publish_time,
+            accrual_ts: accounts.lending_pool.last_accrual_ts,
+        };
+        let mut intent = state::lend_op::queue_lend_op(
+            &accounts.market,
+            market_key,
+            pool_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_counter,
+            &owner,
+            None,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(LendOpQueued {
+            market: market_key,
+            lending_pool: pool_key,
+            position: position_key,
+            payer: owner,
+            operation_intent: intent_key,
+            op,
+            amount,
+            shares,
+            borrow_index_1e9: params.borrow_index_1e9,
+            supply_index_1e9: accounts.lending_pool.supply_index_1e9,
+            price,
+            computation_offset,
+            position_generation: accounts.position.coordination.generation,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            lock_expiry_slot: intent.lock_expiry_slot,
+            slot: clock.slot,
+        });
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let output_nonce_input = state::nonce::derive_output_nonce_input(&position_key, sequence);
+        let args = lend_op_args(&ctx.accounts.position, output_nonce_input, &params).build();
+        let callback_accounts =
+            lend_callback_accounts(market_key, pool_key, position_key, intent_key);
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![LendOpCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Permissionless health check: queues op 6 with the Pyth low-bound price
+    /// and the accrued Borrow Index. The Position is not locked and never
+    /// changes; the callback emits `HealthChecked { position, unhealthy }`.
+    pub fn check_health(
+        ctx: Context<CheckHealthQueue>,
+        computation_offset: u64,
+        sequence: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let payer = ctx.accounts.payer.key();
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.lending_pool.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        if ctx.accounts.operation_counter.owner == Pubkey::default() {
+            ctx.accounts
+                .operation_counter
+                .set_inner(OperationCounter::new(payer, ctx.bumps.operation_counter));
+        }
+        let (price, publish_time) = read_price(
+            &ctx.accounts.lending_pool,
+            &ctx.accounts.asset_state,
+            &ctx.accounts.price_update,
+            clock.unix_timestamp,
+        )?;
+        let accounts = &mut *ctx.accounts;
+        accounts.lending_pool.accrue(
+            clock.unix_timestamp,
+            &accounts.asset_state.rates,
+            accounts.asset_state.risk.reserve_factor_bps,
+        )?;
+        let params = lend_params(
+            &accounts.lending_pool,
+            &accounts.asset_state,
+            OP_HEALTH_CHECK,
+            0,
+            0,
+            price,
+        )?;
+        let request = LendRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            params,
+            repay_amount: 0,
+            publish_time: Some(publish_time),
+            accrual_ts: accounts.lending_pool.last_accrual_ts,
+        };
+        let mut intent = state::lend_op::queue_lend_op(
+            &accounts.market,
+            market_key,
+            pool_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_counter,
+            &payer,
+            None,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(LendOpQueued {
+            market: market_key,
+            lending_pool: pool_key,
+            position: position_key,
+            payer,
+            operation_intent: intent_key,
+            op: params.op,
+            amount: 0,
+            shares: 0,
+            borrow_index_1e9: params.borrow_index_1e9,
+            supply_index_1e9: accounts.lending_pool.supply_index_1e9,
+            price,
+            computation_offset,
+            position_generation: accounts.position.coordination.generation,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            lock_expiry_slot: intent.lock_expiry_slot,
+            slot: clock.slot,
+        });
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let output_nonce_input = state::nonce::derive_output_nonce_input(&position_key, sequence);
+        let args = lend_op_args(&ctx.accounts.position, output_nonce_input, &params).build();
+        let callback_accounts =
+            lend_callback_accounts(market_key, pool_key, position_key, intent_key);
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![LendOpCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Permissionless liquidation. The Liquidator pays `repay_amount` USDC into
+    /// the vault now; the Program computes the debt burn and the wSOL seize
+    /// publicly from the accrued index, the Pyth low-bound price and the
+    /// liquidation bonus, locks the target Position and queues `lend_op` op 7.
+    /// `remaining_accounts` must be `[liquidator_usdc, liquidator_wsol]`.
+    /// On `applied` the callback sends the seized wSOL to the Liquidator; on
+    /// any other outcome (healthy, close factor, seize above collateral,
+    /// stale, expired) it refunds the USDC. `abandon_lend_op` refunds after
+    /// Lock expiry.
+    pub fn liquidate<'info>(
+        ctx: Context<'info, LiquidateQueue<'info>>,
+        computation_offset: u64,
+        sequence: u64,
+        repay_amount: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let payer = ctx.accounts.payer.key();
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.lending_pool.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        if ctx.accounts.operation_counter.owner == Pubkey::default() {
+            ctx.accounts
+                .operation_counter
+                .set_inner(OperationCounter::new(payer, ctx.bumps.operation_counter));
+        }
+        let remaining = ctx.remaining_accounts;
+        if remaining.len() != 4
+            || remaining[2].key() != anchor_spl::token::ID
+            || remaining[3].key() != ctx.accounts.market.wsol_vault
+        {
+            return Err(ErrorCode::LiquidationAccountsInvalid.into());
+        }
+        let wsol_vault = Account::<TokenAccount>::try_from(&remaining[3])?;
+        let liquidator_usdc = Account::<TokenAccount>::try_from(&remaining[0])?;
+        let liquidator_wsol = Account::<TokenAccount>::try_from(&remaining[1])?;
+        if liquidator_usdc.mint != ctx.accounts.market.usdc_mint
+            || liquidator_usdc.owner != payer
+            || liquidator_wsol.mint != ctx.accounts.market.wsol_mint
+            || liquidator_wsol.owner != payer
+        {
+            return Err(ErrorCode::LiquidationAccountsInvalid.into());
+        }
+        let (price, publish_time) = read_price(
+            &ctx.accounts.lending_pool,
+            &ctx.accounts.asset_state,
+            &ctx.accounts.price_update,
+            clock.unix_timestamp,
+        )?;
+        let liquidation = LiquidationKeys {
+            usdc_vault: ctx.accounts.market.usdc_vault,
+            wsol_vault: ctx.accounts.market.wsol_vault,
+            vault_authority: ctx.accounts.market.vault_authority,
+            token_program: anchor_spl::token::ID,
+            liquidator_usdc: remaining[0].key(),
+            liquidator_wsol: remaining[1].key(),
+        };
+        let accounts = &mut *ctx.accounts;
+        let (burn, seize) = state::lend_op::plan_liquidation(
+            &mut accounts.lending_pool,
+            &accounts.asset_state,
+            repay_amount,
+            price,
+            clock.unix_timestamp,
+            clock.slot,
+            wsol_vault.amount,
+        )?;
+        let params = lend_params(
+            &accounts.lending_pool,
+            &accounts.asset_state,
+            OP_LIQUIDATE,
+            seize,
+            burn,
+            price,
+        )?;
+        let request = LendRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            params,
+            repay_amount,
+            publish_time: Some(publish_time),
+            accrual_ts: accounts.lending_pool.last_accrual_ts,
+        };
+        let mut intent = state::lend_op::queue_lend_op(
+            &accounts.market,
+            market_key,
+            pool_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_counter,
+            &payer,
+            Some(liquidation),
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+
+        // The Liquidator pays the repay amount into the vault.
+        spl::transfer(
+            CpiContext::new(
+                remaining[2].key(),
+                Transfer {
+                    from: remaining[0].clone(),
+                    to: accounts.usdc_vault.to_account_info(),
+                    authority: accounts.payer.to_account_info(),
+                },
+            ),
+            repay_amount,
+        )?;
+        emit!(LendOpQueued {
+            market: market_key,
+            lending_pool: pool_key,
+            position: position_key,
+            payer,
+            operation_intent: intent_key,
+            op: params.op,
+            amount: seize,
+            shares: burn,
+            borrow_index_1e9: params.borrow_index_1e9,
+            supply_index_1e9: accounts.lending_pool.supply_index_1e9,
+            price,
+            computation_offset,
+            position_generation: accounts.position.coordination.generation,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            lock_expiry_slot: intent.lock_expiry_slot,
+            slot: clock.slot,
+        });
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let output_nonce_input = state::nonce::derive_output_nonce_input(&position_key, sequence);
+        let args = lend_op_args(&ctx.accounts.position, output_nonce_input, &params).build();
+        let market = &ctx.accounts.market;
+        let callback_accounts = [
+            CallbackAccount {
+                pubkey: market_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: pool_key,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: position_key,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: intent_key,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: market.usdc_vault,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: market.wsol_vault,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: market.vault_authority,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: anchor_spl::token::ID,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: liquidation.liquidator_usdc,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: liquidation.liquidator_wsol,
+                is_writable: true,
+            },
+        ];
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![LendOpCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the `lend_op` output. `Applied` stores the new state, bumps the
+    /// generation, releases the Lock, updates the pool totals and (for a
+    /// liquidation) sends the seized wSOL to the Liquidator. A refusal or an
+    /// unapplied attempt releases the Lock, stores nothing and (for a
+    /// liquidation) refunds the Liquidator's USDC. A health check only emits
+    /// `HealthChecked`. A failing vault transfer reverts the callback, so the
+    /// Intent stays queued for `abandon_lend_op`. Unauthenticated output and
+    /// binding mismatches revert.
+    #[arcium_callback(encrypted_ix = "lend_op")]
+    pub fn lend_op_callback(
+        ctx: Context<LendOpCallback>,
+        output: SignedComputationOutputs<LendOpOutput>,
+    ) -> Result<()> {
+        let o = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(LendOpOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+        let sealed = o.field_0;
+
+        let intent_offset = ctx.accounts.operation_intent.computation_offset;
+        let computation_offset = if ctx.accounts.computation_account.key()
+            == derive_comp_pda!(intent_offset, ctx.accounts.mxe_account)
+        {
+            intent_offset
+        } else {
+            intent_offset.wrapping_add(1)
+        };
+
+        let clock = Clock::get()?;
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.lending_pool.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let remaining = ctx.remaining_accounts;
+        let liquidation = if state::lend_op::is_liquidation(&ctx.accounts.operation_intent) {
+            let keys = liquidation_keys_from_remaining(remaining)?;
+            keys.check_market(&ctx.accounts.market)?;
+            Some(keys)
+        } else {
+            None
+        };
+        let report = LendReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            encryption_key: sealed.encryption_key,
+            output_nonce: sealed.nonce,
+            ciphertexts: sealed.ciphertexts,
+            applied: o.field_1,
+            op: o.field_2,
+            amount: o.field_3,
+            shares: o.field_4,
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::lend_op::settle_lend_op(
+            &accounts.market,
+            market_key,
+            pool_key,
+            &mut accounts.position,
+            position_key,
+            &mut accounts.operation_intent,
+            liquidation,
+            &report,
+        )?;
+        let liquidator = accounts.operation_intent.payer;
+        let repay = state::lend_op::liquidation_repay_amount(&accounts.operation_intent);
+        let refund = liquidation.is_some();
+        match settlement {
+            LendSettlement::Applied { op, amount, shares } => {
+                state::lend_op::apply_pool_totals(&mut accounts.lending_pool, op, shares)?;
+                if op == OP_LIQUIDATE {
+                    transfer_from_vault(
+                        &accounts.market,
+                        &market_key,
+                        remaining,
+                        REMAINING_WSOL_VAULT,
+                        REMAINING_LIQUIDATOR_WSOL,
+                        amount,
+                    )?;
+                    emit!(LiquidationApplied {
+                        position: position_key,
+                        liquidator,
+                        operation_intent: intent_key,
+                        repay_amount: repay,
+                        debt_shares_burned: shares,
+                        seized_lamports: amount,
+                        slot: clock.slot,
+                    });
+                }
+                emit!(LendOpApplied {
+                    position: position_key,
+                    operation_intent: intent_key,
+                    op,
+                    amount,
+                    shares,
+                    total_supply_shares: accounts.lending_pool.total_supply_shares,
+                    total_debt_shares: accounts.lending_pool.total_debt_shares,
+                    generation: accounts.position.coordination.generation,
+                    nonce: sealed.nonce.to_le_bytes(),
+                    slot: clock.slot,
+                });
+            }
+            LendSettlement::Rejected { op } => {
+                if refund {
+                    transfer_from_vault(
+                        &accounts.market,
+                        &market_key,
+                        remaining,
+                        REMAINING_USDC_VAULT,
+                        REMAINING_LIQUIDATOR_USDC,
+                        repay,
+                    )?;
+                }
+                emit!(LendOpRejected {
+                    position: position_key,
+                    operation_intent: intent_key,
+                    op,
+                    amount: o.field_3,
+                    intent_status: crate::operation::IntentStatus::Zero,
+                    refunded_usdc: if refund { repay } else { 0 },
+                    slot: clock.slot,
+                });
+            }
+            LendSettlement::Health { unhealthy } => emit!(HealthChecked {
+                position: position_key,
+                operation_intent: intent_key,
+                unhealthy,
+                slot: clock.slot,
+            }),
+            LendSettlement::Failed(intent_status) => {
+                if refund {
+                    transfer_from_vault(
+                        &accounts.market,
+                        &market_key,
+                        remaining,
+                        REMAINING_USDC_VAULT,
+                        REMAINING_LIQUIDATOR_USDC,
+                        repay,
+                    )?;
+                }
+                emit!(LendOpRejected {
+                    position: position_key,
+                    operation_intent: intent_key,
+                    op: o.field_2,
+                    amount: o.field_3,
+                    intent_status,
+                    refunded_usdc: if refund { repay } else { 0 },
+                    slot: clock.slot,
+                });
+            }
+            LendSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
+    /// Permissionless: abandons a queued lend operation after Lock expiry and
+    /// refunds a queued liquidation's USDC to the Liquidator (six liquidation
+    /// accounts as `remaining_accounts`, see `instructions::lend_op`).
+    pub fn abandon_lend_op(ctx: Context<AbandonLendOp>) -> Result<()> {
+        abandon_lend_op_handler(ctx)
+    }
+
+    /// Owner-signed: queues `disclose_position`, which re-seals a field-masked
+    /// copy of the Position to `auditor_pubkey`. `mask` bit 0 free SOL, 1 free
+    /// USDC, 2 collateral, 3 supply shares, 4 debt shares. The Position is not
+    /// locked or changed. The callback writes the `Disclosure` PDA
+    /// `["disclosure", position, auditor]`, overwriting an earlier one.
+    pub fn disclose_position(
+        ctx: Context<DisclosePositionQueue>,
+        computation_offset: u64,
+        auditor_pubkey: [u8; 32],
+        mask: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let owner = ctx.accounts.payer.key();
+        let position_key = ctx.accounts.position.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let disclosure_key = ctx.accounts.disclosure.key();
+        let sequence = ctx.accounts.operation_counter.next_sequence;
+        if ctx.accounts.disclosure.position == Pubkey::default() {
+            ctx.accounts.disclosure.set_inner(Disclosure::blank(
+                position_key,
+                owner,
+                auditor_pubkey,
+                ctx.bumps.disclosure,
+            ));
+        }
+        let request = DiscloseRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+            disclosure: disclosure_key,
+            auditor: auditor_pubkey,
+            mask,
+        };
+        let accounts = &mut *ctx.accounts;
+        let mut intent = state::disclosure::queue_disclosure(
+            &accounts.position,
+            position_key,
+            &mut accounts.operation_counter,
+            &owner,
+            &request,
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(DisclosureQueued {
+            position: position_key,
+            disclosure: disclosure_key,
+            owner,
+            auditor: auditor_pubkey,
+            mask,
+            operation_intent: intent_key,
+            computation_offset,
+            position_generation: accounts.position.coordination.generation,
+            slot: clock.slot,
+        });
+
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let output_nonce_input = state::nonce::derive_output_nonce_input(&position_key, sequence);
+        let args = disclose_position_args(
+            &ctx.accounts.position,
+            auditor_pubkey,
+            output_nonce_input,
+            mask,
+        )
+        .build();
+        let callback_accounts = [
+            CallbackAccount {
+                pubkey: position_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: disclosure_key,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: intent_key,
+                is_writable: true,
+            },
+        ];
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![DisclosePositionCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the `disclose_position` output (sealed to the committed
+    /// auditor key) and writes the Disclosure only on `Applied`. `Stale`,
+    /// `Expired` and failed outcomes leave the previous Disclosure in place.
+    #[arcium_callback(encrypted_ix = "disclose_position")]
+    pub fn disclose_position_callback(
+        ctx: Context<DisclosePositionCallback>,
+        output: SignedComputationOutputs<DisclosePositionOutput>,
+    ) -> Result<()> {
+        let sealed = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(DisclosePositionOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+
+        let intent_offset = ctx.accounts.operation_intent.computation_offset;
+        let computation_offset = if ctx.accounts.computation_account.key()
+            == derive_comp_pda!(intent_offset, ctx.accounts.mxe_account)
+        {
+            intent_offset
+        } else {
+            intent_offset.wrapping_add(1)
+        };
+
+        let clock = Clock::get()?;
+        let position_key = ctx.accounts.position.key();
+        let disclosure_key = ctx.accounts.disclosure.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        let report = DiscloseReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            encryption_key: sealed.encryption_key,
+            output_nonce: sealed.nonce,
+            ciphertexts: sealed.ciphertexts,
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::disclosure::settle_disclosure(
+            &accounts.position,
+            position_key,
+            &mut accounts.disclosure,
+            disclosure_key,
+            &mut accounts.operation_intent,
+            &report,
+        )?;
+        match settlement {
+            DiscloseSettlement::Stored => emit!(PositionDisclosed {
+                position: position_key,
+                disclosure: disclosure_key,
+                owner: accounts.disclosure.owner,
+                auditor: accounts.disclosure.auditor.to_bytes(),
+                mask: accounts.disclosure.mask,
+                position_generation: accounts.disclosure.position_generation,
+                nonce: sealed.nonce.to_le_bytes(),
+                slot: clock.slot,
+            }),
+            DiscloseSettlement::Failed(intent_status) => emit!(DisclosureNotStored {
+                position: position_key,
+                operation_intent: intent_key,
+                intent_status,
+                slot: clock.slot,
+            }),
+            DiscloseSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
+    /// Permissionless: closes a queued disclosure whose callback never arrived.
+    pub fn abandon_disclosure(ctx: Context<AbandonDisclosure>) -> Result<()> {
+        abandon_disclosure_handler(ctx)
+    }
     // ---- Task 7.2: utilization band --------------------------------------
 
     /// Registers the `update_utilization_band` computation definition.
@@ -5029,6 +5820,515 @@ pub struct RecoverEmptyPoolCallback<'info> {
 #[init_computation_definition_accounts("recover_empty_pool", payer)]
 #[derive(Accounts)]
 pub struct InitRecoverEmptyPoolCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+// ---- walnut-lend: helpers, accounts ---------------------------------------
+
+/// Reads and validates the Pyth `PriceUpdateV2` account against the pool's
+/// oracle configuration. Returns the conservative price (USDC base units per
+/// SOL) and its publish time. Errors before anything is locked.
+fn read_price(
+    pool: &LendingPool,
+    asset: &AssetState,
+    price_update: &UncheckedAccount,
+    now: i64,
+) -> Result<(u64, i64)> {
+    if price_update.key() != pool.oracle {
+        return Err(ErrorCode::OracleAccountMismatch.into());
+    }
+    let data = price_update.try_borrow_data()?;
+    let view = oracle::price_view_from_account(price_update.key(), *price_update.owner, &data)
+        .ok_or(ErrorCode::OraclePriceAccountInvalid)?;
+    Ok(state::lend_op::pool_price(
+        pool,
+        asset.risk.oracle_max_confidence_bps,
+        &view,
+        now,
+    )?)
+}
+
+/// The public `lend_op` arguments for `op`, from the accrued pool and the Asset
+/// State. The position debt cap is clamped to the circuit's product bound.
+fn lend_params(
+    pool: &LendingPool,
+    asset: &AssetState,
+    op: u64,
+    amount: u64,
+    shares: u64,
+    price: u64,
+) -> Result<LendParams> {
+    Ok(LendParams {
+        op,
+        amount,
+        shares,
+        borrow_index_1e9: u64::try_from(pool.borrow_index_1e9)
+            .map_err(|_| ErrorCode::LendOpInvalid)?,
+        price,
+        ltv_bps: u64::from(asset.risk.ltv_bps),
+        liq_threshold_bps: u64::from(asset.risk.liquidation_threshold_bps),
+        position_debt_cap: asset.caps.position_debt_cap_usdc.min(MAX_POSITION_DEBT_CAP),
+    })
+}
+
+/// `lend_op(state, owner: Shared, op, amount, shares, borrow_index_1e9,
+/// price, ltv_bps, liq_threshold_bps, position_debt_cap)` arguments: the stored
+/// state, the bare `Shared` output owner (the Position's own Viewing key and
+/// the derived nonce input), then the eight public values.
+fn lend_op_args(position: &Position, output_nonce_input: u128, p: &LendParams) -> ArgBuilder {
+    let c = &position.encrypted_state.ciphertexts;
+    ArgBuilder::new()
+        .x25519_pubkey(position.viewing_pubkey)
+        .plaintext_u128(position.encrypted_state.nonce)
+        .encrypted_u64(c[0])
+        .encrypted_u64(c[1])
+        .encrypted_u64(c[2])
+        .encrypted_u128(c[3])
+        .encrypted_u128(c[4])
+        .x25519_pubkey(position.viewing_pubkey)
+        .plaintext_u128(output_nonce_input)
+        .plaintext_u64(p.op)
+        .plaintext_u64(p.amount)
+        .plaintext_u64(p.shares)
+        .plaintext_u64(p.borrow_index_1e9)
+        .plaintext_u64(p.price)
+        .plaintext_u64(p.ltv_bps)
+        .plaintext_u64(p.liq_threshold_bps)
+        .plaintext_u64(p.position_debt_cap)
+}
+
+/// The callback accounts of an op with no token movement.
+fn lend_callback_accounts(
+    market: Pubkey,
+    pool: Pubkey,
+    position: Pubkey,
+    intent: Pubkey,
+) -> [CallbackAccount; 4] {
+    [
+        CallbackAccount {
+            pubkey: market,
+            is_writable: false,
+        },
+        CallbackAccount {
+            pubkey: pool,
+            is_writable: true,
+        },
+        CallbackAccount {
+            pubkey: position,
+            is_writable: true,
+        },
+        CallbackAccount {
+            pubkey: intent,
+            is_writable: true,
+        },
+    ]
+}
+
+/// `disclose_position(state, auditor: Shared, mask: u64)` arguments.
+fn disclose_position_args(
+    position: &Position,
+    auditor_pubkey: [u8; 32],
+    output_nonce_input: u128,
+    mask: u64,
+) -> ArgBuilder {
+    let c = &position.encrypted_state.ciphertexts;
+    ArgBuilder::new()
+        .x25519_pubkey(position.viewing_pubkey)
+        .plaintext_u128(position.encrypted_state.nonce)
+        .encrypted_u64(c[0])
+        .encrypted_u64(c[1])
+        .encrypted_u64(c[2])
+        .encrypted_u128(c[3])
+        .encrypted_u128(c[4])
+        .x25519_pubkey(auditor_pubkey)
+        .plaintext_u128(output_nonce_input)
+        .plaintext_u64(mask)
+}
+
+#[queue_computation_accounts("lend_op", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct LendOpQueue<'info> {
+    /// The Position owner; signs, pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_LEND_OP))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Risk parameters, caps and pauses.
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        mut,
+        seeds = [LENDING_POOL_SEED, market.key().as_ref()],
+        bump = lending_pool.bump,
+    )]
+    pub lending_pool: Box<Account<'info, LendingPool>>,
+    /// Read for the liquidity check of borrow and withdraw supply.
+    #[account(address = market.usdc_vault)]
+    pub usdc_vault: Box<Account<'info, TokenAccount>>,
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, market.key().as_ref(), payer.key().as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    #[account(
+        mut,
+        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
+        bump = operation_counter.bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, payer.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    /// The Pyth `PriceUpdateV2` account (`lending_pool.oracle`); read for ops
+    /// 1 and 2, any account otherwise.
+    /// CHECK: key, owner and contents are validated against the pool.
+    pub price_update: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[queue_computation_accounts("lend_op", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct CheckHealthQueue<'info> {
+    /// Anyone; pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_LEND_OP))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        mut,
+        seeds = [LENDING_POOL_SEED, market.key().as_ref()],
+        bump = lending_pool.bump,
+    )]
+    pub lending_pool: Box<Account<'info, LendingPool>>,
+    /// The Position being checked (not locked).
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, position.market.as_ref(), position.owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    /// The caller's sequence counter, created on first use.
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = OperationCounter::ACCOUNT_LEN,
+        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
+        bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, payer.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    /// The Pyth `PriceUpdateV2` account (`lending_pool.oracle`).
+    /// CHECK: key, owner and contents are validated against the pool.
+    pub price_update: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[queue_computation_accounts("lend_op", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct LiquidateQueue<'info> {
+    /// The Liquidator; signs, pays the repay amount, rent and the fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_LEND_OP))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(
+        mut,
+        seeds = [LENDING_POOL_SEED, market.key().as_ref()],
+        bump = lending_pool.bump,
+    )]
+    pub lending_pool: Box<Account<'info, LendingPool>>,
+    /// Receives the repay USDC.
+    #[account(mut, address = market.usdc_vault)]
+    pub usdc_vault: Box<Account<'info, TokenAccount>>,
+    /// The target Position (locked until the callback).
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, position.market.as_ref(), position.owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    /// The Liquidator's sequence counter, created on first use.
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = OperationCounter::ACCOUNT_LEN,
+        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
+        bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, payer.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    /// The Pyth `PriceUpdateV2` account (`lending_pool.oracle`).
+    /// CHECK: key, owner and contents are validated against the pool.
+    pub price_update: UncheckedAccount<'info>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+/// The shared `lend_op` callback. Ops 0 to 6 pass the four accounts below;
+/// a liquidation appends six more as `remaining_accounts` (USDC vault, wSOL
+/// vault, vault authority, token program, Liquidator USDC, Liquidator wSOL),
+/// whose addresses are bound in the Intent's accounts commitment.
+#[callback_accounts("lend_op")]
+#[derive(Accounts)]
+pub struct LendOpCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_LEND_OP))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(
+        mut,
+        seeds = [LENDING_POOL_SEED, market.key().as_ref()],
+        bump = lending_pool.bump,
+    )]
+    pub lending_pool: Box<Account<'info, LendingPool>>,
+    #[account(
+        mut,
+        seeds = [POSITION_ACCOUNT_SEED, position.market.as_ref(), position.owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+}
+
+#[init_computation_definition_accounts("lend_op", payer)]
+#[derive(Accounts)]
+pub struct InitLendOpCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
+}
+
+#[queue_computation_accounts("disclose_position", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, auditor_pubkey: [u8; 32], mask: u64)]
+pub struct DisclosePositionQueue<'info> {
+    /// The Position owner; signs, pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_DISCLOSE_POSITION))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    /// The owner's own Position (read only; not locked).
+    #[account(
+        seeds = [POSITION_ACCOUNT_SEED, position.market.as_ref(), payer.key().as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    #[account(
+        mut,
+        seeds = [OPERATION_COUNTER_SEED, payer.key().as_ref()],
+        bump = operation_counter.bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    /// The Intent address uses the counter's next sequence.
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [
+            OPERATION_INTENT_SEED,
+            payer.key().as_ref(),
+            &operation_counter.next_sequence.to_le_bytes(),
+        ],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    /// PDA `["disclosure", position, auditor]`; created on first use and
+    /// overwritten by a later Disclosure to the same auditor.
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = Disclosure::ACCOUNT_LEN,
+        seeds = [DISCLOSURE_SEED, position.key().as_ref(), auditor_pubkey.as_ref()],
+        bump,
+    )]
+    pub disclosure: Box<Account<'info, Disclosure>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("disclose_position")]
+#[derive(Accounts)]
+pub struct DisclosePositionCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_DISCLOSE_POSITION))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(
+        seeds = [POSITION_ACCOUNT_SEED, position.market.as_ref(), position.owner.as_ref()],
+        bump = position.bump,
+    )]
+    pub position: Box<Account<'info, Position>>,
+    #[account(
+        mut,
+        seeds = [DISCLOSURE_SEED, disclosure.position.as_ref(), disclosure.auditor.as_ref()],
+        bump = disclosure.bump,
+    )]
+    pub disclosure: Box<Account<'info, Disclosure>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+}
+
+#[init_computation_definition_accounts("disclose_position", payer)]
+#[derive(Accounts)]
+pub struct InitDisclosePositionCompDef<'info> {
     #[account(mut)]
     pub payer: Signer<'info>,
     #[account(mut, address = derive_mxe_pda!())]

@@ -49,7 +49,7 @@ Build the private loan flow in three code tasks and one run task. No intermediat
   - Add `scripts/diffn-liquidity.sh` that mints test USDC into the market vault for borrowers.
   - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.5, 2.1, 2.3_
 
-- [-] 6. Check and push the Web App
+- [x] 6. Check and push the Web App
   - Run the web build, typecheck, lint and format check plus the existing JS checks, and fix failures.
   - Commit to the `v2` branch and push.
   - _Requirements: 3.4_

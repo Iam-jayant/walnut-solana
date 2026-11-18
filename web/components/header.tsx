@@ -26,7 +26,17 @@ export function Header() {
   return (
     <header className="sticky top-0 z-20 border-b border-black/5 bg-walnut-white/90 backdrop-blur">
       <div className="mx-auto flex max-w-(--container-page) flex-wrap items-center justify-between gap-3 px-6 py-3 md:px-10">
-        <Logo />
+        <div className="flex items-center gap-6">
+          <Logo />
+          <nav className="flex items-center gap-4 text-small font-[800]">
+            <a href="/app" className="underline-offset-4 hover:underline">
+              App
+            </a>
+            <a href="/app/audit" className="underline-offset-4 hover:underline">
+              Audit
+            </a>
+          </nav>
+        </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-2 rounded-pill bg-walnut-mist px-3 py-1.5 text-caption font-[800]">
             <span className="h-2 w-2 rounded-full bg-emerald-500" />

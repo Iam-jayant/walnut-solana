@@ -110,6 +110,10 @@ pub enum OperationKind {
     RecoverEmptyPool,
     /// Demo position operation (add/withdraw collateral, borrow, repay).
     PositionOp,
+    /// Walnut-Lend position operation (ops 0 to 7 of the `lend_op` circuit).
+    LendOp,
+    /// Selective disclosure of a Position to an auditor key (non-locking).
+    Disclose,
 }
 
 impl OperationKind {

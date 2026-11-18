@@ -3,10 +3,18 @@
 import { useWallet } from "@solana/wallet-adapter-react";
 import { FAUCET_URL, SOL_DECIMALS, USDC_DECIMALS } from "../lib/config.ts";
 import { formatUnits } from "../lib/format.ts";
+import {
+  formatBps,
+  indexesAt,
+  marketStats,
+  positionValues,
+} from "../lib/lend.ts";
 import { borrowMetrics, healthOf, type Health } from "../lib/metrics.ts";
 import { kindLabel } from "../lib/ops.ts";
 import { ActionPanel } from "./action-panel.tsx";
 import { ActivityPanel } from "./activity-panel.tsx";
+import { LiquidationsPanel } from "./liquidations-panel.tsx";
+import { PrivacyPanel } from "./privacy-panel.tsx";
 import {
   Badge,
   Button,
@@ -16,6 +24,7 @@ import {
   Notice,
   Spinner,
 } from "./ui.tsx";
+import { useNowSeconds } from "./use-now.ts";
 import { useWalnut } from "./walnut-provider.tsx";
 
 function Hidden() {
@@ -35,7 +44,7 @@ function Stat({
   label: string;
   value: string | null;
   unit: string;
-  hint?: string;
+  hint?: string | undefined;
 }) {
   return (
     <div className="rounded-card bg-walnut-mist p-5">
@@ -210,11 +219,21 @@ function Notices() {
 }
 
 function Overview() {
-  const { balances, price, protocol, walletBalances, refresh, refreshing } =
-    useWalnut();
+  const {
+    balances,
+    price,
+    protocol,
+    lending,
+    walletBalances,
+    refresh,
+    refreshing,
+  } = useWalnut();
+  const now = useNowSeconds();
+  const idx = indexesAt(lending, protocol, now);
+  const values = balances === null ? null : positionValues(balances, idx);
   const m =
-    balances !== null && protocol !== null
-      ? borrowMetrics(balances, price.price, protocol.ltvBps)
+    balances !== null && protocol !== null && values !== null
+      ? borrowMetrics(balances, price.price, protocol.ltvBps, values.debt)
       : null;
   const health =
     m === null ? null : HEALTH_STYLE[healthOf(m.usedPercent, m.debt)];
@@ -260,9 +279,22 @@ function Overview() {
             value={balances && sol(balances.collateralSol)}
           />
           <Stat
+            label="Supplied"
+            unit="USDC"
+            value={values && usdc(values.supply)}
+            hint={
+              values === null ? undefined : "Earning interest, updated live"
+            }
+          />
+          <Stat
             label="Debt"
             unit="USDC"
-            value={balances && usdc(balances.debtSharesUsdc)}
+            value={values && usdc(values.debt)}
+            hint={
+              values === null
+                ? undefined
+                : "Includes accrued interest, updated live"
+            }
           />
         </div>
         <div className="mt-6 rounded-card bg-walnut-mist p-5">
@@ -359,6 +391,61 @@ function Overview() {
   );
 }
 
+function MarketCard() {
+  const { protocol, lending, lendingChecked } = useWalnut();
+  const now = useNowSeconds();
+  const usdc = (v: bigint) => formatUnits(v, USDC_DECIMALS);
+  if (lending === null || protocol === null) {
+    return (
+      <Card>
+        <CardTitle>Lending market</CardTitle>
+        {lendingChecked && protocol !== null ? (
+          <Notice tone="info">
+            <p className="font-[800]">Lending market is being initialized</p>
+            <p className="mt-1">
+              Supplying and borrowing open as soon as the market is live.
+              Deposits and withdrawals work now.
+            </p>
+          </Notice>
+        ) : (
+          <p className="flex items-center gap-2 text-small text-walnut-ink/70">
+            <Spinner /> Loading the lending market...
+          </p>
+        )}
+      </Card>
+    );
+  }
+  const idx = indexesAt(lending, protocol, now);
+  const s = marketStats(lending, protocol, idx);
+  return (
+    <Card>
+      <CardTitle>Lending market</CardTitle>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Stat label="Utilization" unit="" value={formatBps(s.utilizationBps)} />
+        <Stat label="Borrow APR" unit="" value={formatBps(s.borrowAprBps)} />
+        <Stat label="Supply APY" unit="" value={formatBps(s.supplyApyBps)} />
+        <Stat
+          label="Total supplied"
+          unit="USDC"
+          value={usdc(s.totalSupplied)}
+        />
+        <Stat
+          label="Total borrowed"
+          unit="USDC"
+          value={usdc(s.totalBorrowed)}
+        />
+        <Stat
+          label="Available liquidity"
+          unit="USDC"
+          value={usdc(s.liquidity)}
+        />
+      </div>
+      <p className="mt-3 text-caption text-walnut-ink/60">
+        Rates and totals come from public pool indexes and update live.
+      </p>
+    </Card>
+  );
+}
 export function Dashboard() {
   const { connected } = useWallet();
   const { accountState, protocolError, protocol } = useWalnut();
@@ -382,6 +469,7 @@ export function Dashboard() {
         {accountState === "active" ? (
           <>
             <Overview />
+            <MarketCard />
             <div className="grid gap-6 lg:grid-cols-5">
               <div className="lg:col-span-3">
                 <ActionPanel />
@@ -389,6 +477,10 @@ export function Dashboard() {
               <div className="lg:col-span-2">
                 <ActivityPanel />
               </div>
+            </div>
+            <div className="grid gap-6 lg:grid-cols-2">
+              <LiquidationsPanel />
+              <PrivacyPanel />
             </div>
           </>
         ) : (

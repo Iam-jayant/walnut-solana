@@ -1,0 +1,257 @@
+{
+  "pbtResults": {},
+  "executionHistory": {
+    "1.1 Write the `lend_op` circuit and report its weight": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143117
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011161647
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011711500
+      }
+    ],
+    "1.2 Write the `disclose_position` circuit": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143281
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011730383
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795012111639
+      }
+    ],
+    "2.1 Add `LendingPool` state, accrual and share math": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143378
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011730523
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795012112620
+      }
+    ],
+    "2.2 Add pool init, Pyth price, pause and caps": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143474
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795012139044
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014494071
+      }
+    ],
+    "3.1 Add `lend_op` queue, callback and abandon": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143578
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014494401
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014505027
+      }
+    ],
+    "3.2 Add `liquidate` and `check_health`": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143658
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014506008
+      }
+    ],
+    "3.3 Add `Disclosure` account and disclose instructions": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143751
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014506509
+      }
+    ],
+    "4.1 Lend-op and lending-pool helpers": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143843
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795012139164
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014494303
+      }
+    ],
+    "4.2 Disclosure and rotation helpers": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011143927
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014507186
+      }
+    ],
+    "5.1 Routing and landing page": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144002
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011162328
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011712475
+      }
+    ],
+    "5.2 Lender and market UI": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144080
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014523056
+      }
+    ],
+    "5.3 Rotate Viewing Key, disclose and `/app/audit`": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144158
+      }
+    ],
+    "6.1 Write `scripts/lend-devnet.sh`": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144255
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795012139299
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014494498
+      }
+    ],
+    "6.2 Write the devnet e2e demo `demo/lend-e2e.ts`": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144352
+      },
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014523190
+      }
+    ],
+    "6.3 Update docs": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144461
+      }
+    ],
+    "7.1 Run the single full local verification pass and fix failures": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144593
+      }
+    ],
+    "7.2 Devnet deployment, end-to-end run, fixes, commit and push to `v2`": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795011144684
+      }
+    ],
+    "1. Circuits: `lend_op` and `disclose_position`": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795012111822
+      }
+    ],
+    "2. Program state, math and market rules": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014494198
+      }
+    ],
+    "3. Program instructions": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014506621
+      }
+    ],
+    "4. SDK": [
+      {
+        "executionId": "32025eeb-6aed-4149-97cc-7c08525f397c",
+        "chatSessionId": "sess_4fe85eff-849b-4a74-bc30-9452afe0f8de",
+        "timestamp": 1795014507254
+      }
+    ]
+  }
+}

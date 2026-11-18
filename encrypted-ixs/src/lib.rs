@@ -444,6 +444,119 @@ mod circuits {
         )
     }
 
+    // ---- walnut-lend: lend_op ------------------------------------------------
+
+    /// Lending position operation (walnut-lend design): 0 add collateral,
+    /// 1 withdraw collateral, 2 borrow, 3 repay, 4 supply, 5 withdraw supply,
+    /// 6 health check, 7 liquidate. `shares` is the public share amount the
+    /// Program computed; for op 7 `amount` is the seize lamports and `shares`
+    /// the debt burn. Only multiplication and comparison touch secret values;
+    /// dead-branch operands are clamped to zero so nothing underflows.
+    /// Returns `(state, applied, op, amount, shares)`; the echoes let the
+    /// callback rebuild the input commitment. Op 6 never changes the state and
+    /// reveals `applied = unhealthy`.
+    #[instruction]
+    pub fn lend_op(
+        state: Enc<Shared, PositionSecret>,
+        owner: Shared,
+        op: u64,
+        amount: u64,
+        shares: u64,
+        borrow_index_1e9: u64,
+        price: u64,
+        ltv_bps: u64,
+        liq_threshold_bps: u64,
+        position_debt_cap: u64,
+    ) -> (Enc<Shared, PositionSecret>, bool, u64, u64, u64) {
+        let mut s = state.to_arcis();
+        let a = amount as u128;
+        let sh = shares as u128;
+        let idx = borrow_index_1e9 as u128;
+        let px = price as u128;
+        let max64 = 18_446_744_073_709_551_615u128;
+        let free_sol = s.free_sol as u128;
+        let free_usdc = s.free_usdc as u128;
+        let coll = s.collateral_sol as u128;
+        let sup = s.supply_shares_usdc;
+        let debt = s.debt_shares_usdc;
+
+        let debt_value = debt * idx * 10_000u128;
+        let unhealthy = debt_value > coll * px * (liq_threshold_bps as u128);
+
+        let ok0 = a <= free_sol;
+        let fits1 = a <= coll;
+        let a1 = if fits1 { a } else { 0 };
+        let ok1 = fits1 && debt_value <= (coll - a1) * px * (ltv_bps as u128);
+        let new_debt2 = debt + sh;
+        let ok2 = new_debt2 * idx * 10_000u128 <= coll * px * (ltv_bps as u128)
+            && new_debt2 * idx <= (position_debt_cap as u128) * 1_000_000_000u128
+            && free_usdc + a <= max64;
+        let ok3 = sh <= debt && a <= free_usdc;
+        let ok4 = a <= free_usdc && sup + sh <= max64;
+        let ok5 = sh <= sup && free_usdc + a <= max64;
+        let ok7 = unhealthy && sh <= debt && (sh * 2 <= debt || sh == debt) && a <= coll;
+
+        let applied = (op == 0 && ok0)
+            || (op == 1 && ok1)
+            || (op == 2 && ok2)
+            || (op == 3 && ok3)
+            || (op == 4 && ok4)
+            || (op == 5 && ok5)
+            || (op == 6 && unhealthy)
+            || (op == 7 && ok7);
+        let mutates = applied && op != 6;
+        let da = if mutates { a } else { 0 };
+        let ds = if mutates { sh } else { 0 };
+
+        let new_free_sol = if op == 0 {
+            free_sol - da
+        } else if op == 1 {
+            free_sol + da
+        } else {
+            free_sol
+        };
+        let new_coll = if op == 0 {
+            coll + da
+        } else if op == 1 || op == 7 {
+            coll - da
+        } else {
+            coll
+        };
+        let new_free_usdc = if op == 2 || op == 5 {
+            free_usdc + da
+        } else if op == 3 || op == 4 {
+            free_usdc - da
+        } else {
+            free_usdc
+        };
+        let new_debt = if op == 2 {
+            debt + ds
+        } else if op == 3 || op == 7 {
+            debt - ds
+        } else {
+            debt
+        };
+        let new_sup = if op == 4 {
+            sup + ds
+        } else if op == 5 {
+            sup - ds
+        } else {
+            sup
+        };
+        s.free_sol = new_free_sol as u64;
+        s.collateral_sol = new_coll as u64;
+        s.free_usdc = new_free_usdc as u64;
+        s.debt_shares_usdc = new_debt;
+        s.supply_shares_usdc = new_sup;
+        (
+            owner.from_arcis(s),
+            applied.reveal(),
+            op.reveal(),
+            amount.reveal(),
+            shares.reveal(),
+        )
+    }
+
     // ---- Task 5.5: production Viewing Key rotation --------------------------
     /// Re-seals the stored Position payload from its current Viewing Key to a
     /// new one, revealing nothing (Requirement 5.11).
@@ -469,6 +582,36 @@ mod circuits {
     ) -> Enc<Shared, PositionSecret> {
         let s = state.to_arcis();
         new_owner.from_arcis(s)
+    }
+
+    // ---- walnut-lend task 1.2: selective disclosure --------------------------
+    /// Re-seals a field-masked copy of the Position to an auditor key. Mask
+    /// bits 0 to 4 select free_sol, free_usdc, collateral, supply_shares,
+    /// debt_shares; unselected fields are zero. The stored Position is not
+    /// changed. The mask is public. Selection only, no division, no loops.
+    #[instruction]
+    pub fn disclose_position(
+        state: Enc<Shared, PositionSecret>,
+        auditor: Shared,
+        mask: u64,
+    ) -> Enc<Shared, PositionSecret> {
+        let s = state.to_arcis();
+        let m = PositionSecret {
+            free_sol: if mask & 1 != 0 { s.free_sol } else { 0 },
+            free_usdc: if mask & 2 != 0 { s.free_usdc } else { 0 },
+            collateral_sol: if mask & 4 != 0 { s.collateral_sol } else { 0 },
+            supply_shares_usdc: if mask & 8 != 0 {
+                s.supply_shares_usdc
+            } else {
+                0
+            },
+            debt_shares_usdc: if mask & 16 != 0 {
+                s.debt_shares_usdc
+            } else {
+                0
+            },
+        };
+        auditor.from_arcis(m)
     }
 
     // ---- Task 7.1: fixed-point helpers ----------------------------------------

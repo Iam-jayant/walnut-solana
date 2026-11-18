@@ -1,15 +1,32 @@
 "use client";
 
-import { applyPositionOp, PositionOp } from "@walnut/sdk";
+import {
+  applyLendOp,
+  borrowMint,
+  clampPrice,
+  LendOp,
+  repayBurn,
+  supplySharesFor,
+  withdrawSupplyBurn,
+} from "@walnut/sdk";
 import { useState, type ReactNode } from "react";
 import { SOL_DECIMALS, SOL_FEE_RESERVE, USDC_DECIMALS } from "../lib/config.ts";
 import { formatUnits, parseUnits, toInputString } from "../lib/format.ts";
+import { indexesAt, positionValues } from "../lib/lend.ts";
 import { borrowMetrics, maxRemovableCollateral } from "../lib/metrics.ts";
 import type { Asset } from "../lib/ops.ts";
-import { Button, Card, CardTitle, Spinner } from "./ui.tsx";
+import { Button, Card, CardTitle, Notice, Spinner } from "./ui.tsx";
+import { useNowSeconds } from "./use-now.ts";
 import { useWalnut } from "./walnut-provider.tsx";
 
-type Tab = "deposit" | "withdraw" | "collateral" | "borrow" | "repay";
+type Tab =
+  | "deposit"
+  | "withdraw"
+  | "collateral"
+  | "borrow"
+  | "repay"
+  | "supply"
+  | "unsupply";
 
 const TABS: ReadonlyArray<[Tab, string]> = [
   ["deposit", "Deposit"],
@@ -17,6 +34,8 @@ const TABS: ReadonlyArray<[Tab, string]> = [
   ["collateral", "Collateral"],
   ["borrow", "Borrow"],
   ["repay", "Repay"],
+  ["supply", "Supply"],
+  ["unsupply", "Withdraw supply"],
 ];
 
 function Segmented<T extends string>({
@@ -144,27 +163,76 @@ const ASSETS: ReadonlyArray<[Asset, string]> = [
   ["usdc", "USDC"],
 ];
 
+const LENDING_TABS: ReadonlySet<Tab> = new Set<Tab>([
+  "collateral",
+  "borrow",
+  "repay",
+  "supply",
+  "unsupply",
+]);
+
+const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
+
 export function ActionPanel() {
   const w = useWalnut();
+  const now = useNowSeconds();
   const [tab, setTab] = useState<Tab>("deposit");
   const [asset, setAsset] = useState<Asset>("sol");
   const [collateralMode, setCollateralMode] = useState<"add" | "remove">("add");
-  const { balances, walletBalances, price, protocol } = w;
+  const { balances, walletBalances, price, protocol, lending, lendingChecked } =
+    w;
   const ltv = protocol?.ltvBps ?? 5_000n;
+  const idx = indexesAt(lending, protocol, now);
+  const values = balances === null ? null : positionValues(balances, idx);
+  const debt = values?.debt ?? 0n;
+  const liquidity = lending?.liquidity ?? 0n;
 
+  /** Mirror of the circuit rules; null when the amount would be applied. */
   const check = (
-    op: PositionOp,
+    op: LendOp,
     amount: bigint,
     message: string,
   ): string | null => {
-    if (balances === null) return null;
-    return applyPositionOp(balances, op, amount, price.price, ltv).applied
-      ? null
-      : message;
+    if (balances === null || protocol === null) return null;
+    try {
+      let shares = 0n;
+      if (op === LendOp.Borrow) shares = borrowMint(amount, idx.borrow);
+      else if (op === LendOp.Repay) shares = repayBurn(amount, idx.borrow);
+      else if (op === LendOp.Supply)
+        shares = supplySharesFor(amount, idx.supply);
+      else if (op === LendOp.WithdrawSupply) {
+        shares = withdrawSupplyBurn(amount, idx.supply);
+      }
+      return applyLendOp(balances, op, amount, shares, {
+        borrowIndex1e9: idx.borrow,
+        price: clampPrice(price.price),
+        ltvBps: ltv,
+        liqThresholdBps: protocol.liquidationThresholdBps,
+        positionDebtCap: protocol.positionDebtCap,
+      }).applied
+        ? null
+        : message;
+    } catch {
+      return null;
+    }
   };
 
   let body: ReactNode;
-  if (tab === "deposit") {
+  if (LENDING_TABS.has(tab) && lending === null) {
+    body = !lendingChecked ? (
+      <p className="flex items-center gap-2 text-small text-walnut-ink/70">
+        <Spinner /> Loading the lending market...
+      </p>
+    ) : (
+      <Notice tone="info">
+        <p className="font-[800]">Lending market is being initialized</p>
+        <p className="mt-1">
+          Supplying, borrowing and collateral management open as soon as the
+          market is live. Deposits and withdrawals work now.
+        </p>
+      </Notice>
+    );
+  } else if (tab === "deposit") {
     const isSol = asset === "sol";
     const walletMax =
       walletBalances === null
@@ -239,7 +307,7 @@ export function ActionPanel() {
         ? null
         : add
           ? balances.freeSol
-          : maxRemovableCollateral(balances, price.price, ltv);
+          : maxRemovableCollateral(balances, price.price, ltv, debt);
     body = (
       <>
         <Segmented
@@ -262,19 +330,19 @@ export function ActionPanel() {
             warning={(a) =>
               add
                 ? check(
-                    PositionOp.AddCollateral,
+                    LendOp.AddCollateral,
                     a,
                     "This is more than your free SOL.",
                   )
                 : check(
-                    PositionOp.WithdrawCollateral,
+                    LendOp.WithdrawCollateral,
                     a,
                     "This is more than you can remove while keeping your debt within the borrow limit.",
                   )
             }
             onSubmit={(a) =>
-              w.positionOp(
-                add ? PositionOp.AddCollateral : PositionOp.WithdrawCollateral,
+              w.lendOp(
+                add ? LendOp.AddCollateral : LendOp.WithdrawCollateral,
                 add ? "Add collateral" : "Remove collateral",
                 a,
               )
@@ -285,29 +353,32 @@ export function ActionPanel() {
     );
   } else if (tab === "borrow") {
     const m =
-      balances === null ? null : borrowMetrics(balances, price.price, ltv);
+      balances === null
+        ? null
+        : borrowMetrics(balances, price.price, ltv, debt);
+    const capRoom =
+      protocol !== null && protocol.positionDebtCap > debt
+        ? protocol.positionDebtCap - debt
+        : 0n;
     body = (
       <AmountForm
         symbol="USDC"
         decimals={USDC_DECIMALS}
-        max={m === null ? null : m.available}
+        max={m === null ? null : min(min(m.available, liquidity), capRoom)}
         maxLabel="Available to borrow"
         cta="Borrow USDC"
-        note="Borrowed USDC lands in your private free balance. Withdraw it to your wallet from the Withdraw tab."
+        note="Borrowed USDC lands in your private free balance, and interest accrues on it continuously. Withdraw it to your wallet from the Withdraw tab."
         needsUnlock
         warning={(a) =>
-          check(PositionOp.Borrow, a, "This would exceed your borrow limit.")
+          a > liquidity
+            ? "The pool does not have this much free USDC right now."
+            : check(LendOp.Borrow, a, "This would exceed your borrow limit.")
         }
-        onSubmit={(a) => w.positionOp(PositionOp.Borrow, "Borrow USDC", a)}
+        onSubmit={(a) => w.lendOp(LendOp.Borrow, "Borrow USDC", a)}
       />
     );
-  } else {
-    const max =
-      balances === null
-        ? null
-        : balances.freeUsdc < balances.debtSharesUsdc
-          ? balances.freeUsdc
-          : balances.debtSharesUsdc;
+  } else if (tab === "repay") {
+    const max = balances === null ? null : min(balances.freeUsdc, debt);
     body = (
       <AmountForm
         symbol="USDC"
@@ -315,16 +386,54 @@ export function ActionPanel() {
         max={max}
         maxLabel="Repayable now"
         cta="Repay USDC"
-        note="Repayment is paid from your private free USDC. Deposit USDC first if you need more."
+        note="Repayment is paid from your private free USDC and includes the interest accrued so far. Deposit USDC first if you need more."
         needsUnlock
         warning={(a) =>
           check(
-            PositionOp.Repay,
+            LendOp.Repay,
             a,
             "This is more than your free USDC or your outstanding debt.",
           )
         }
-        onSubmit={(a) => w.positionOp(PositionOp.Repay, "Repay USDC", a)}
+        onSubmit={(a) => w.lendOp(LendOp.Repay, "Repay USDC", a)}
+      />
+    );
+  } else if (tab === "supply") {
+    body = (
+      <AmountForm
+        symbol="USDC"
+        decimals={USDC_DECIMALS}
+        max={balances === null ? null : balances.freeUsdc}
+        maxLabel="Free private USDC"
+        cta="Supply USDC"
+        note="Supplied USDC earns interest from borrowers. Your supplied balance stays private. Deposit USDC first if you need more."
+        needsUnlock
+        warning={(a) =>
+          check(LendOp.Supply, a, "This is more than your free private USDC.")
+        }
+        onSubmit={(a) => w.lendOp(LendOp.Supply, "Supply USDC", a)}
+      />
+    );
+  } else {
+    body = (
+      <AmountForm
+        symbol="USDC"
+        decimals={USDC_DECIMALS}
+        max={values === null ? null : min(values.supply, liquidity)}
+        maxLabel="Withdrawable now"
+        cta="Withdraw supply"
+        note="Your supply plus the interest it earned returns to your private free USDC. Withdraw it to your wallet from the Withdraw tab."
+        needsUnlock
+        warning={(a) =>
+          a > liquidity
+            ? "The pool does not have this much free USDC right now. Borrowers need to repay first."
+            : check(
+                LendOp.WithdrawSupply,
+                a,
+                "This is more than you have supplied.",
+              )
+        }
+        onSubmit={(a) => w.lendOp(LendOp.WithdrawSupply, "Withdraw supply", a)}
       />
     );
   }
