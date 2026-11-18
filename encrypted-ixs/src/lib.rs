@@ -557,6 +557,212 @@ mod circuits {
         )
     }
 
+    // ---- walnut-private: encrypted-amount pool operations ---------------------
+
+    /// Encrypted operation input. The owner's client computes `shares` from the
+    /// public index and encrypts both values; the circuit only VERIFIES the
+    /// conversion with multiplications and comparisons (no division by a
+    /// secret, which is what made `supply_flow` cost 20.7e9).
+    #[derive(Copy, Clone)]
+    pub struct OpInput {
+        amount: u64,
+        shares: u64,
+    }
+
+    /// Encrypted liquidation input from the liquidator: repay amount, the debt
+    /// shares it burns and the collateral lamports it seizes.
+    #[derive(Copy, Clone)]
+    pub struct LiqInput {
+        amount: u64,
+        burn_shares: u64,
+        seize: u64,
+    }
+
+    /// Pool operation with an ENCRYPTED amount. `op`: 0 supply, 1 withdraw
+    /// supply, 2 borrow, 3 repay. The Pool (`Enc<Mxe>`) and the owner's
+    /// Position change together or not at all. Share conversions use the public
+    /// indexes and are verified, never computed: supply `shares =
+    /// floor(a*1e9/sidx)`, withdraw and borrow `shares = ceil(a*1e9/idx)`,
+    /// repay `shares = floor(a*1e9/bidx)`. Only `applied` is revealed.
+    #[instruction]
+    pub fn pool_op(
+        pool: Enc<Mxe, PoolSecret>,
+        state: Enc<Shared, PositionSecret>,
+        input: Enc<Shared, OpInput>,
+        owner: Shared,
+        op: u64,
+        supply_index_1e9: u64,
+        borrow_index_1e9: u64,
+        price: u64,
+        ltv_bps: u64,
+        position_debt_cap: u64,
+        supply_cap: u64,
+    ) -> (Enc<Mxe, PoolSecret>, Enc<Shared, PositionSecret>, bool) {
+        let mut p = pool.to_arcis();
+        let mut s = state.to_arcis();
+        let inp = input.to_arcis();
+        let a = inp.amount as u128;
+        let sh = inp.shares as u128;
+        let sidx = supply_index_1e9 as u128;
+        let bidx = borrow_index_1e9 as u128;
+        let px = price as u128;
+        let max64 = 18_446_744_073_709_551_615u128;
+        let scale = 1_000_000_000u128;
+        let a_scaled = a * scale;
+        let shm1 = if sh > 0 { sh - 1 } else { 0 };
+
+        let free_usdc = s.free_usdc as u128;
+        let coll = s.collateral_sol as u128;
+        let sup = s.supply_shares_usdc;
+        let debt = s.debt_shares_usdc;
+        let cash = p.cash_usdc;
+        let tss = p.total_supply_shares;
+        let tds = p.total_debt_shares;
+
+        let supply_conv = sh > 0 && sh * sidx <= a_scaled && a_scaled < (sh + 1) * sidx;
+        let withdraw_conv = sh > 0 && a > 0 && sh * sidx >= a_scaled && shm1 * sidx < a_scaled;
+        let borrow_conv = sh > 0 && a > 0 && sh * bidx >= a_scaled && shm1 * bidx < a_scaled;
+        let repay_conv = sh > 0 && sh * bidx <= a_scaled && a_scaled < (sh + 1) * bidx;
+
+        let new_debt = debt + sh;
+        let healthy = new_debt * bidx * 10_000u128 <= coll * px * (ltv_bps as u128)
+            && new_debt * bidx <= (position_debt_cap as u128) * scale;
+
+        let ok0 = supply_conv
+            && a <= free_usdc
+            && sup + sh <= max64
+            && (tss + sh) * sidx <= (supply_cap as u128) * scale;
+        let ok1 = withdraw_conv && sh <= sup && sh <= tss && a <= cash && free_usdc + a <= max64;
+        let ok2 = borrow_conv && healthy && a <= cash && free_usdc + a <= max64;
+        let ok3 = repay_conv && sh <= debt && sh <= tds && a <= free_usdc;
+
+        let applied = (op == 0 && ok0) || (op == 1 && ok1) || (op == 2 && ok2) || (op == 3 && ok3);
+        let da = if applied { a } else { 0 };
+        let ds = if applied { sh } else { 0 };
+
+        let new_free_usdc = if op == 0 || op == 3 {
+            free_usdc - da
+        } else {
+            free_usdc + da
+        };
+        let new_sup = if op == 0 {
+            sup + ds
+        } else if op == 1 {
+            sup - ds
+        } else {
+            sup
+        };
+        let new_debt_s = if op == 2 {
+            debt + ds
+        } else if op == 3 {
+            debt - ds
+        } else {
+            debt
+        };
+        let new_cash = if op == 0 || op == 3 {
+            cash + da
+        } else {
+            cash - da
+        };
+        let new_tss = if op == 0 {
+            tss + ds
+        } else if op == 1 {
+            tss - ds
+        } else {
+            tss
+        };
+        let new_tds = if op == 2 {
+            tds + ds
+        } else if op == 3 {
+            tds - ds
+        } else {
+            tds
+        };
+        s.free_usdc = new_free_usdc as u64;
+        s.supply_shares_usdc = new_sup;
+        s.debt_shares_usdc = new_debt_s;
+        p.cash_usdc = new_cash;
+        p.total_supply_shares = new_tss;
+        p.total_debt_shares = new_tds;
+        (
+            Mxe::get().from_arcis(p),
+            owner.from_arcis(s),
+            applied.reveal(),
+        )
+    }
+
+    /// Private liquidation. The liquidator pays `amount` USDC from its own
+    /// encrypted free balance and receives `seize` lamports of the target's
+    /// collateral into its own encrypted free SOL; the Pool books the repaid
+    /// cash and burns the debt shares. The liquidator supplies the conversions
+    /// (`burn_shares = floor(a*1e9/bidx)`, `seize =
+    /// floor(a*1e9*(10_000+bonus)/(price*10_000))`) and the circuit verifies
+    /// them. Only `applied` is revealed.
+    #[instruction]
+    pub fn liquidate_pool(
+        pool: Enc<Mxe, PoolSecret>,
+        target: Enc<Shared, PositionSecret>,
+        liquidator: Enc<Shared, PositionSecret>,
+        input: Enc<Shared, LiqInput>,
+        target_owner: Shared,
+        liquidator_owner: Shared,
+        borrow_index_1e9: u64,
+        price: u64,
+        liq_threshold_bps: u64,
+        bonus_bps: u64,
+    ) -> (
+        Enc<Mxe, PoolSecret>,
+        Enc<Shared, PositionSecret>,
+        Enc<Shared, PositionSecret>,
+        bool,
+    ) {
+        let mut p = pool.to_arcis();
+        let mut t = target.to_arcis();
+        let mut l = liquidator.to_arcis();
+        let inp = input.to_arcis();
+        let a = inp.amount as u128;
+        let sh = inp.burn_shares as u128;
+        let z = inp.seize as u128;
+        let bidx = borrow_index_1e9 as u128;
+        let px = price as u128;
+        let scale = 1_000_000_000u128;
+        let max64 = 18_446_744_073_709_551_615u128;
+        let a_scaled = a * scale;
+
+        let coll = t.collateral_sol as u128;
+        let debt = t.debt_shares_usdc;
+        let unhealthy = debt * bidx * 10_000u128 > coll * px * (liq_threshold_bps as u128);
+        let burn_conv = sh > 0 && sh * bidx <= a_scaled && a_scaled < (sh + 1) * bidx;
+        let seize_num = a_scaled * (10_000u128 + bonus_bps as u128);
+        let seize_conv =
+            z > 0 && z * px * 10_000u128 <= seize_num && seize_num < (z + 1) * px * 10_000u128;
+        let applied = unhealthy
+            && burn_conv
+            && seize_conv
+            && sh <= debt
+            && (sh * 2 <= debt || sh == debt)
+            && sh <= p.total_debt_shares
+            && z <= coll
+            && a <= l.free_usdc as u128
+            && (l.free_sol as u128) + z <= max64;
+        let da = if applied { a } else { 0 };
+        let ds = if applied { sh } else { 0 };
+        let dz = if applied { z } else { 0 };
+
+        t.collateral_sol = (coll - dz) as u64;
+        t.debt_shares_usdc = debt - ds;
+        l.free_usdc = ((l.free_usdc as u128) - da) as u64;
+        l.free_sol = ((l.free_sol as u128) + dz) as u64;
+        p.cash_usdc = p.cash_usdc + da;
+        p.total_debt_shares = p.total_debt_shares - ds;
+        (
+            Mxe::get().from_arcis(p),
+            target_owner.from_arcis(t),
+            liquidator_owner.from_arcis(l),
+            applied.reveal(),
+        )
+    }
+
     // ---- Task 5.5: production Viewing Key rotation --------------------------
     /// Re-seals the stored Position payload from its current Viewing Key to a
     /// new one, revealing nothing (Requirement 5.11).

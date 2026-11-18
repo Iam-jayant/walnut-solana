@@ -127,7 +127,7 @@ function Hero() {
         <p className="mt-6 max-w-xl text-lead text-walnut-ink">
           Walnut is a lending market on Solana where balances, collateral and
           debt stay encrypted. Arcium multi-party computation runs the math, and
-          nobody sees your position but you.
+          only you can read your position.
         </p>
         <div className="mt-10 flex flex-wrap gap-3">
           <LaunchButton />
@@ -314,7 +314,7 @@ function Features() {
 function HowItWorks() {
   const steps = [
     ["Connect", "Link a Solana wallet and unlock your Viewing Key."],
-    ["Encrypt", "Amounts are encrypted in your browser before they leave it."],
+    ["Encrypt", "Your balances are sealed to a key that only you hold."],
     ["Compute", "Arcium MPC nodes update your position over ciphertext."],
     ["Settle", "The result is written back to Solana. You alone can read it."],
   ];

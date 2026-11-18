@@ -611,6 +611,17 @@ Parallelizable task waves (each wave starts after the previous wave completes):
     - Non-owner rejected.
     - Superseding record does not claim revocation.
 
+- [ ] P. Private amounts track (ADR-0004, replaces the approach of 8.2, 8.3, 9.3, 10.1 and 12.2; earlier work is kept)
+  - Rule: verify, never divide. Clients compute shares from the public indexes and encrypt `(amount, shares)`; circuits only multiply and compare. Existing `lend_op`, `LendingPool`, `liquidate` and the Task 7 Pool circuits stay until cutover.
+  - [x] P.1 Feasibility: `pool_op` 7.99e8 CU and `liquidate_pool` 1.04e9 CU built and measured (docs/adr/0004-private-amounts.md)
+  - [ ] P.2 Position-only encrypted ops (`position_private`): add collateral, withdraw collateral with encrypted amount, health unchanged; measure
+  - [ ] P.3 Program: comp defs, queue and callback for `pool_op` (ops supply, withdraw supply, borrow, repay) with ciphertext args, Pool and Position locked together, Intent commitment over ciphertexts, no amounts in events
+  - [ ] P.4 Program: `liquidate_pool` queue and callback (borrower, liquidator, Pool), no escrow and no SPL transfer
+  - [ ] P.5 Index policy and band: public indexes advance from the revealed band (borrow upper edge, supply lower edge), adapt `update_utilization_band` to the new Pool meaning, remove public totals from the private path
+  - [ ] P.6 SDK: encrypt `OpInput` and `LiqInput`, share and seize conversions, builders, golden vectors shared with the circuits
+  - [ ] P.7 Web: encrypted-amount forms, band-based market card, liquidator Position setup, copy matches what is hidden
+  - [ ] P.8 Tests: property tests for the verified conversions, Pool and Position conservation, failure matrix; one devnet end-to-end run
+  - [ ] P.9 Deploy once (new program upgrade and circuit uploads), run the end-to-end demo, then update the landing page claims
 - [ ] 14. SDK and keeper completion
 
   - [ ] 14.1 Complete typed SDK action builders
