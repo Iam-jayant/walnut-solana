@@ -1,5 +1,6 @@
 "use client";
 
+import { bandEdgesBps, borrowRateBps, RATE_SOURCE_BAND } from "@walnut/sdk";
 import { useWallet } from "@solana/wallet-adapter-react";
 import { FAUCET_URL, SOL_DECIMALS, USDC_DECIMALS } from "../lib/config.ts";
 import { formatUnits } from "../lib/format.ts";
@@ -412,6 +413,52 @@ function MarketCard() {
             <Spinner /> Loading the lending market...
           </p>
         )}
+      </Card>
+    );
+  }
+  if (lending.pool.rateSource === RATE_SOURCE_BAND) {
+    const [lower, upper] = bandEdgesBps(lending.band);
+    const observed = lending.bandObservationSlot > 0;
+    const age = Math.max(0, lending.slot - lending.bandObservationSlot);
+    const supplyApy =
+      (borrowRateBps(protocol.rates, lower) *
+        lower *
+        (10_000n - protocol.reserveFactorBps)) /
+      (10_000n * 10_000n);
+    return (
+      <Card>
+        <CardTitle>Lending market</CardTitle>
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          <Stat
+            label="Utilization"
+            unit=""
+            value={`${Number(lower) / 100}–${Number(upper) / 100}%`}
+            hint="Revealed as a 5% band, not an exact figure."
+          />
+          <Stat
+            label="Borrow APR"
+            unit=""
+            value={formatBps(borrowRateBps(protocol.rates, upper))}
+            hint="At the upper edge of the band."
+          />
+          <Stat
+            label="Supply APY"
+            unit=""
+            value={formatBps(supplyApy)}
+            hint="At the lower edge of the band."
+          />
+          <Stat label="Total supplied" unit="" value="Encrypted" />
+          <Stat label="Total borrowed" unit="" value="Encrypted" />
+          <Stat
+            label="Band age"
+            unit={observed ? "slots" : ""}
+            value={observed ? age.toLocaleString("en-US") : "Not observed yet"}
+          />
+        </div>
+        <p className="mt-3 text-caption text-walnut-ink/60">
+          Pool totals are encrypted and computed by the Arcium MPC network. Only
+          the utilization band and the interest indexes are public.
+        </p>
       </Card>
     );
   }
