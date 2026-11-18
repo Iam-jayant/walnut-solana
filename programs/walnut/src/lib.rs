@@ -149,6 +149,7 @@ const COMP_DEF_OFFSET_DISCLOSE_POSITION: u32 = comp_def_offset("disclose_positio
 const COMP_DEF_OFFSET_POOL_OP: u32 = comp_def_offset("pool_op");
 const COMP_DEF_OFFSET_POSITION_PRIVATE: u32 = comp_def_offset("position_private");
 const COMP_DEF_OFFSET_LIQUIDATE_POOL: u32 = comp_def_offset("liquidate_pool");
+const COMP_DEF_OFFSET_POOL_BAND: u32 = comp_def_offset("pool_band");
 
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
@@ -4166,6 +4167,179 @@ pub mod walnut {
         abandon_private_op_handler(ctx)
     }
 
+    /// Registers the `pool_band` computation definition.
+    pub fn init_pool_band_comp_def(ctx: Context<InitPoolBandCompDef>) -> Result<()> {
+        init_computation_def(ctx.accounts, None)?;
+        Ok(())
+    }
+
+    /// Permissionless: queues the light `pool_band` circuit, which reveals only
+    /// the private Pool's utilization band at the LendingPool borrow index
+    /// (ADR-0004). Same Intent rules as `update_utilization_band` (Pool-owned
+    /// counter, no Lock); the callback stores the band on the Asset State.
+    pub fn update_pool_band(
+        ctx: Context<UpdatePoolBandQueue>,
+        computation_offset: u64,
+        sequence: u64,
+    ) -> Result<()> {
+        let clock = Clock::get()?;
+        let market_key = ctx.accounts.market.key();
+        let pool_key = ctx.accounts.pool_state.key();
+        let intent_key = ctx.accounts.operation_intent.key();
+        if ctx.accounts.operation_counter.owner == Pubkey::default() {
+            ctx.accounts
+                .operation_counter
+                .set_inner(OperationCounter::new(pool_key, ctx.bumps.operation_counter));
+        }
+        let keys = BandKeys {
+            payer: ctx.accounts.payer.key(),
+            market: market_key,
+            asset_state: ctx.accounts.asset_state.key(),
+            pool: pool_key,
+        };
+        let request = BandRequest {
+            intent_key,
+            sequence,
+            computation_offset,
+            queued_slot: clock.slot,
+        };
+        let borrow_index = u64::try_from(ctx.accounts.lending_pool.borrow_index_1e9)
+            .map_err(|_| ErrorCode::LendOpInvalid)?;
+        let accounts = &mut *ctx.accounts;
+        let mut intent = state::band::queue_band_update_at(
+            accounts.market.status,
+            &keys,
+            &accounts.asset_state,
+            &accounts.pool_state,
+            &mut accounts.operation_counter,
+            &request,
+            u128::from(borrow_index),
+        )?;
+        intent.bump = ctx.bumps.operation_intent;
+        accounts.operation_intent.set_inner(intent);
+        emit!(UtilizationBandQueued {
+            market: market_key,
+            pool_state: pool_key,
+            operation_intent: intent_key,
+            computation_offset,
+            pool_generation: accounts.pool_state.coordination.generation,
+            rate_epoch_generation: intent.rate_epoch_generation,
+            accounting_borrow_index: intent.accounting_borrow_index,
+            decision_expiry_slot: intent.decision_expiry_slot,
+            slot: clock.slot,
+        });
+        ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
+        let c = &ctx.accounts.pool_state.encrypted.ciphertexts;
+        let args = ArgBuilder::new()
+            .plaintext_u128(ctx.accounts.pool_state.encrypted.nonce)
+            .encrypted_u128(c[0])
+            .encrypted_u128(c[1])
+            .encrypted_u128(c[2])
+            .encrypted_u128(c[3])
+            .plaintext_u64(borrow_index)
+            .build();
+        let callback_accounts = [
+            CallbackAccount {
+                pubkey: market_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: keys.asset_state,
+                is_writable: true,
+            },
+            CallbackAccount {
+                pubkey: pool_key,
+                is_writable: false,
+            },
+            CallbackAccount {
+                pubkey: intent_key,
+                is_writable: true,
+            },
+        ];
+        queue_computation(
+            ctx.accounts,
+            computation_offset,
+            args,
+            vec![PoolBandCallback::callback_ix(
+                computation_offset,
+                &ctx.accounts.mxe_account,
+                &callback_accounts,
+            )?],
+            1,
+            0,
+            0,
+        )?;
+        Ok(())
+    }
+
+    /// Verifies the revealed band and stores it with the same rules as
+    /// `update_utilization_band_callback`.
+    #[arcium_callback(encrypted_ix = "pool_band")]
+    pub fn pool_band_callback(
+        ctx: Context<PoolBandCallback>,
+        output: SignedComputationOutputs<PoolBandOutput>,
+    ) -> Result<()> {
+        let band = match output.verify_output(
+            &ctx.accounts.cluster_account,
+            &ctx.accounts.computation_account,
+        ) {
+            Ok(PoolBandOutput { field_0 }) => field_0,
+            Err(_) => return Err(ErrorCode::CallbackOutputNotAuthenticated.into()),
+        };
+        let computation_offset = callback_offset(
+            ctx.accounts.operation_intent.computation_offset,
+            ctx.accounts.computation_account.key(),
+            &ctx.accounts.mxe_account,
+        );
+        let clock = Clock::get()?;
+        let intent_key = ctx.accounts.operation_intent.key();
+        let asset_state_key = ctx.accounts.asset_state.key();
+        let keys = BandKeys {
+            payer: ctx.accounts.operation_intent.payer,
+            market: ctx.accounts.market.key(),
+            asset_state: asset_state_key,
+            pool: ctx.accounts.pool_state.key(),
+        };
+        let report = BandReport {
+            output_authenticated: true,
+            computation_offset,
+            intent_key,
+            band,
+            current_slot: clock.slot,
+        };
+        let accounts = &mut *ctx.accounts;
+        let settlement = state::band::settle_band_update(
+            &keys,
+            &mut accounts.asset_state,
+            &accounts.pool_state,
+            &mut accounts.operation_intent,
+            &report,
+        )?;
+        match settlement {
+            BandSettlement::Applied {
+                band,
+                observation_slot,
+                written,
+            } => emit!(UtilizationBandUpdated {
+                asset_state: asset_state_key,
+                operation_intent: intent_key,
+                band,
+                observation_slot,
+                written,
+                slot: clock.slot,
+            }),
+            BandSettlement::Stale(_) | BandSettlement::Failed(_) => {
+                emit!(UtilizationBandNotApplied {
+                    operation_intent: intent_key,
+                    intent_status: accounts.operation_intent.status,
+                    slot: clock.slot,
+                })
+            }
+            BandSettlement::Ignored => {}
+        }
+        Ok(())
+    }
+
     /// Admin: switches the LendingPool rate source (0 public totals, 1
     /// utilization band of the encrypted Pool).
     pub fn set_lending_rate_source(
@@ -7590,4 +7764,110 @@ fn band_circuit_index(asset: &AssetState, lending_pool: Option<&LendingPool>) ->
             .ok_or(ErrorCode::LendOpInvalid)?),
         _ => Ok(asset.accounting_borrow_index),
     }
+}
+
+#[queue_computation_accounts("pool_band", payer)]
+#[derive(Accounts)]
+#[instruction(computation_offset: u64, sequence: u64)]
+pub struct UpdatePoolBandQueue<'info> {
+    /// Anyone; pays rent and the computation fee.
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, seeds = [&SIGN_PDA_SEED], bump)]
+    pub sign_pda_account: Box<Account<'info, ArciumSignerAccount>>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut, address = derive_mempool_pda!(mxe_account))]
+    /// CHECK: mempool_account, checked by the arcium program
+    pub mempool_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_execpool_pda!(mxe_account))]
+    /// CHECK: executing_pool, checked by the arcium program
+    pub executing_pool: UncheckedAccount<'info>,
+    #[account(mut, address = derive_comp_pda!(computation_offset, mxe_account))]
+    /// CHECK: computation_account, checked by the arcium program
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_POOL_BAND))]
+    pub comp_def_account: Box<Account<'info, ComputationDefinitionAccount>>,
+    #[account(mut, address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
+    pub pool_account: Box<Account<'info, FeePool>>,
+    #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
+    pub clock_account: Box<Account<'info, ClockAccount>>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    #[account(address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    /// Read for the encrypted payload and its generation; not Locked.
+    #[account(address = market.pool_state)]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The public borrow index the band is measured at.
+    #[account(seeds = [LENDING_POOL_SEED, market.key().as_ref()], bump = lending_pool.bump)]
+    pub lending_pool: Box<Account<'info, LendingPool>>,
+    /// The Pool-owned Intent counter (created on first use).
+    #[account(
+        init_if_needed,
+        payer = payer,
+        space = OperationCounter::ACCOUNT_LEN,
+        seeds = [OPERATION_COUNTER_SEED, pool_state.key().as_ref()],
+        bump,
+    )]
+    pub operation_counter: Box<Account<'info, OperationCounter>>,
+    #[account(
+        init,
+        payer = payer,
+        space = OperationIntent::ACCOUNT_LEN,
+        seeds = [OPERATION_INTENT_SEED, pool_state.key().as_ref(), &sequence.to_le_bytes()],
+        bump,
+    )]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+    pub system_program: Program<'info, System>,
+    pub arcium_program: Program<'info, Arcium>,
+}
+
+#[callback_accounts("pool_band")]
+#[derive(Accounts)]
+pub struct PoolBandCallback<'info> {
+    pub arcium_program: Program<'info, Arcium>,
+    #[account(address = derive_comp_def_pda!(COMP_DEF_OFFSET_POOL_BAND))]
+    pub comp_def_account: Account<'info, ComputationDefinitionAccount>,
+    #[account(address = derive_mxe_pda!())]
+    pub mxe_account: Account<'info, MXEAccount>,
+    /// CHECK: computation_account, checked by the arcium program via callback context constraints
+    pub computation_account: UncheckedAccount<'info>,
+    #[account(address = derive_cluster_pda!(mxe_account))]
+    pub cluster_account: Box<Account<'info, Cluster>>,
+    #[account(address = ::arcium_anchor::solana_instructions_sysvar::ID)]
+    /// CHECK: instructions_sysvar, checked by the account constraint
+    pub instructions_sysvar: UncheckedAccount<'info>,
+    #[account(seeds = [MARKET_SEED], bump = market.bump)]
+    pub market: Box<Account<'info, Market>>,
+    /// Written only for an `Applied` decision.
+    #[account(mut, address = market.asset_state)]
+    pub asset_state: Box<Account<'info, AssetState>>,
+    #[account(address = market.pool_state)]
+    pub pool_state: Box<Account<'info, PoolState>>,
+    /// The attempt's Operation Intent; `classify_callback` verifies it.
+    #[account(mut)]
+    pub operation_intent: Box<Account<'info, OperationIntent>>,
+}
+
+#[init_computation_definition_accounts("pool_band", payer)]
+#[derive(Accounts)]
+pub struct InitPoolBandCompDef<'info> {
+    #[account(mut)]
+    pub payer: Signer<'info>,
+    #[account(mut, address = derive_mxe_pda!())]
+    pub mxe_account: Box<Account<'info, MXEAccount>>,
+    #[account(mut)]
+    /// CHECK: comp_def_account, checked by the arcium program; not initialized yet
+    pub comp_def_account: UncheckedAccount<'info>,
+    #[account(mut, address = derive_mxe_lut_pda!(mxe_account.lut_offset_slot))]
+    /// CHECK: address_lookup_table, checked by the arcium program
+    pub address_lookup_table: UncheckedAccount<'info>,
+    #[account(address = LUT_PROGRAM_ID)]
+    /// CHECK: lut_program is the Address Lookup Table program
+    pub lut_program: UncheckedAccount<'info>,
+    pub arcium_program: Program<'info, Arcium>,
+    pub system_program: Program<'info, System>,
 }
