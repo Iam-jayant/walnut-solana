@@ -1006,6 +1006,37 @@ mod circuits {
         (tuple_of_position(s), applied)
     }
 
+    /// Utilization band (0..=19, 5% each) of the private Pool at the public
+    /// 1e9 borrow index, without any division: with `debt = debt_shares *
+    /// bidx` and `total = cash * 1e9 + debt` (both scaled by 1e9), the band is
+    /// the number of `k = 1..=19` with `debt * 20 >= total * k`. A zero total
+    /// is band 0. Equal to `update_utilization_band` for debt shares booked at
+    /// the 1e9 index (ADR-0004); far lighter because it avoids `mul_wad_ceil`.
+    pub fn pool_band_value(cash: u128, debt_shares: u128, borrow_index_1e9: u64) -> u8 {
+        let debt = debt_shares * (borrow_index_1e9 as u128);
+        let total = cash * 1_000_000_000u128 + debt;
+        let scaled = debt * 20;
+        let mut band: u8 = 0;
+        for k in 1..20usize {
+            if scaled >= total * (k as u128) {
+                band += 1;
+            }
+        }
+        if total == 0 {
+            0
+        } else {
+            band
+        }
+    }
+
+    /// Reads the private Pool's encrypted cash and debt shares and reveals only
+    /// the utilization band (rules: [`pool_band_value`]). Read-only.
+    #[instruction]
+    pub fn pool_band(pool: Enc<Mxe, PoolSecret>, borrow_index_1e9: u64) -> u8 {
+        let p = pool.to_arcis();
+        pool_band_value(p.cash_usdc, p.total_debt_shares, borrow_index_1e9).reveal()
+    }
+
     // ---- Task 5.5: production Viewing Key rotation --------------------------
     /// Re-seals the stored Position payload from its current Viewing Key to a
     /// new one, revealing nothing (Requirement 5.11).
@@ -2118,6 +2149,34 @@ mod tests {
             bonus,
         );
         assert!(!applied);
+    }
+
+    /// `pool_band` (no division, 1e9 index) gives the same band as
+    /// `update_utilization_band` at the same index lifted to WAD, wherever
+    /// the debt value is a whole number of USDC units (shares * index
+    /// divisible by 1e9); elsewhere it can only be one band apart because the
+    /// WAD circuit rounds the debt up.
+    #[test]
+    fn pool_band_matches_the_wad_band_circuit() {
+        let mut r = Rng(19);
+        for _ in 0..20_000 {
+            let cash = r.below(1_000_000_000_000_000) as u128;
+            let debt_shares = r.below(1_000_000_000_000_000) as u128;
+            let bidx = SCALE as u64 + r.below(9 * SCALE as u64);
+            let light = pool_band_value(cash, debt_shares, bidx);
+            let wad = utilization_band_index(cash, debt_shares, bidx as u128 * SCALE);
+            if (debt_shares * bidx as u128).is_multiple_of(SCALE) {
+                assert_eq!(light, wad, "cash {cash} shares {debt_shares} idx {bidx}");
+            } else {
+                assert!(light <= wad && wad - light <= 1);
+            }
+        }
+        assert_eq!(pool_band_value(0, 0, SCALE as u64), 0);
+        // 80% utilization at index 1.0 is band 16; 79.99% is band 15.
+        assert_eq!(pool_band_value(200, 800, SCALE as u64), 16);
+        assert_eq!(pool_band_value(2_001, 7_999, SCALE as u64), 15);
+        // Fully borrowed is band 19.
+        assert_eq!(pool_band_value(0, 5, SCALE as u64), 19);
     }
 
     #[test]
