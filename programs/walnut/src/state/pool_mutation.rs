@@ -341,7 +341,7 @@ pub fn abandon_pool_mutation(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::market::{Caps, PauseState, RateParams, RiskParams, TimelockState};
     use crate::math::WAD;
