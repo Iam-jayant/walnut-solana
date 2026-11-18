@@ -443,7 +443,7 @@ pub fn plan_owner_op(
         return Err(ErrorCode::LendOpZeroAmount);
     }
     ensure_lend_op_allowed(&asset.pauses, op, slot)?;
-    pool.accrue(now_ts, &asset.rates, asset.risk.reserve_factor_bps)?;
+    pool.accrue_auto(now_ts, asset)?;
     check_lend_caps(op, amount, pool, &asset.caps)?;
     let shares = match op {
         OP_BORROW => borrow_mint(amount, pool.borrow_index_1e9)?,
@@ -481,7 +481,7 @@ pub fn plan_liquidation(
         return Err(ErrorCode::LendOpZeroAmount);
     }
     ensure_lend_op_allowed(&asset.pauses, OP_LIQUIDATE, slot)?;
-    pool.accrue(now_ts, &asset.rates, asset.risk.reserve_factor_bps)?;
+    pool.accrue_auto(now_ts, asset)?;
     let burn = liquidation_burn(repay_amount, pool.borrow_index_1e9)?;
     let seize = liquidation_seize(repay_amount, asset.risk.liquidation_bonus_bps, price)?;
     if burn == 0
