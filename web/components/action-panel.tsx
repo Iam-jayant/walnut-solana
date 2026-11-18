@@ -4,7 +4,10 @@ import {
   applyLendOp,
   borrowMint,
   clampPrice,
+  CollateralOp,
+  fullRepayAmountPrivate,
   LendOp,
+  PoolOp,
   repayBurn,
   supplySharesFor,
   withdrawSupplyBurn,
@@ -15,7 +18,15 @@ import { formatUnits, parseUnits, toInputString } from "../lib/format.ts";
 import { indexesAt, positionValues } from "../lib/lend.ts";
 import { borrowMetrics, maxRemovableCollateral } from "../lib/metrics.ts";
 import type { Asset } from "../lib/ops.ts";
-import { Button, Card, CardTitle, Notice, Spinner } from "./ui.tsx";
+import {
+  Badge,
+  Button,
+  Card,
+  CardTitle,
+  LockIcon,
+  Notice,
+  Spinner,
+} from "./ui.tsx";
 import { useNowSeconds } from "./use-now.ts";
 import { useWalnut } from "./walnut-provider.tsx";
 
@@ -76,8 +87,16 @@ interface AmountFormProps {
   note?: string;
   warning: (amount: bigint) => string | null;
   needsUnlock: boolean;
-  onSubmit: (amount: bigint) => Promise<void>;
+  /** `private`: the amount is encrypted. `public`: it is visible on chain. */
+  mode?: "private" | "public";
+  /** Block submission while the warning applies (private operations). */
+  strict?: boolean;
+  /** Resolve to false to keep the entered amount for a retry. */
+  onSubmit: (amount: bigint) => Promise<boolean | void>;
 }
+
+const PUBLIC_AMOUNT_NOTE =
+  "Amounts are visible on chain for this action until private mode is enabled.";
 
 function AmountForm(props: AmountFormProps) {
   const { busy, unlocked, stuck } = useWalnut();
@@ -88,6 +107,7 @@ function AmountForm(props: AmountFormProps) {
   let blocked: string | null = null;
   if (props.needsUnlock && !unlocked)
     blocked = "Unlock private balances to continue.";
+  else if (props.strict === true && warning !== null) blocked = warning;
   else if (stuck !== null)
     blocked = "A previous operation is still processing.";
 
@@ -97,7 +117,9 @@ function AmountForm(props: AmountFormProps) {
       onSubmit={(event) => {
         event.preventDefault();
         if (!valid || blocked !== null || busy) return;
-        void props.onSubmit(amount).then(() => setText(""));
+        void props.onSubmit(amount).then((ok) => {
+          if (ok !== false) setText("");
+        });
       }}
     >
       <div>
@@ -138,8 +160,19 @@ function AmountForm(props: AmountFormProps) {
       ) : null}
       {warning !== null ? (
         <p className="rounded-2xl bg-amber-50 px-4 py-2.5 text-small text-amber-900 ring-1 ring-amber-200">
-          {warning} You can still submit it.
+          {warning}
+          {props.strict === true ? "" : " You can still submit it."}
         </p>
+      ) : null}
+      {props.mode === "private" ? (
+        <p>
+          <Badge tone="dark">
+            <LockIcon /> Amount encrypted
+          </Badge>
+        </p>
+      ) : null}
+      {props.mode === "public" ? (
+        <p className="text-caption text-walnut-ink/60">{PUBLIC_AMOUNT_NOTE}</p>
       ) : null}
       {props.note !== undefined ? (
         <p className="text-caption text-walnut-ink/60">{props.note}</p>
@@ -179,8 +212,16 @@ export function ActionPanel() {
   const [tab, setTab] = useState<Tab>("deposit");
   const [asset, setAsset] = useState<Asset>("sol");
   const [collateralMode, setCollateralMode] = useState<"add" | "remove">("add");
-  const { balances, walletBalances, price, protocol, lending, lendingChecked } =
-    w;
+  const {
+    balances,
+    walletBalances,
+    price,
+    protocol,
+    lending,
+    lendingChecked,
+    privateMode,
+  } = w;
+  const mode = privateMode ? "private" : "public";
   const ltv = protocol?.ltvBps ?? 5_000n;
   const idx = indexesAt(lending, protocol, now);
   const values = balances === null ? null : positionValues(balances, idx);
@@ -326,6 +367,8 @@ export function ActionPanel() {
             max={max}
             maxLabel={add ? "Free SOL" : "Removable collateral"}
             cta={add ? "Add collateral" : "Remove collateral"}
+            mode={mode}
+            strict={privateMode}
             needsUnlock
             warning={(a) =>
               add
@@ -341,11 +384,17 @@ export function ActionPanel() {
                   )
             }
             onSubmit={(a) =>
-              w.lendOp(
-                add ? LendOp.AddCollateral : LendOp.WithdrawCollateral,
-                add ? "Add collateral" : "Remove collateral",
-                a,
-              )
+              privateMode
+                ? w.privateCollateral(
+                    add ? CollateralOp.Add : CollateralOp.Withdraw,
+                    add ? "Add collateral" : "Remove collateral",
+                    a,
+                  )
+                : w.lendOp(
+                    add ? LendOp.AddCollateral : LendOp.WithdrawCollateral,
+                    add ? "Add collateral" : "Remove collateral",
+                    a,
+                  )
             }
           />
         </div>
@@ -364,21 +413,41 @@ export function ActionPanel() {
       <AmountForm
         symbol="USDC"
         decimals={USDC_DECIMALS}
-        max={m === null ? null : min(min(m.available, liquidity), capRoom)}
+        max={
+          m === null
+            ? null
+            : min(
+                privateMode ? m.available : min(m.available, liquidity),
+                capRoom,
+              )
+        }
         maxLabel="Available to borrow"
         cta="Borrow USDC"
+        mode={mode}
+        strict={privateMode}
         note="Borrowed USDC lands in your private free balance, and interest accrues on it continuously. Withdraw it to your wallet from the Withdraw tab."
         needsUnlock
         warning={(a) =>
-          a > liquidity
+          !privateMode && a > liquidity
             ? "The pool does not have this much free USDC right now."
             : check(LendOp.Borrow, a, "This would exceed your borrow limit.")
         }
-        onSubmit={(a) => w.lendOp(LendOp.Borrow, "Borrow USDC", a)}
+        onSubmit={(a) =>
+          privateMode
+            ? w.privatePoolOp(PoolOp.Borrow, "Borrow USDC", a)
+            : w.lendOp(LendOp.Borrow, "Borrow USDC", a)
+        }
       />
     );
   } else if (tab === "repay") {
-    const max = balances === null ? null : min(balances.freeUsdc, debt);
+    const full =
+      balances === null
+        ? null
+        : privateMode
+          ? fullRepayAmountPrivate(balances.debtSharesUsdc, idx.borrow)
+          : debt;
+    const max =
+      balances === null || full === null ? null : min(balances.freeUsdc, full);
     body = (
       <AmountForm
         symbol="USDC"
@@ -386,6 +455,8 @@ export function ActionPanel() {
         max={max}
         maxLabel="Repayable now"
         cta="Repay USDC"
+        mode={mode}
+        strict={privateMode}
         note="Repayment is paid from your private free USDC and includes the interest accrued so far. Deposit USDC first if you need more."
         needsUnlock
         warning={(a) =>
@@ -395,7 +466,16 @@ export function ActionPanel() {
             "This is more than your free USDC or your outstanding debt.",
           )
         }
-        onSubmit={(a) => w.lendOp(LendOp.Repay, "Repay USDC", a)}
+        onSubmit={(a) =>
+          privateMode
+            ? w.privatePoolOp(
+                PoolOp.Repay,
+                "Repay USDC",
+                a,
+                balances?.debtSharesUsdc,
+              )
+            : w.lendOp(LendOp.Repay, "Repay USDC", a)
+        }
       />
     );
   } else if (tab === "supply") {
@@ -406,12 +486,18 @@ export function ActionPanel() {
         max={balances === null ? null : balances.freeUsdc}
         maxLabel="Free private USDC"
         cta="Supply USDC"
+        mode={mode}
+        strict={privateMode}
         note="Supplied USDC earns interest from borrowers. Your supplied balance stays private. Deposit USDC first if you need more."
         needsUnlock
         warning={(a) =>
           check(LendOp.Supply, a, "This is more than your free private USDC.")
         }
-        onSubmit={(a) => w.lendOp(LendOp.Supply, "Supply USDC", a)}
+        onSubmit={(a) =>
+          privateMode
+            ? w.privatePoolOp(PoolOp.Supply, "Supply USDC", a)
+            : w.lendOp(LendOp.Supply, "Supply USDC", a)
+        }
       />
     );
   } else {
@@ -419,13 +505,21 @@ export function ActionPanel() {
       <AmountForm
         symbol="USDC"
         decimals={USDC_DECIMALS}
-        max={values === null ? null : min(values.supply, liquidity)}
+        max={
+          values === null
+            ? null
+            : privateMode
+              ? values.supply
+              : min(values.supply, liquidity)
+        }
         maxLabel="Withdrawable now"
         cta="Withdraw supply"
+        mode={mode}
+        strict={privateMode}
         note="Your supply plus the interest it earned returns to your private free USDC. Withdraw it to your wallet from the Withdraw tab."
         needsUnlock
         warning={(a) =>
-          a > liquidity
+          !privateMode && a > liquidity
             ? "The pool does not have this much free USDC right now. Borrowers need to repay first."
             : check(
                 LendOp.WithdrawSupply,
@@ -433,7 +527,16 @@ export function ActionPanel() {
                 "This is more than you have supplied.",
               )
         }
-        onSubmit={(a) => w.lendOp(LendOp.WithdrawSupply, "Withdraw supply", a)}
+        onSubmit={(a) =>
+          privateMode
+            ? w.privatePoolOp(
+                PoolOp.WithdrawSupply,
+                "Withdraw supply",
+                a,
+                balances?.supplySharesUsdc,
+              )
+            : w.lendOp(LendOp.WithdrawSupply, "Withdraw supply", a)
+        }
       />
     );
   }
