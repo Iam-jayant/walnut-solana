@@ -47,6 +47,12 @@ Instructions: `pool_op(op, accrue_to_ts, input_pubkey, input_nonce, input_cipher
 - A band-mode borrow requires a fresh band (`band_max_age_slots`), so borrowers never accrue at a stale band. Repay, withdrawals and collateral never wait on the band.
 - Every accrual (`lend_op`, `check_health`, `liquidate` and the private path) goes through `accrue_auto`, so both paths move the same indexes the same way.
 
+## Tests (task P.8)
+
+- **Circuit rules on the host.** Each private circuit's body lives in a plain helper (`pool_op_values`, `liquidate_pool_values`, `position_private_values`) that the `#[instruction]` calls; the measured weights are unchanged. Host tests drive these helpers: value conservation or no change for 20,000 random `pool_op` cases, refusal of any other share count, LTV, debt-cap, cash and supply-cap bounds, liquidation health, close factor, liquidator balance and seize checks, and collateral conservation with the LTV.
+- **Program lifecycle.** `state::private_op` tests cover all three kinds: queue Locks every protected account, rejections change nothing, `Applied` stores every payload and bumps every generation, refusals and expired callbacks store nothing, every binding mismatch reverts with the Intent still queued, abandonment waits for Lock expiry, late callbacks are ignored, the accrual window and band freshness.
+- **Devnet end to end.** `pnpm --filter @walnut/sdk demo:private` (`packages/sdk/demo/private-e2e.ts`): private supply, collateral, borrow, accrual, full repay, collateral withdrawal, supply withdrawal and a refused liquidation, with exact decrypted balance checks, plus a privacy check that no private transaction's instruction data or logs contain a plaintext amount.
+
 ## SDK (task P.6)
 
 `packages/sdk/src/private-op.ts`: conversions and mirrors of the circuit checks, `encryptPrivateInput` (fresh ephemeral x25519 key and nonce per input), `chooseAccrualTs`, and builders for `pool_op`, `position_private`, `liquidate_pool`, `abandon_private_op` and `set_lending_rate_source`. `lending-pool.ts` decodes `rateSource` and mirrors band-mode accrual (`projectIndexesBanded`, `projectIndexesAuto`), with golden vectors shared with the Rust tests.
