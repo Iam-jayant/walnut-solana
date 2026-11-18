@@ -2300,11 +2300,9 @@ pub mod walnut {
             clock.unix_timestamp,
         )?;
         let accounts = &mut *ctx.accounts;
-        accounts.lending_pool.accrue(
-            clock.unix_timestamp,
-            &accounts.asset_state.rates,
-            accounts.asset_state.risk.reserve_factor_bps,
-        )?;
+        accounts
+            .lending_pool
+            .accrue_auto(clock.unix_timestamp, &accounts.asset_state)?;
         let params = lend_params(
             &accounts.lending_pool,
             &accounts.asset_state,
@@ -2944,14 +2942,19 @@ pub mod walnut {
             computation_offset,
             queued_slot: clock.slot,
         };
+        let circuit_index = band_circuit_index(
+            &ctx.accounts.asset_state,
+            ctx.accounts.lending_pool.as_deref().map(|p| &**p),
+        )?;
         let accounts = &mut *ctx.accounts;
-        let mut intent = state::band::queue_band_update(
+        let mut intent = state::band::queue_band_update_at(
             accounts.market.status,
             &keys,
             &accounts.asset_state,
             &accounts.pool_state,
             &mut accounts.operation_counter,
             &request,
+            circuit_index,
         )?;
         intent.bump = ctx.bumps.operation_intent;
         accounts.operation_intent.set_inner(intent);
@@ -2969,11 +2972,7 @@ pub mod walnut {
 
         // `update_utilization_band(pool: Enc<Mxe, PoolSecret>, accounting_index: u128)`.
         ctx.accounts.sign_pda_account.bump = ctx.bumps.sign_pda_account;
-        let args = update_utilization_band_args(
-            &ctx.accounts.pool_state,
-            ctx.accounts.asset_state.accounting_borrow_index,
-        )
-        .build();
+        let args = update_utilization_band_args(&ctx.accounts.pool_state, circuit_index).build();
         let callback_accounts = [
             CallbackAccount {
                 pubkey: market_key,
@@ -3579,6 +3578,13 @@ pub mod walnut {
             return Err(ErrorCode::PrivateInputKeyInvalid.into());
         }
         state::private_op::ensure_private_allowed(&ctx.accounts.asset_state, kind, op, clock.slot)?;
+        state::private_op::ensure_rate_fresh(
+            &ctx.accounts.lending_pool,
+            &ctx.accounts.asset_state,
+            kind,
+            op,
+            clock.slot,
+        )?;
         let (price, publish_time) = private_price(
             kind,
             op,
@@ -4158,6 +4164,15 @@ pub mod walnut {
     /// Permissionless: abandons a queued private operation after Lock expiry.
     pub fn abandon_private_op(ctx: Context<AbandonPrivateOp>) -> Result<()> {
         abandon_private_op_handler(ctx)
+    }
+
+    /// Admin: switches the LendingPool rate source (0 public totals, 1
+    /// utilization band of the encrypted Pool).
+    pub fn set_lending_rate_source(
+        ctx: Context<SetLendingRateSource>,
+        rate_source: u8,
+    ) -> Result<()> {
+        set_lending_rate_source_handler(ctx, rate_source)
     }
 
     // ---- Task 8.1: separately reviewed recovery of an empty Pool -----------
@@ -5878,9 +5893,9 @@ pub struct UpdateUtilizationBandQueue<'info> {
     #[account(mut, address = derive_cluster_pda!(mxe_account))]
     pub cluster_account: Box<Account<'info, Cluster>>,
     #[account(mut, address = ARCIUM_FEE_POOL_ACCOUNT_ADDRESS)]
-    pub pool_account: Account<'info, FeePool>,
+    pub pool_account: Box<Account<'info, FeePool>>,
     #[account(mut, address = ARCIUM_CLOCK_ACCOUNT_ADDRESS)]
-    pub clock_account: Account<'info, ClockAccount>,
+    pub clock_account: Box<Account<'info, ClockAccount>>,
     #[account(seeds = [MARKET_SEED], bump = market.bump)]
     pub market: Box<Account<'info, Market>>,
     #[account(address = market.asset_state)]
@@ -5892,6 +5907,10 @@ pub struct UpdateUtilizationBandQueue<'info> {
         bump = pool_state.bump,
     )]
     pub pool_state: Box<Account<'info, PoolState>>,
+    /// Optional (ADR-0004): when present and in band mode, the band is measured
+    /// at its borrow index instead of the Asset State's accounting index.
+    #[account(seeds = [LENDING_POOL_SEED, market.key().as_ref()], bump = lending_pool.bump)]
+    pub lending_pool: Option<Box<Account<'info, LendingPool>>>,
     /// The Pool-owned Intent counter (created on first use).
     #[account(
         init_if_needed,
@@ -7558,4 +7577,17 @@ pub struct InitLiquidatePoolCompDef<'info> {
     pub lut_program: UncheckedAccount<'info>,
     pub arcium_program: Program<'info, Arcium>,
     pub system_program: Program<'info, System>,
+}
+
+/// The WAD index the band circuit measures the Pool at: the LendingPool
+/// borrow index (1e9 lifted to WAD) when a LendingPool in band mode is passed,
+/// else the Asset State's accounting index (Task 7 behavior).
+fn band_circuit_index(asset: &AssetState, lending_pool: Option<&LendingPool>) -> Result<u128> {
+    match lending_pool {
+        Some(pool) if pool.rate_source == state::lending_pool::RATE_SOURCE_BAND => Ok(pool
+            .borrow_index_1e9
+            .checked_mul(math::WAD / math::lend::INDEX_SCALE)
+            .ok_or(ErrorCode::LendOpInvalid)?),
+        _ => Ok(asset.accounting_borrow_index),
+    }
 }

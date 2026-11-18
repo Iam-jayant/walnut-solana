@@ -284,6 +284,176 @@
       "args": []
     },
     {
+      "name": "abandon_private_op",
+      "docs": [
+        "Permissionless: abandons a queued private operation after Lock expiry."
+      ],
+      "discriminator": [
+        35,
+        236,
+        242,
+        132,
+        112,
+        2,
+        31,
+        45
+      ],
+      "accounts": [
+        {
+          "name": "signer",
+          "docs": [
+            "Any signer. Nothing moved at queue time, so nothing is refunded."
+          ],
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lending_pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_state",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "second_position",
+          "writable": true,
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "second_position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "second_position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The queued private operation; `state::private_op` checks it."
+          ],
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "abandon_recover_empty_pool",
       "docs": [
         "Permissionless: abandons a queued recovery after Lock expiry."
@@ -2982,6 +3152,54 @@
       ]
     },
     {
+      "name": "init_liquidate_pool_comp_def",
+      "docs": [
+        "Registers the `liquidate_pool` computation definition."
+      ],
+      "discriminator": [
+        90,
+        155,
+        62,
+        202,
+        221,
+        110,
+        178,
+        133
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mxe_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account",
+          "writable": true
+        },
+        {
+          "name": "address_lookup_table",
+          "writable": true
+        },
+        {
+          "name": "lut_program",
+          "address": "AddressLookupTab1e1111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "init_liquidation_receipts_comp_def",
       "docs": [
         "Registers the `liquidation_receipts` computation definition with the MXE."
@@ -3043,6 +3261,54 @@
         148,
         16,
         56
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mxe_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account",
+          "writable": true
+        },
+        {
+          "name": "address_lookup_table",
+          "writable": true
+        },
+        {
+          "name": "lut_program",
+          "address": "AddressLookupTab1e1111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_pool_op_comp_def",
+      "docs": [
+        "Registers the `pool_op` computation definition."
+      ],
+      "discriminator": [
+        205,
+        221,
+        204,
+        222,
+        114,
+        218,
+        232,
+        24
       ],
       "accounts": [
         {
@@ -3527,6 +3793,54 @@
         249,
         231,
         113
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "mxe_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account",
+          "writable": true
+        },
+        {
+          "name": "address_lookup_table",
+          "writable": true
+        },
+        {
+          "name": "lut_program",
+          "address": "AddressLookupTab1e1111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "init_position_private_comp_def",
+      "docs": [
+        "Registers the `position_private` computation definition."
+      ],
+      "discriminator": [
+        172,
+        148,
+        86,
+        147,
+        199,
+        116,
+        81,
+        161
       ],
       "accounts": [
         {
@@ -5337,6 +5651,497 @@
       ]
     },
     {
+      "name": "liquidate_pool",
+      "docs": [
+        "Permissionless private liquidation. The signer's own Position pays the",
+        "encrypted repay amount from its free USDC and receives the seized",
+        "lamports into its free SOL; the target's health is checked inside the",
+        "circuit. No token moves. Locks the Pool, the target and the",
+        "liquidator's Position and queues `liquidate_pool`."
+      ],
+      "discriminator": [
+        103,
+        99,
+        104,
+        13,
+        111,
+        32,
+        81,
+        115
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "The liquidator; signs, pays rent and the computation fee, and owns",
+            "`liquidator_position`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_state"
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_state",
+          "writable": true
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The target (borrower) Position of this Market."
+          ],
+          "writable": true
+        },
+        {
+          "name": "liquidator_position",
+          "docs": [
+            "The liquidator's own Position: pays the repay amount, receives the",
+            "seized collateral."
+          ],
+          "writable": true
+        },
+        {
+          "name": "operation_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "sequence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update",
+          "docs": [
+            "The Pyth `PriceUpdateV2` account (`lending_pool.oracle`)."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "sequence",
+          "type": "u64"
+        },
+        {
+          "name": "accrue_to_ts",
+          "type": "i64"
+        },
+        {
+          "name": "input_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "input_nonce",
+          "type": "u128"
+        },
+        {
+          "name": "input_ciphertexts",
+          "type": {
+            "array": [
+              {
+                "array": [
+                  "u8",
+                  32
+                ]
+              },
+              3
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "liquidate_pool_callback",
+      "docs": [
+        "Verifies the `liquidate_pool` output. `Applied` stores the Pool, the",
+        "target and the liquidator payloads and bumps all three generations."
+      ],
+      "discriminator": [
+        192,
+        37,
+        184,
+        170,
+        130,
+        244,
+        145,
+        150
+      ],
+      "accounts": [
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "computation_account"
+        },
+        {
+          "name": "cluster_account"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lending_pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "liquidator_position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "liquidator_position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "liquidator_position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The attempt's Operation Intent; `classify_callback` verifies it."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "output",
+          "type": {
+            "defined": {
+              "name": "SignedComputationOutputs",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": {
+                    "defined": {
+                      "name": "LiquidatePoolOutput"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "liquidation_receipts",
       "docs": [
         "Queues `liquidation_receipts`: one computation that reads a borrower and",
@@ -5743,6 +6548,497 @@
       ]
     },
     {
+      "name": "pool_op",
+      "docs": [
+        "Owner-signed private Pool operation: `op` 0 supply, 1 withdraw supply,",
+        "2 borrow, 3 repay. The amount and the share count arrive encrypted",
+        "(`input_*`); no argument, Intent field or event carries them. Accrues",
+        "the LendingPool to `accrue_to_ts`, reads the Pyth price for a borrow,",
+        "Locks the Pool and the Position and queues `pool_op`."
+      ],
+      "discriminator": [
+        89,
+        143,
+        112,
+        87,
+        95,
+        127,
+        99,
+        102
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "The Position owner; signs, pays rent and the computation fee."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_state",
+          "docs": [
+            "Risk parameters, caps and pauses."
+          ]
+        },
+        {
+          "name": "lending_pool",
+          "docs": [
+            "The public index authority; accrued at queue time."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_state",
+          "docs": [
+            "The encrypted Pool; Locked by this operation."
+          ],
+          "writable": true
+        },
+        {
+          "name": "position",
+          "docs": [
+            "Locked by this operation."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "sequence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update",
+          "docs": [
+            "The Pyth `PriceUpdateV2` account (`lending_pool.oracle`); read for a",
+            "borrow, any account otherwise."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "sequence",
+          "type": "u64"
+        },
+        {
+          "name": "op",
+          "type": "u8"
+        },
+        {
+          "name": "accrue_to_ts",
+          "type": "i64"
+        },
+        {
+          "name": "input_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "input_nonce",
+          "type": "u128"
+        },
+        {
+          "name": "input_ciphertexts",
+          "type": {
+            "array": [
+              {
+                "array": [
+                  "u8",
+                  32
+                ]
+              },
+              2
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "pool_op_callback",
+      "docs": [
+        "Verifies the `pool_op` output. `Applied` stores the Pool and Position",
+        "payloads and bumps both generations; anything else stores nothing and",
+        "releases both Locks. Only the `applied` bit is public."
+      ],
+      "discriminator": [
+        63,
+        45,
+        225,
+        51,
+        219,
+        6,
+        94,
+        240
+      ],
+      "accounts": [
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "computation_account"
+        },
+        {
+          "name": "cluster_account"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lending_pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_state",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  111,
+                  108,
+                  95,
+                  115,
+                  116,
+                  97,
+                  116,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The attempt's Operation Intent; `classify_callback` verifies it."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "output",
+          "type": {
+            "defined": {
+              "name": "SignedComputationOutputs",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": {
+                    "defined": {
+                      "name": "PoolOpOutput"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
       "name": "position_op",
       "docs": [
         "Owner-signed demo operation on the encrypted Position: `op` 0 add",
@@ -6097,6 +7393,450 @@
                   "type": {
                     "defined": {
                       "name": "PositionOpOutput"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "position_private",
+      "docs": [
+        "Owner-signed private collateral operation: `op` 0 add collateral, 1",
+        "withdraw collateral. The lamport amount arrives encrypted. Reads the",
+        "Pyth price for a withdrawal, Locks the Position and queues",
+        "`position_private`."
+      ],
+      "discriminator": [
+        133,
+        4,
+        62,
+        64,
+        56,
+        69,
+        174,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "payer",
+          "docs": [
+            "The Position owner; signs, pays rent and the computation fee."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "sign_pda_account",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  65,
+                  114,
+                  99,
+                  105,
+                  117,
+                  109,
+                  83,
+                  105,
+                  103,
+                  110,
+                  101,
+                  114,
+                  65,
+                  99,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "mempool_account",
+          "writable": true
+        },
+        {
+          "name": "executing_pool",
+          "writable": true
+        },
+        {
+          "name": "computation_account",
+          "writable": true
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "cluster_account",
+          "writable": true
+        },
+        {
+          "name": "pool_account",
+          "writable": true,
+          "address": "G2sRWJvi3xoyh5k2gY49eG9L8YhAEWQPtNb1zb1GXTtC"
+        },
+        {
+          "name": "clock_account",
+          "writable": true,
+          "address": "7EbMUTLo5DjdzbN7s8BXeZwXzEwNQb1hScfRvWg8a6ot"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_state"
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_counter",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  99,
+                  111,
+                  117,
+                  110,
+                  116,
+                  101,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  111,
+                  112,
+                  101,
+                  114,
+                  97,
+                  116,
+                  105,
+                  111,
+                  110,
+                  95,
+                  105,
+                  110,
+                  116,
+                  101,
+                  110,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "payer"
+              },
+              {
+                "kind": "arg",
+                "path": "sequence"
+              }
+            ]
+          }
+        },
+        {
+          "name": "price_update",
+          "docs": [
+            "The Pyth `PriceUpdateV2` account; read for a withdrawal."
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        }
+      ],
+      "args": [
+        {
+          "name": "computation_offset",
+          "type": "u64"
+        },
+        {
+          "name": "sequence",
+          "type": "u64"
+        },
+        {
+          "name": "op",
+          "type": "u8"
+        },
+        {
+          "name": "accrue_to_ts",
+          "type": "i64"
+        },
+        {
+          "name": "input_pubkey",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "input_nonce",
+          "type": "u128"
+        },
+        {
+          "name": "input_ciphertexts",
+          "type": {
+            "array": [
+              {
+                "array": [
+                  "u8",
+                  32
+                ]
+              },
+              2
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "name": "position_private_callback",
+      "docs": [
+        "Verifies the `position_private` output (see `pool_op_callback`)."
+      ],
+      "discriminator": [
+        143,
+        166,
+        61,
+        46,
+        75,
+        214,
+        223,
+        139
+      ],
+      "accounts": [
+        {
+          "name": "arcium_program",
+          "address": "Arcj82pX7HxYKLR92qvgZUAd7vGS1k4hQvAFcPATFdEQ"
+        },
+        {
+          "name": "comp_def_account"
+        },
+        {
+          "name": "mxe_account"
+        },
+        {
+          "name": "computation_account"
+        },
+        {
+          "name": "cluster_account"
+        },
+        {
+          "name": "instructions_sysvar",
+          "address": "Sysvar1nstructions1111111111111111111111111"
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "lending_pool",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "position.market",
+                "account": "Position"
+              },
+              {
+                "kind": "account",
+                "path": "position.owner",
+                "account": "Position"
+              }
+            ]
+          }
+        },
+        {
+          "name": "operation_intent",
+          "docs": [
+            "The attempt's Operation Intent; `classify_callback` verifies it."
+          ],
+          "writable": true
+        }
+      ],
+      "args": [
+        {
+          "name": "output",
+          "type": {
+            "defined": {
+              "name": "SignedComputationOutputs",
+              "generics": [
+                {
+                  "kind": "type",
+                  "type": {
+                    "defined": {
+                      "name": "PositionPrivateOutput"
                     }
                   }
                 }
@@ -8617,6 +10357,91 @@
       ]
     },
     {
+      "name": "set_lending_rate_source",
+      "docs": [
+        "Admin: switches the LendingPool rate source (0 public totals, 1",
+        "utilization band of the encrypted Pool)."
+      ],
+      "discriminator": [
+        166,
+        148,
+        219,
+        70,
+        207,
+        147,
+        188,
+        183
+      ],
+      "accounts": [
+        {
+          "name": "admin",
+          "docs": [
+            "The Market admin."
+          ],
+          "signer": true
+        },
+        {
+          "name": "market",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "asset_state",
+          "docs": [
+            "Risk and rate parameters and the last revealed utilization band."
+          ]
+        },
+        {
+          "name": "lending_pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": [
+        {
+          "name": "rate_source",
+          "type": "u8"
+        }
+      ]
+    },
+    {
       "name": "set_pause",
       "docs": [
         "Risk-authority-signed: sets (`paused`) or clears durable pause bits."
@@ -10414,6 +12239,39 @@
           }
         },
         {
+          "name": "lending_pool",
+          "docs": [
+            "Optional (ADR-0004): when present and in band mode, the band is measured",
+            "at its borrow index instead of the Asset State's accounting index."
+          ],
+          "optional": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  108,
+                  101,
+                  110,
+                  100,
+                  105,
+                  110,
+                  103,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
           "name": "operation_counter",
           "docs": [
             "The Pool-owned Intent counter (created on first use)."
@@ -11075,6 +12933,19 @@
       ]
     },
     {
+      "name": "LendingRateSourceSet",
+      "discriminator": [
+        61,
+        197,
+        188,
+        36,
+        28,
+        155,
+        132,
+        167
+      ]
+    },
+    {
       "name": "LiquidationApplied",
       "discriminator": [
         36,
@@ -11293,6 +13164,45 @@
         241,
         179,
         190
+      ]
+    },
+    {
+      "name": "PrivateOpAbandoned",
+      "discriminator": [
+        187,
+        54,
+        105,
+        240,
+        228,
+        65,
+        161,
+        200
+      ]
+    },
+    {
+      "name": "PrivateOpQueued",
+      "discriminator": [
+        97,
+        117,
+        166,
+        122,
+        104,
+        242,
+        165,
+        69
+      ]
+    },
+    {
+      "name": "PrivateOpSettled",
+      "discriminator": [
+        134,
+        25,
+        8,
+        122,
+        237,
+        176,
+        11,
+        69
       ]
     },
     {
@@ -12571,6 +14481,31 @@
       "code": 6176,
       "name": "DisclosureAuditorMismatch",
       "msg": "The disclosure output is not sealed to the committed auditor key"
+    },
+    {
+      "code": 6177,
+      "name": "PrivateOpInvalid",
+      "msg": "The private operation code is not valid for this instruction"
+    },
+    {
+      "code": 6178,
+      "name": "PrivateAccrualTimeInvalid",
+      "msg": "The accrual timestamp is in the future, too old, or before the last accrual"
+    },
+    {
+      "code": 6179,
+      "name": "PrivateOpIntentMismatch",
+      "msg": "The Operation Intent is not this private operation"
+    },
+    {
+      "code": 6180,
+      "name": "PrivateLiquidationSelf",
+      "msg": "The liquidator cannot liquidate its own Position"
+    },
+    {
+      "code": 6181,
+      "name": "PrivateInputKeyInvalid",
+      "msg": "The encrypted input key must not be all zero"
     }
   ],
   "types": [
@@ -15149,6 +17084,13 @@
             "type": "u64"
           },
           {
+            "name": "rate_source",
+            "docs": [
+              "[`RATE_SOURCE_TOTALS`] or [`RATE_SOURCE_BAND`]."
+            ],
+            "type": "u8"
+          },
+          {
             "name": "reserved",
             "docs": [
               "Reserved for later layout additions."
@@ -15156,7 +17098,7 @@
             "type": {
               "array": [
                 "u8",
-                64
+                63
               ]
             }
           }
@@ -15210,6 +17152,111 @@
           {
             "name": "slot",
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LendingRateSourceSet",
+      "docs": [
+        "Emitted by `set_lending_rate_source` (admin, ADR-0004)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "lending_pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "previous",
+            "type": "u8"
+          },
+          {
+            "name": "rate_source",
+            "type": "u8"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidatePoolOutput",
+      "docs": [
+        "The output of the callback instruction. Provided as a struct with ordered fields",
+        "as anchor does not support tuples and tuple structs yet."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "LiquidatePoolOutputStruct0"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidatePoolOutputStruct0",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "MXEEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "4"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_1",
+            "type": {
+              "defined": {
+                "name": "SharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "5"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_2",
+            "type": {
+              "defined": {
+                "name": "SharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "5"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_3",
+            "type": "bool"
           }
         ]
       }
@@ -16326,6 +18373,15 @@
           },
           {
             "name": "Disclose"
+          },
+          {
+            "name": "PoolOp"
+          },
+          {
+            "name": "PositionPrivate"
+          },
+          {
+            "name": "LiquidatePool"
           }
         ]
       }
@@ -16779,6 +18835,66 @@
           },
           {
             "name": "Refunded"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PoolOpOutput",
+      "docs": [
+        "The output of the callback instruction. Provided as a struct with ordered fields",
+        "as anchor does not support tuples and tuple structs yet."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "PoolOpOutputStruct0"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PoolOpOutputStruct0",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "MXEEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "4"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_1",
+            "type": {
+              "defined": {
+                "name": "SharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "5"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_2",
+            "type": "bool"
           }
         ]
       }
@@ -17581,6 +19697,52 @@
       }
     },
     {
+      "name": "PositionPrivateOutput",
+      "docs": [
+        "The output of the callback instruction. Provided as a struct with ordered fields",
+        "as anchor does not support tuples and tuple structs yet."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "PositionPrivateOutputStruct0"
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name": "PositionPrivateOutputStruct0",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "field_0",
+            "type": {
+              "defined": {
+                "name": "SharedEncryptedStruct",
+                "generics": [
+                  {
+                    "kind": "const",
+                    "value": "5"
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "name": "field_1",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
       "name": "PositionStateStored",
       "docs": [
         "Emitted by the Task 2.2 Position callbacks when a new encrypted revision is",
@@ -17641,6 +19803,150 @@
           },
           {
             "name": "InitFailed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PrivateOpAbandoned",
+      "docs": [
+        "Emitted by the abandonment of a private operation after Lock expiry."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "second_position",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "signer",
+            "type": "pubkey"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PrivateOpQueued",
+      "docs": [
+        "Emitted when a private operation is queued. `kind` is the Intent kind tag",
+        "and `op` the public operation code; amounts stay encrypted."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "type": "pubkey"
+          },
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "second_position",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "payer",
+            "type": "pubkey"
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "op",
+            "type": "u64"
+          },
+          {
+            "name": "computation_offset",
+            "type": "u64"
+          },
+          {
+            "name": "decision_expiry_slot",
+            "type": "u64"
+          },
+          {
+            "name": "lock_expiry_slot",
+            "type": "u64"
+          },
+          {
+            "name": "slot",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PrivateOpSettled",
+      "docs": [
+        "Emitted by a private operation callback. `applied` is the one revealed bit."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "position",
+            "type": "pubkey"
+          },
+          {
+            "name": "second_position",
+            "type": {
+              "option": "pubkey"
+            }
+          },
+          {
+            "name": "operation_intent",
+            "type": "pubkey"
+          },
+          {
+            "name": "kind",
+            "type": "u8"
+          },
+          {
+            "name": "op",
+            "type": "u64"
+          },
+          {
+            "name": "applied",
+            "type": "bool"
+          },
+          {
+            "name": "intent_status",
+            "type": {
+              "defined": {
+                "name": "IntentStatus"
+              }
+            }
+          },
+          {
+            "name": "slot",
+            "type": "u64"
           }
         ]
       }
