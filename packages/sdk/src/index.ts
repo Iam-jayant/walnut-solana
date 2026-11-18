@@ -20,3 +20,4 @@ export * from "./position-op.ts";
 export * from "./lend-op.ts";
 export * from "./lending-pool.ts";
 export * from "./disclosure.ts";
+export * from "./private-op.ts";
