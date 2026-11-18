@@ -6,16 +6,32 @@ import { BN, type Program } from "@anchor-lang/core";
 import { Buffer } from "buffer";
 import {
   buildAbandonLendOpInstruction,
+  buildAbandonPrivateOpInstruction,
   buildCheckHealthInstruction,
   buildDiscloseInstruction,
   buildLendOpInstruction,
   buildLiquidateInstruction,
+  buildLiquidatePoolInstruction,
+  buildPoolOpInstruction,
+  buildPositionPrivateInstruction,
   buildRotatePositionKeyInstruction,
   buildUnwrapWsolInstruction,
+  chooseAccrualTs,
   deriveArciumQueueAccounts,
   deriveIntentPda,
   deriveOperationCounterPda,
+  derivePoolStatePda,
+  encryptPrivateInput,
+  fullRepayAmountPrivate,
+  INDEX_SCALE,
+  liquidationConversionHolds,
+  liquidationInputs,
+  poolOpConversionHolds,
+  PoolOp,
+  poolOpShares,
+  projectIndexesAuto,
   rotateViewingKey,
+  type CollateralOp,
   type LendOp,
   type PositionBalances,
   type ViewingKeyMaterial,
@@ -33,7 +49,10 @@ import walnutIdl from "./idl/walnut.json";
 import {
   ATA_PROGRAM_ID,
   ataAddress,
+  chainNowSeconds,
   fetchAccount,
+  fetchPoolLowPrice,
+  loadLendingView,
   method,
   pendingShieldAddress,
   positionAddress,
@@ -132,6 +151,15 @@ const ERROR_TEXT: Record<number, string> = {
   6174: "Choose at least one field to disclose.",
   6175: "That disclosure is not pending for this account.",
   6176: "The disclosure was not sealed to the requested auditor key.",
+  6135:
+    "The utilization band is out of date, so borrowing is paused until it is refreshed." +
+    RETRY,
+  6136: "The utilization band has not been observed yet, so borrowing is not available yet.",
+  6177: "That private operation is not valid here.",
+  6178: "The accrual time is out of the accepted window. Refresh and try again.",
+  6179: "The private operation does not match its intent. Refresh and try again.",
+  6180: "You cannot liquidate your own account.",
+  6181: "The encrypted input key is invalid. Please try again.",
 };
 
 /** The program error code inside an RPC or simulation error text, if any. */
@@ -690,6 +718,263 @@ export async function lendOp(
   return result.outcome;
 }
 
+// ------------------------------------------------- private operations (P.7)
+
+const NOT_APPLIED =
+  "Not applied, nothing moved. The MPC circuit refused this amount. Check your balances and try again.";
+
+/** Indexes and accrual time both sides of a private operation agree on. */
+interface PrivateAccrual {
+  view: LendingView;
+  accrueToTs: bigint;
+  supplyIndex: bigint;
+  borrowIndex: bigint;
+}
+
+/**
+ * Re-reads the LendingPool and the cluster clock, picks `accrue_to_ts` from
+ * the cluster time (never the browser clock) and projects the indexes to it.
+ */
+async function prepareAccrual(
+  ctx: OpsContext,
+  fallback: LendingView,
+): Promise<PrivateAccrual> {
+  const view = (await loadLendingView(ctx, ctx.protocol)) ?? fallback;
+  const now = await chainNowSeconds(ctx.connection);
+  const accrueToTs = chooseAccrualTs(view.pool.lastAccrualTs, now);
+  const projected = projectIndexesAuto(view.pool, accrueToTs, {
+    reserveFactorBps: ctx.protocol.reserveFactorBps,
+    rates: ctx.protocol.rates,
+    band: view.band,
+  });
+  return {
+    view,
+    accrueToTs,
+    supplyIndex: projected.supplyIndex1e9,
+    borrowIndex: projected.borrowIndex1e9,
+  };
+}
+
+/**
+ * Supply, withdraw supply, borrow or repay with an encrypted amount
+ * (`pool_op`). The amount and its share count are encrypted to the MXE; only
+ * the `applied` bit of the result is public.
+ */
+export async function privatePoolOp(
+  ctx: OpsContext,
+  lending: LendingView,
+  op: PoolOp,
+  label: string,
+  amount: bigint,
+  report: Report,
+  /**
+   * The owned share count for repay and withdraw supply. The indexes at the
+   * accrual time can sit a little below the displayed ones, so a "max" amount
+   * is trimmed to burn exactly this many shares instead of more.
+   */
+  shareCap?: bigint,
+): Promise<OpOutcome> {
+  const owner = ctx.signer.publicKey;
+  const { market, marketAddress } = ctx.protocol;
+  const result = await runQueued(
+    ctx,
+    label,
+    async ({ sequence, offset }) => {
+      const a = await prepareAccrual(ctx, lending);
+      let value = amount;
+      let shares = poolOpShares(op, value, a.supplyIndex, a.borrowIndex);
+      if (shareCap !== undefined && shares > shareCap) {
+        if (op === PoolOp.Repay) {
+          const trimmed = fullRepayAmountPrivate(shareCap, a.borrowIndex);
+          if (trimmed <= value) value = trimmed;
+        } else if (op === PoolOp.WithdrawSupply) {
+          value = (shareCap * a.supplyIndex) / INDEX_SCALE;
+        }
+        shares = poolOpShares(op, value, a.supplyIndex, a.borrowIndex);
+      }
+      if (
+        shares <= 0n ||
+        !poolOpConversionHolds(op, value, shares, a.supplyIndex, a.borrowIndex)
+      ) {
+        throw new Error("That amount is too small to register.");
+      }
+      const input = encryptPrivateInput(ctx.protocol.mxePublicKey, [
+        value,
+        shares,
+      ]);
+      return [
+        await buildPoolOpInstruction({
+          program: ctx.program,
+          signer: owner,
+          market: marketAddress,
+          assetState: market.assetState,
+          sequence: BigInt(sequence.toString()),
+          computationOffset: offset,
+          clusterOffset: CLUSTER_OFFSET,
+          priceUpdate: a.view.pool.oracle,
+          accrueToTs: a.accrueToTs,
+          input,
+          op,
+        }),
+      ];
+    },
+    report,
+    { rejectedDetail: NOT_APPLIED },
+  );
+  return result.outcome;
+}
+
+/** Adds or removes SOL collateral with an encrypted amount (`position_private`). */
+export async function privateCollateral(
+  ctx: OpsContext,
+  lending: LendingView,
+  op: CollateralOp,
+  label: string,
+  lamports: bigint,
+  report: Report,
+): Promise<OpOutcome> {
+  const owner = ctx.signer.publicKey;
+  const { market, marketAddress } = ctx.protocol;
+  const result = await runQueued(
+    ctx,
+    label,
+    async ({ sequence, offset }) => {
+      const a = await prepareAccrual(ctx, lending);
+      const input = encryptPrivateInput(ctx.protocol.mxePublicKey, [
+        lamports,
+        0n,
+      ]);
+      return [
+        await buildPositionPrivateInstruction({
+          program: ctx.program,
+          signer: owner,
+          market: marketAddress,
+          assetState: market.assetState,
+          sequence: BigInt(sequence.toString()),
+          computationOffset: offset,
+          clusterOffset: CLUSTER_OFFSET,
+          priceUpdate: a.view.pool.oracle,
+          accrueToTs: a.accrueToTs,
+          input,
+          op,
+        }),
+      ];
+    },
+    report,
+    { rejectedDetail: NOT_APPLIED },
+  );
+  return result.outcome;
+}
+
+/** The SOL a liquidation of `usdcAmount` seizes, at the current indexes and price. */
+export async function estimateSeize(
+  ctx: Pick<OpsContext, "connection" | "protocol">,
+  lending: LendingView,
+  usdcAmount: bigint,
+): Promise<bigint> {
+  const now = await chainNowSeconds(ctx.connection);
+  const accrueToTs = chooseAccrualTs(lending.pool.lastAccrualTs, now);
+  const projected = projectIndexesAuto(lending.pool, accrueToTs, {
+    reserveFactorBps: ctx.protocol.reserveFactorBps,
+    rates: ctx.protocol.rates,
+    band: lending.band,
+  });
+  const price = await fetchPoolLowPrice(ctx.connection, lending.pool.oracle);
+  return liquidationInputs(
+    usdcAmount,
+    projected.borrowIndex1e9,
+    price,
+    ctx.protocol.liquidationBonusBps,
+  ).seize;
+}
+
+/**
+ * The borrower Position for an owner address, or the address itself when it
+ * already is an active Position.
+ */
+async function resolveTargetPosition(
+  ctx: OpsContext,
+  ownerOrPosition: PublicKey,
+): Promise<PublicKey> {
+  const byOwner = positionAddress(ownerOrPosition);
+  const owned = await fetchAccount<PositionAccount>(
+    ctx.program,
+    "position",
+    byOwner,
+  );
+  if (owned !== null && variantName(owned.status) === "active") return byOwner;
+  const direct = await fetchAccount<PositionAccount>(
+    ctx.program,
+    "position",
+    ownerOrPosition,
+  );
+  if (direct !== null && variantName(direct.status) === "active") {
+    return ownerOrPosition;
+  }
+  throw new Error("No active private account was found for that address.");
+}
+
+/**
+ * Liquidates a borrower with an encrypted amount (`liquidate_pool`). The
+ * signer repays from its own free USDC and receives the seized SOL into its
+ * own Position; nothing is transferred publicly.
+ */
+export async function privateLiquidate(
+  ctx: OpsContext,
+  lending: LendingView,
+  targetOwnerOrPosition: PublicKey,
+  usdcAmount: bigint,
+  report: Report,
+): Promise<LiquidationResult> {
+  const owner = ctx.signer.publicKey;
+  const { market, marketAddress } = ctx.protocol;
+  const target = await resolveTargetPosition(ctx, targetOwnerOrPosition);
+  if (target.equals(positionAddress(owner))) {
+    throw new Error("You cannot liquidate your own account.");
+  }
+  const result = await runQueued(
+    ctx,
+    "Liquidate",
+    async ({ sequence, offset }) => {
+      const a = await prepareAccrual(ctx, lending);
+      const price = await fetchPoolLowPrice(ctx.connection, a.view.pool.oracle);
+      const bonus = ctx.protocol.liquidationBonusBps;
+      const inputs = liquidationInputs(usdcAmount, a.borrowIndex, price, bonus);
+      if (!liquidationConversionHolds(inputs, a.borrowIndex, price, bonus)) {
+        throw new Error("That amount is too small to register.");
+      }
+      const input = encryptPrivateInput(ctx.protocol.mxePublicKey, [
+        inputs.amount,
+        inputs.burnShares,
+        inputs.seize,
+      ]);
+      return [
+        await buildLiquidatePoolInstruction({
+          program: ctx.program,
+          signer: owner,
+          market: marketAddress,
+          assetState: market.assetState,
+          sequence: BigInt(sequence.toString()),
+          computationOffset: offset,
+          clusterOffset: CLUSTER_OFFSET,
+          priceUpdate: a.view.pool.oracle,
+          accrueToTs: a.accrueToTs,
+          input,
+          target,
+        }),
+      ];
+    },
+    report,
+    {
+      rejectedDetail:
+        "Not applied, nothing moved. The position is healthy, or the amount is above what can be repaid at once, or the price moved.",
+    },
+  );
+  // A queued private liquidation holds the signer's own Position Lock; it is
+  // released from the stuck-operation notice, not from a pending record.
+  return { outcome: result.outcome, pending: null };
+}
+
 /** Why a borrower address cannot be checked or liquidated, or null. */
 async function borrowerPosition(
   ctx: OpsContext,
@@ -965,6 +1250,10 @@ export interface StuckOperation {
   secondsLeft: number;
   /** The abandon instruction for this kind exists. */
   supported: boolean;
+  /** Primary Position of a private operation (the liquidation target). */
+  position: PublicKey | null;
+  /** The liquidator's Position of a private liquidation. */
+  secondPosition: PublicKey | null;
 }
 
 const ABANDON_BY_KIND: Record<string, string> = {
@@ -975,6 +1264,9 @@ const ABANDON_BY_KIND: Record<string, string> = {
   positionInit: "abandonPositionInit",
   viewingKeyRotation: "abandonRotation",
   disclose: "abandonDisclosure",
+  poolOp: "abandonPrivateOp",
+  positionPrivate: "abandonPrivateOp",
+  liquidatePool: "abandonPrivateOp",
 };
 
 const KIND_LABEL: Record<string, string> = {
@@ -985,7 +1277,17 @@ const KIND_LABEL: Record<string, string> = {
   positionInit: "account setup",
   viewingKeyRotation: "Viewing Key rotation",
   disclose: "disclosure",
+  poolOp: "private supply, withdrawal, borrow or repay",
+  positionPrivate: "private collateral change",
+  liquidatePool: "private liquidation",
 };
+
+/** Intent kinds of the encrypted-amount operations (ADR-0004). */
+function isPrivateKind(kind: string): boolean {
+  return (
+    kind === "poolOp" || kind === "positionPrivate" || kind === "liquidatePool"
+  );
+}
 
 export function kindLabel(kind: string): string {
   return KIND_LABEL[kind] ?? kind;
@@ -1009,7 +1311,9 @@ export async function findStuckOperation(
   const expirySlot = Number(lock.expirySlot.toString());
   // A liquidation queued by someone else needs that liquidator's accounts to
   // release, so only the owner's own lending operations can be released here.
-  const releasable = kind !== "lendOp" || intent.payer.equals(position.owner);
+  const releasable =
+    (kind !== "lendOp" && kind !== "liquidatePool") ||
+    intent.payer.equals(position.owner);
   return {
     intent: lock.operationIntent,
     kind,
@@ -1017,6 +1321,8 @@ export async function findStuckOperation(
     expired: slot > expirySlot,
     secondsLeft: slot > expirySlot ? 0 : Math.ceil((expirySlot - slot) * 0.4),
     supported: ABANDON_BY_KIND[kind] !== undefined && releasable,
+    position: intent.position ?? null,
+    secondPosition: intent.secondPosition ?? null,
   };
 }
 
@@ -1031,7 +1337,27 @@ export async function abandonStuck(
   if (name === undefined) throw new Error("This operation cannot be abandoned");
   const owner = ctx.signer.publicKey;
   let instruction: TransactionInstruction;
-  if (stuck.kind === "lendOp") {
+  if (isPrivateKind(stuck.kind)) {
+    const own = positionAddress(owner);
+    instruction = await buildAbandonPrivateOpInstruction({
+      program: ctx.program,
+      signer: owner,
+      market: ctx.protocol.marketAddress,
+      position: stuck.kind === "liquidatePool" ? (stuck.position ?? own) : own,
+      operationIntent: stuck.intent,
+      ...(stuck.kind !== "positionPrivate"
+        ? {
+            poolState: derivePoolStatePda(
+              PROGRAM_ID,
+              ctx.protocol.marketAddress,
+            ),
+          }
+        : {}),
+      ...(stuck.kind === "liquidatePool"
+        ? { secondPosition: stuck.secondPosition ?? own }
+        : {}),
+    });
+  } else if (stuck.kind === "lendOp") {
     instruction = await buildAbandonLendOpInstruction({
       program: ctx.program,
       signer: owner,
