@@ -12,7 +12,7 @@ import { readFileSync } from 'fs';
 import { homedir } from 'os';
 
 async function main() {
-  const programId = new PublicKey('5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea');
+  const programId = new PublicKey('AWEGaPVJwaCkrzraWNxGQDtH2k6NdUYL8xJDBAkLakUn');
   const clusterOffset = 456;
   const rpcUrl = process.env.RPC_URL ?? process.env.ANCHOR_PROVIDER_URL ?? 'https://api.devnet.solana.com';
 

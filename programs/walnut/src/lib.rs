@@ -154,7 +154,7 @@ const COMP_DEF_OFFSET_POOL_BAND: u32 = comp_def_offset("pool_band");
 /// PDA seed for the Task 2.2 `SpikePosition` account: one per owner.
 const POSITION_SEED: &[u8] = b"spike_position";
 
-declare_id!("5Qyybr5DfcVezNa7tQwUx7sEwNdArqAKv9R3fy9o6vqc");
+declare_id!("AWEGaPVJwaCkrzraWNxGQDtH2k6NdUYL8xJDBAkLakUn");
 
 #[arcium_program]
 pub mod walnut {
