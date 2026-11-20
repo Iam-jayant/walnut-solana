@@ -183,6 +183,7 @@ export interface AssetStateAccount {
     slope1Bps: number;
     slope2Bps: number;
     optimalUtilizationBps: number;
+    bandMaxAgeSlots?: BN | number;
   };
   caps: { positionDebtCapUsdc: BN };
   /** Latest revealed utilization band (5% steps, 0 to 19). */
