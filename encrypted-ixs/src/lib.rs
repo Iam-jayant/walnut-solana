@@ -691,7 +691,7 @@ mod circuits {
     pub fn pool_op(
         pool: Enc<Mxe, PoolSecret>,
         state: Enc<Shared, PositionSecret>,
-        input: Enc<Shared, OpInput>,
+        input: Enc<Mxe, OpInput>,
         owner: Shared,
         op: u64,
         supply_index_1e9: u64,
@@ -787,7 +787,7 @@ mod circuits {
         pool: Enc<Mxe, PoolSecret>,
         target: Enc<Shared, PositionSecret>,
         liquidator: Enc<Shared, PositionSecret>,
-        input: Enc<Shared, LiqInput>,
+        input: Enc<Mxe, LiqInput>,
         target_owner: Shared,
         liquidator_owner: Shared,
         borrow_index_1e9: u64,
