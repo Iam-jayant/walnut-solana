@@ -16,10 +16,12 @@ import {
   buildPositionPrivateInstruction,
   buildRotatePositionKeyInstruction,
   buildUnwrapWsolInstruction,
+  buildUpdatePoolBandInstruction,
   chooseAccrualTs,
   deriveArciumQueueAccounts,
   deriveIntentPda,
   deriveOperationCounterPda,
+  derivePoolCounterPda,
   derivePoolStatePda,
   encryptPrivateInput,
   fullRepayAmountPrivate,
@@ -152,8 +154,7 @@ const ERROR_TEXT: Record<number, string> = {
   6175: "That disclosure is not pending for this account.",
   6176: "The disclosure was not sealed to the requested auditor key.",
   6135:
-    "The utilization band is out of date, so borrowing is paused until it is refreshed." +
-    RETRY,
+    "The utilization band is refreshing. Please try again in a few seconds.",
   6136: "The utilization band has not been observed yet, so borrowing is not available yet.",
   6177: "That private operation is not valid here.",
   6178: "The accrual time is out of the accepted window. Refresh and try again.",
@@ -756,6 +757,91 @@ async function prepareAccrual(
 }
 
 /**
+ * Permissionless utilization band refresh: updates the rate curve for confidential borrows.
+ * Tries the serverless Next.js API keeper first, then falls back to signing with the connected wallet.
+ */
+export async function refreshPoolBand(
+  ctx: OpsContext,
+  report?: Report,
+): Promise<void> {
+  report?.({ stage: "computing", detail: "Checking rate curve status..." });
+  try {
+    const res = await fetch("/api/band/refresh?force=1", { method: "POST" });
+    if (res.ok) {
+      const data = await res.json();
+      if (data.success && data.refreshed) {
+        report?.({
+          stage: "applied",
+          detail: "Rate curve refreshed by network keeper.",
+        });
+        return;
+      }
+    }
+  } catch {
+    // API route unavailable, fallback to direct wallet signing
+  }
+
+  report?.({
+    stage: "signing",
+    detail: "Queueing utilization band update with Arcium MPC...",
+  });
+  const { market, marketAddress } = ctx.protocol;
+  const poolState = derivePoolStatePda(ctx.program.programId, marketAddress);
+  const poolCounter = derivePoolCounterPda(ctx.program.programId, poolState);
+  const counter = await fetchAccount<OperationCounterAccount>(
+    ctx.program,
+    "operationCounter",
+    poolCounter,
+  );
+  const sequence = BigInt(counter?.nextSequence?.toString() ?? 0);
+  const offset = BigInt(Math.floor(Math.random() * 2 ** 48));
+
+  const instruction = await buildUpdatePoolBandInstruction({
+    program: ctx.program,
+    payer: ctx.signer.publicKey,
+    market: marketAddress,
+    assetState: market.assetState,
+    poolState,
+    sequence,
+    computationOffset: offset,
+    clusterOffset: CLUSTER_OFFSET,
+  });
+
+  await sendTransaction(ctx, [instruction], {
+    computeUnits: QUEUE_COMPUTE_UNITS,
+    onSubmitted: (sig) =>
+      report?.({
+        stage: "submitted",
+        signature: sig,
+        detail: "Band update queued, awaiting Arcium callback...",
+      }),
+  });
+
+  report?.({
+    stage: "computing",
+    detail: "Awaiting Arcium MPC callback...",
+  });
+
+  const intent = deriveIntentPda(ctx.program.programId, poolState, sequence);
+  for (let i = 0; i < 20; i++) {
+    await sleep(1500);
+    const intentAcc = await fetchAccount<IntentAccount>(
+      ctx.program,
+      "operationIntent",
+      intent,
+    );
+    const status = intentAcc ? variantName(intentAcc.status) : "missing";
+    if (status === "applied") {
+      report?.({
+        stage: "applied",
+        detail: "Rate curve refreshed successfully!",
+      });
+      return;
+    }
+  }
+}
+
+/**
  * Supply, withdraw supply, borrow or repay with an encrypted amount
  * (`pool_op`). The amount and its share count are encrypted to the MXE; only
  * the `applied` bit of the result is public.
@@ -776,6 +862,26 @@ export async function privatePoolOp(
 ): Promise<OpOutcome> {
   const owner = ctx.signer.publicKey;
   const { market, marketAddress } = ctx.protocol;
+
+  // Auto-refresh rate curve if borrowing and band is approaching expiry (>6000 slots old)
+  if (op === PoolOp.Borrow) {
+    try {
+      const currentSlot = await ctx.connection.getSlot("confirmed");
+      const bandAge = Math.max(0, currentSlot - lending.bandObservationSlot);
+      if (bandAge >= 6000) {
+        report?.({
+          stage: "computing",
+          detail: `Utilization band is ${bandAge} slots old. Refreshing rate curve before borrowing...`,
+        });
+        await refreshPoolBand(ctx, report);
+        const refreshed = await loadLendingView(ctx, ctx.protocol);
+        if (refreshed) lending = refreshed;
+      }
+    } catch (e) {
+      console.warn("Auto-refresh band check encountered:", e);
+    }
+  }
+
   const result = await runQueued(
     ctx,
     label,
