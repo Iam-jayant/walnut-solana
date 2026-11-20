@@ -112,7 +112,7 @@ const ATA_PROGRAM_ID = new PublicKey(
 
 // Amounts are deliberately "odd" so a decimal or byte match in a transaction
 // cannot be a coincidence.
-const SUPPLY_USDC = 5_234_567n; // lender supplies 5.234567 test USDC
+const SUPPLY_USDC = process.env.SUPPLY_AMOUNT ? BigInt(process.env.SUPPLY_AMOUNT) : 5_234_567n; // lender supplies test USDC
 const COLLATERAL_LAMPORTS = 187_654_321n; // borrower collateral
 const BORROW_MAX = 3_000_007n; // borrower borrows up to ~3 USDC
 const BORROW_PERCENT = 50n; // of the LTV capacity at the current price
@@ -1906,6 +1906,10 @@ async function main(): Promise<void> {
   log(`deployer ${ctx.payer.publicKey.toBase58()}`);
   await demo.setup();
   await demo.lenderPrivateSupply();
+  if (process.env.SEED_ONLY === "1") {
+    log("Seeded pool successfully! Exiting.");
+    process.exit(0);
+  }
   await demo.borrowerPrivateCollateral();
   await demo.borrowerPrivateBorrow();
   await demo.privacyStep();
