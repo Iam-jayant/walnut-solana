@@ -65,6 +65,7 @@ import {
   privateCollateral,
   privateLiquidate,
   privatePoolOp,
+  refreshPoolBand,
   rotateKey,
   unwrapWsol,
   withdraw,
@@ -159,6 +160,7 @@ export interface WalnutState {
   disclose(auditorPublicKey: Uint8Array, mask: number): Promise<boolean>;
   unwrapPending(): Promise<void>;
   abandonStuck(): Promise<void>;
+  refreshBand(): Promise<void>;
   refresh(): Promise<void>;
 }
 
@@ -704,6 +706,12 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
         const position = positionRef.current;
         if (stuck === null || position === null) return;
         await abandonStuck(ctx, stuck, position, report);
+      });
+    },
+    refreshBand: async () => {
+      await track("Refresh rate curve", async (report, ctx) => {
+        await refreshPoolBand(ctx, report);
+        await refresh();
       });
     },
     refresh,

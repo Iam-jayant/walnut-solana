@@ -393,7 +393,7 @@ function Overview() {
 }
 
 function MarketCard() {
-  const { protocol, lending, lendingChecked } = useWalnut();
+  const { protocol, lending, lendingChecked, refreshBand, busy } = useWalnut();
   const now = useNowSeconds();
   const usdc = (v: bigint) => formatUnits(v, USDC_DECIMALS);
   if (lending === null || protocol === null) {
@@ -420,6 +420,8 @@ function MarketCard() {
     const [lower, upper] = bandEdgesBps(lending.band);
     const observed = lending.bandObservationSlot > 0;
     const age = Math.max(0, lending.slot - lending.bandObservationSlot);
+    const isStale = age > 9000;
+    const isNearing = age > 6000;
     const supplyApy =
       (borrowRateBps(protocol.rates, lower) *
         lower *
@@ -449,11 +451,38 @@ function MarketCard() {
           />
           <Stat label="Total supplied" unit="" value="Encrypted" />
           <Stat label="Total borrowed" unit="" value="Encrypted" />
-          <Stat
-            label="Band age"
-            unit={observed ? "slots" : ""}
-            value={observed ? age.toLocaleString("en-US") : "Not observed yet"}
-          />
+          <div className="flex flex-col justify-between rounded-card bg-walnut-mist p-5">
+            <div>
+              <p className="text-caption font-[800] uppercase text-walnut-ink/70">
+                Band age
+              </p>
+              <p className="mt-2 break-all text-h3 font-[800]">
+                {observed ? age.toLocaleString("en-US") : "Not observed yet"}{" "}
+                <span className="text-small font-[400] text-walnut-ink/70">
+                  {observed ? "slots" : ""}
+                </span>
+              </p>
+              <p className="mt-1 text-caption text-walnut-ink/60">
+                {isStale ? (
+                  <span className="font-semibold text-red-600">Rate curve paused (stale)</span>
+                ) : isNearing ? (
+                  <span className="font-semibold text-amber-600">Expiring soon</span>
+                ) : (
+                  "Active interest curve"
+                )}
+              </p>
+            </div>
+            {observed && (
+              <button
+                type="button"
+                onClick={() => void refreshBand()}
+                disabled={busy}
+                className="mt-3 inline-flex items-center justify-center gap-1.5 rounded-full border border-walnut-ink/20 bg-white px-3 py-1 text-caption font-semibold text-walnut-ink transition hover:bg-walnut-sand disabled:opacity-50 cursor-pointer"
+              >
+                {busy ? <Spinner /> : null} Refresh rate curve
+              </button>
+            )}
+          </div>
         </div>
         <p className="mt-3 text-caption text-walnut-ink/60">
           Pool totals are encrypted and computed by the Arcium MPC network. Only
