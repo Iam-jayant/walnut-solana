@@ -14,7 +14,7 @@
 // The Arcium helpers wrap @arcium-hq/client 0.16.0 so callers pass Walnut
 // concepts (program id, cluster offset, circuit name) instead of raw seeds.
 
-import { BN } from "@anchor-lang/core";
+import { BN } from "./anchor-shim.js";
 import {
   getClusterAccAddress,
   getCompDefAccAddress,

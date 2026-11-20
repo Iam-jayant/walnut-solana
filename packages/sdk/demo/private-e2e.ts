@@ -36,8 +36,8 @@
 // ANCHOR_WALLET like the other demos; the RPC URL and any api-key are never
 // printed. Output: artifacts/devnet-private-e2e.json.
 
-import * as anchor from "@anchor-lang/core";
-import { BN } from "@anchor-lang/core";
+import * as anchor from "../src/anchor-shim.ts";
+import { BN } from "../src/anchor-shim.ts";
 import { getCompDefAccAddress } from "@arcium-hq/client";
 import {
   ComputeBudgetProgram,

@@ -9,8 +9,8 @@
 // programs/walnut/src/lib.rs (add_together, init_position,
 // apply_position_delta, and their comp-def initializers).
 
-import * as anchor from "@anchor-lang/core";
-import type { BN } from "@anchor-lang/core";
+import * as anchor from "../src/anchor-shim.js";
+import type { BN } from "../src/anchor-shim.js";
 import type { ConfirmOptions, Keypair, PublicKey } from "@solana/web3.js";
 import {
   getArciumAccountBaseSeed,

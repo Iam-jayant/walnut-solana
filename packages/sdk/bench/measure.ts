@@ -16,8 +16,8 @@
 //     the computation-account rent; --reclaim separates the rent back out by
 //     calling claimComputationRent and measuring the refund.
 
-import * as anchor from "@anchor-lang/core";
-import type { BN } from "@anchor-lang/core";
+import * as anchor from "../src/anchor-shim.js";
+import type { BN } from "../src/anchor-shim.js";
 import { PublicKey, type Keypair } from "@solana/web3.js";
 import { randomBytes } from "node:crypto";
 import {

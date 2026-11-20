@@ -22,7 +22,7 @@
 // Building needs no RPC. Sending (and the live effect of either instruction)
 // needs a cluster and is documented, not unit-tested.
 
-import type { AnchorProvider } from "@anchor-lang/core";
+import type { AnchorProvider } from "./anchor-shim.js";
 import {
   claimComputationRent,
   getArciumProgram,

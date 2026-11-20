@@ -1,3 +1,4 @@
+# Must match ANCHOR_VERSION and SOLANA_CLI_VERSION in toolchain.versions.
 [toolchain]
 anchor_version = "1.0.2"
 solana_version = "3.1.10"
@@ -8,7 +9,7 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-walnut = "AWEGaPVJwaCkrzraWNxGQDtH2k6NdUYL8xJDBAkLakUn"
+walnut = "5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea"
 
 [provider]
 cluster = "localnet"
