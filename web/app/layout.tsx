@@ -11,7 +11,17 @@ const telegraf = localFont({
   src: [
     {
       path: "./fonts/Telegraf-UltraLight.otf",
+      weight: "100",
+      style: "normal",
+    },
+    {
+      path: "./fonts/Telegraf-UltraLight.otf",
       weight: "200",
+      style: "normal",
+    },
+    {
+      path: "./fonts/Telegraf-UltraLight.otf",
+      weight: "300",
       style: "normal",
     },
     { path: "./fonts/Telegraf-Regular.otf", weight: "400", style: "normal" },
@@ -32,8 +42,11 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={telegraf.variable}>
-      <body className="bg-walnut-white font-sans text-walnut-black antialiased">
+    <html lang="en" className={telegraf.variable} suppressHydrationWarning>
+      <body
+        className="bg-walnut-white font-sans text-walnut-black antialiased"
+        suppressHydrationWarning
+      >
         {children}
       </body>
     </html>
