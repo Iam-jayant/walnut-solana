@@ -4,8 +4,8 @@
   "license": "UNLICENSED",
   "packageManager": "pnpm@9.15.9",
   "engines": {
-    "node": "26.13.1",
-    "pnpm": "9.15.9"
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
   },
   "pnpm": {
     "overrides": {
@@ -21,6 +21,7 @@
     "check:advisories": "node scripts/advisories.mjs check",
     "audit:deps": "bash scripts/audit.sh",
     "build": "arcium build",
+    "build:web": "pnpm --filter @walnut/sdk build && pnpm --filter @walnut/web build",
     "build:ts": "pnpm -r --if-present build",
     "test": "arcium test",
     "test:ts": "pnpm -r --if-present test",
