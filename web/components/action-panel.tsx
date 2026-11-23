@@ -50,7 +50,7 @@ const TABS: ReadonlyArray<[Tab, string]> = [
  * Reusable vector token badge with official Solana and USDC artwork,
  * plus the signature golden confidential shield for encrypted tokens.
  */
-function TokenIcon({ symbol }: { symbol: string }) {
+export function TokenIcon({ symbol }: { symbol: string }) {
   const isC = symbol.startsWith("c");
   const base = isC ? symbol.slice(1) : symbol;
   const isSol = base.toUpperCase().startsWith("SOL");
