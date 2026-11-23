@@ -42,14 +42,6 @@ export function Header() {
             <span className="h-2 w-2 rounded-full bg-emerald-500" />
             {NETWORK_LABEL}
           </span>
-          <a
-            href={FAUCET_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="hidden rounded-pill px-3 py-1.5 text-caption font-[800] underline-offset-4 hover:underline sm:inline"
-          >
-            Get devnet SOL
-          </a>
           {connected && unlocked ? (
             <Button variant="ghost" onClick={lock} className="py-1.5">
               <LockIcon /> Lock

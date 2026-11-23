@@ -57,14 +57,6 @@ export function Hero() {
             >
               {connecting ? "Connecting..." : "Connect Wallet"}
             </Button>
-            <a
-              href={FAUCET_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="text-small font-[800] text-white/80 underline underline-offset-4 hover:text-walnut-yellow"
-            >
-              Get devnet SOL
-            </a>
           </div>
         ) : null}
         {!connected ? (

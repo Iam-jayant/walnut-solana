@@ -2,7 +2,7 @@
 import { PublicKey } from "@solana/web3.js";
 
 export const NETWORK = "devnet";
-export const NETWORK_LABEL = "Solana Devnet";
+export const NETWORK_LABEL = "Solana";
 export const PROGRAM_ID = new PublicKey(
   "5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea",
 );
