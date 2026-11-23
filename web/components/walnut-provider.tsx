@@ -260,8 +260,18 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     };
   }, [chain, protocol]);
 
+  // 5-minute timeout for private balance hideout on tab switch
+  const HIDE_TIMEOUT_MS = 5 * 60 * 1000;
+  const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const hiddenTimestampRef = useRef<number | null>(null);
+
   // ---- session custody
   const clearSession = useCallback(() => {
+    if (hideTimerRef.current !== null) {
+      clearTimeout(hideTimerRef.current);
+      hideTimerRef.current = null;
+    }
+    hiddenTimestampRef.current = null;
     sessionRef.current?.clear();
     sessionRef.current = null;
     setUnlocked(false);
@@ -269,7 +279,7 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
-    // The session clears itself on wallet disconnect and page hide; mirror it.
+    // The session clears itself on wallet disconnect; mirror it.
     const timer = setInterval(() => {
       const session = sessionRef.current;
       if (session !== null && !session.isUnlocked) {
@@ -293,9 +303,13 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
 
   const adoptSession = useCallback(
     (session: ViewingKeySession) => {
+      if (hideTimerRef.current !== null) {
+        clearTimeout(hideTimerRef.current);
+        hideTimerRef.current = null;
+      }
+      hiddenTimestampRef.current = null;
       sessionRef.current?.clear();
       sessionRef.current = session;
-      session.attachPage();
       const adapter = wallet.wallet?.adapter;
       if (adapter !== undefined) {
         session.attachWallet(adapter as unknown as WalletEventSource);
@@ -375,6 +389,52 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
       setRefreshing(false);
     }
   }, [chain, protocol, publicKey]);
+
+  // Keep private balances unlocked for 5 minutes when switching browser tabs
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof document === "undefined") return;
+
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "hidden") {
+        // Tab hidden: start 5-minute countdown
+        hiddenTimestampRef.current = Date.now();
+        if (sessionRef.current !== null && sessionRef.current.isUnlocked) {
+          if (hideTimerRef.current !== null) {
+            clearTimeout(hideTimerRef.current);
+          }
+          hideTimerRef.current = setTimeout(() => {
+            clearSession();
+            hideTimerRef.current = null;
+            hiddenTimestampRef.current = null;
+          }, HIDE_TIMEOUT_MS);
+        }
+      } else if (document.visibilityState === "visible") {
+        // Returned to tab
+        const hiddenAt = hiddenTimestampRef.current;
+        hiddenTimestampRef.current = null;
+
+        if (hideTimerRef.current !== null) {
+          clearTimeout(hideTimerRef.current);
+          hideTimerRef.current = null;
+        }
+
+        if (hiddenAt !== null && Date.now() - hiddenAt >= HIDE_TIMEOUT_MS) {
+          clearSession();
+        } else if (sessionRef.current !== null && sessionRef.current.isUnlocked) {
+          // Within 5 minutes: session remains active and unlocked; refresh state
+          void refresh();
+        }
+      }
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      if (hideTimerRef.current !== null) {
+        clearTimeout(hideTimerRef.current);
+      }
+    };
+  }, [clearSession, refresh, HIDE_TIMEOUT_MS]);
 
   useEffect(() => {
     if (!connected) return;
