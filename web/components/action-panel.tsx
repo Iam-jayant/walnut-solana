@@ -20,9 +20,6 @@ import { borrowMetrics, maxRemovableCollateral } from "../lib/metrics.ts";
 import type { Asset } from "../lib/ops.ts";
 import {
   Badge,
-  Button,
-  Card,
-  CardTitle,
   LockIcon,
   Notice,
   Spinner,
@@ -30,7 +27,7 @@ import {
 import { useNowSeconds } from "./use-now.ts";
 import { useWalnut } from "./walnut-provider.tsx";
 
-type Tab =
+export type Tab =
   | "deposit"
   | "withdraw"
   | "collateral"
@@ -40,46 +37,96 @@ type Tab =
   | "unsupply";
 
 const TABS: ReadonlyArray<[Tab, string]> = [
-  ["deposit", "Deposit"],
-  ["withdraw", "Withdraw"],
+  ["deposit", "Shield"],
+  ["withdraw", "Unshield"],
   ["collateral", "Collateral"],
   ["borrow", "Borrow"],
   ["repay", "Repay"],
   ["supply", "Supply"],
-  ["unsupply", "Withdraw supply"],
+  ["unsupply", "Withdraw Supply"],
 ];
 
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: ReadonlyArray<[T, string]>;
-  onChange: (value: T) => void;
-}) {
+/**
+ * Reusable vector token badge with official Solana and USDC artwork,
+ * plus the signature golden confidential shield for encrypted tokens.
+ */
+function TokenIcon({ symbol }: { symbol: string }) {
+  const isC = symbol.startsWith("c");
+  const base = isC ? symbol.slice(1) : symbol;
+  const isSol = base.toUpperCase().startsWith("SOL");
+
+  if (isSol) {
+    return (
+      <div className="relative shrink-0 flex items-center justify-center">
+        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#101217] border border-black/10 shadow-2xs">
+          <svg className="h-2.5 w-3" viewBox="0 0 397 311" fill="none">
+            <linearGradient id={`solGrad-${symbol}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#00FFA3" />
+              <stop offset="100%" stopColor="#DC1FFF" />
+            </linearGradient>
+            <path
+              fill={`url(#solGrad-${symbol})`}
+              d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7zM64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8zM333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z"
+            />
+          </svg>
+        </div>
+        {isC && (
+          <div className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white shadow-2xs">
+            <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="#FFD208" />
+              <path
+                d="M8.5 12l2.5 2.5 4.5-4.5"
+                stroke="#000000"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              />
+            </svg>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // USDC / cUSDC / Shares
   return (
-    <div className="inline-flex rounded-pill bg-walnut-mist p-1">
-      {options.map(([key, label]) => (
-        <button
-          key={key}
-          type="button"
-          onClick={() => onChange(key)}
-          className={`rounded-pill px-4 py-1.5 text-small font-[800] transition ${
-            value === key
-              ? "bg-walnut-black text-walnut-white"
-              : "text-walnut-ink/70 hover:text-walnut-black"
-          }`}
-        >
-          {label}
-        </button>
-      ))}
+    <div className="relative shrink-0 flex items-center justify-center">
+      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#2775CA] shadow-2xs">
+        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+          <circle cx="12" cy="12" r="10" stroke="#FFFFFF" strokeWidth="1.5" strokeOpacity="0.5" />
+          <path
+            d="M12 6.5v11M14.5 9.5a2.5 2.5 0 0 0-5 0c0 2.5 5 1.5 5 4a2.5 2.5 0 0 1-5 0"
+            stroke="#FFFFFF"
+            strokeWidth="1.75"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        </svg>
+      </div>
+      {isC && (
+        <div className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white shadow-2xs">
+          <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="#FFD208" />
+            <path
+              d="M8.5 12l2.5 2.5 4.5-4.5"
+              stroke="#000000"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            />
+          </svg>
+        </div>
+      )}
     </div>
   );
 }
 
 interface AmountFormProps {
-  symbol: string;
+  inputLabel: string;
+  outputLabel: string;
+  inputSymbol: string;
+  outputSymbol: string;
+  symbol?: string;
   decimals: number;
   max: bigint | null;
   maxLabel: string;
@@ -87,11 +134,10 @@ interface AmountFormProps {
   note?: string;
   warning: (amount: bigint) => string | null;
   needsUnlock: boolean;
-  /** `private`: the amount is encrypted. `public`: it is visible on chain. */
   mode?: "private" | "public";
-  /** Block submission while the warning applies (private operations). */
   strict?: boolean;
-  /** Resolve to false to keep the entered amount for a retry. */
+  onToggleAsset?: () => void;
+  outputMultiplier?: number;
   onSubmit: (amount: bigint) => Promise<boolean | void>;
 }
 
@@ -111,9 +157,18 @@ function AmountForm(props: AmountFormProps) {
   else if (stuck !== null)
     blocked = "A previous operation is still processing.";
 
+  const outputValue =
+    valid && props.outputMultiplier !== undefined
+      ? (Number(text) * props.outputMultiplier).toLocaleString("en-US", {
+          maximumFractionDigits: 4,
+        })
+      : valid
+      ? text
+      : "0";
+
   return (
     <form
-      className="space-y-4"
+      className="space-y-2.5"
       onSubmit={(event) => {
         event.preventDefault();
         if (!valid || blocked !== null || busy) return;
@@ -122,79 +177,155 @@ function AmountForm(props: AmountFormProps) {
         });
       }}
     >
-      <div>
-        <div className="flex items-center rounded-card bg-walnut-mist px-4 py-3 ring-1 ring-transparent focus-within:ring-walnut-black">
+      {/* 1. Top Input Box ("You shield" / "You deposit" / "You borrow" etc.) */}
+      <div className="rounded-xl bg-[#F4F5F7] p-4.5 border border-black/[0.02] focus-within:bg-[#EEF0F3] transition">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-medium text-gray-500">{props.inputLabel}</span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
           <input
             inputMode="decimal"
             autoComplete="off"
-            placeholder="0.00"
+            placeholder="0"
             value={text}
             onChange={(e) => setText(e.target.value)}
-            className="min-w-0 flex-1 bg-transparent text-h3 font-[800] outline-none placeholder:text-walnut-ink/30"
-            aria-label={`Amount in ${props.symbol}`}
+            className="min-w-0 flex-1 bg-transparent text-3xl md:text-4xl font-normal text-gray-900 outline-none placeholder:text-gray-400"
+            aria-label={`Amount in ${props.inputSymbol}`}
           />
-          <span className="mr-3 text-small font-[800] text-walnut-ink/70">
-            {props.symbol}
-          </span>
-          <button
-            type="button"
-            disabled={props.max === null}
-            onClick={() =>
-              props.max !== null &&
-              setText(toInputString(props.max, props.decimals))
-            }
-            className="rounded-pill bg-walnut-black px-3 py-1 text-caption font-[800] text-walnut-yellow disabled:opacity-30"
-          >
-            Max
-          </button>
+          {props.onToggleAsset ? (
+            <button
+              type="button"
+              onClick={props.onToggleAsset}
+              className="bg-white border border-black/[0.06] rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-2xs hover:bg-gray-50 transition cursor-pointer shrink-0"
+              title="Click to switch token"
+            >
+              <TokenIcon symbol={props.inputSymbol} />
+              <span className="text-sm font-semibold text-gray-900">{props.inputSymbol}</span>
+              <svg
+                className="w-3.5 h-3.5 text-gray-400"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+              >
+                <polyline points="6 9 12 15 18 9" />
+              </svg>
+            </button>
+          ) : (
+            <div className="bg-white border border-black/[0.06] rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-2xs shrink-0">
+              <TokenIcon symbol={props.inputSymbol} />
+              <span className="text-sm font-semibold text-gray-900">{props.inputSymbol}</span>
+            </div>
+          )}
         </div>
-        <p className="mt-2 text-caption text-walnut-ink/60">
-          {props.maxLabel}:{" "}
-          {props.max === null
-            ? "locked"
-            : `${formatUnits(props.max, props.decimals)} ${props.symbol}`}
-        </p>
+        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-black/[0.04]">
+          <span className="text-xs text-gray-500">
+            {props.maxLabel}:{" "}
+            <span className="font-medium text-gray-800">
+              {props.max === null
+                ? "locked"
+                : `${formatUnits(props.max, props.decimals)} ${props.inputSymbol}`}
+            </span>
+          </span>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              disabled={props.max === null || props.max === 0n}
+              onClick={() =>
+                props.max !== null &&
+                setText(toInputString(props.max / 2n, props.decimals))
+              }
+              className="rounded-md bg-black/[0.04] hover:bg-black/[0.08] text-gray-700 text-[11px] font-medium px-2 py-0.5 transition cursor-pointer disabled:opacity-30"
+            >
+              50%
+            </button>
+            <button
+              type="button"
+              disabled={props.max === null || props.max === 0n}
+              onClick={() =>
+                props.max !== null &&
+                setText(toInputString(props.max, props.decimals))
+              }
+              className="rounded-md bg-black/[0.04] hover:bg-black/[0.08] text-gray-700 text-[11px] font-medium px-2 py-0.5 transition cursor-pointer disabled:opacity-30"
+            >
+              Max
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* 2. Output Box ("You receive" / Outcome) */}
+      <div className="rounded-xl bg-[#F4F5F7] p-4.5 border border-black/[0.02]">
+        <div className="flex items-center justify-between mb-1.5">
+          <span className="text-xs font-medium text-gray-500">{props.outputLabel}</span>
+          <span className="inline-flex items-center gap-1 text-[11px] font-medium text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-md">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            Encrypted
+          </span>
+        </div>
+        <div className="flex items-center justify-between gap-3">
+          <div className="text-3xl md:text-4xl font-normal text-gray-900 truncate">
+            {outputValue}
+          </div>
+          <div className="bg-white border border-black/[0.06] rounded-xl px-3 py-1.5 flex items-center gap-2 shadow-2xs shrink-0">
+            <TokenIcon symbol={props.outputSymbol} />
+            <span className="text-sm font-semibold text-gray-900">{props.outputSymbol}</span>
+          </div>
+        </div>
+        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-black/[0.04]">
+          <span className="text-[11px] text-gray-400">
+            1:1 confidential conversion · Verified onchain by Arcium MPC
+          </span>
+        </div>
+      </div>
+
+      {/* Warnings & Notes */}
       {text !== "" && !valid ? (
-        <p className="text-small text-red-700">Enter a valid amount.</p>
+        <p className="text-xs text-red-600 px-1">Enter a valid amount.</p>
       ) : null}
       {warning !== null ? (
-        <p className="rounded-2xl bg-amber-50 px-4 py-2.5 text-small text-amber-900 ring-1 ring-amber-200">
+        <p className="rounded-xl bg-amber-50 px-3.5 py-2 text-xs text-amber-900 border border-amber-200/60">
           {warning}
           {props.strict === true ? "" : " You can still submit it."}
         </p>
       ) : null}
       {props.mode === "private" ? (
-        <p>
+        <p className="px-1">
           <Badge tone="dark">
             <LockIcon /> Amount encrypted
           </Badge>
         </p>
       ) : null}
       {props.mode === "public" ? (
-        <p className="text-caption text-walnut-ink/60">{PUBLIC_AMOUNT_NOTE}</p>
+        <p className="text-xs text-gray-400 px-1">{PUBLIC_AMOUNT_NOTE}</p>
       ) : null}
       {props.note !== undefined ? (
-        <p className="text-caption text-walnut-ink/60">{props.note}</p>
+        <p className="text-xs text-gray-400 leading-relaxed px-1">{props.note}</p>
       ) : null}
       {blocked !== null ? (
-        <p className="text-small text-walnut-ink/70">{blocked}</p>
+        <p className="text-xs text-gray-500 px-1">{blocked}</p>
       ) : null}
-      <Button
+
+      {/* 3. Action CTA Button */}
+      <button
         type="submit"
-        className="w-full py-3"
         disabled={!valid || blocked !== null || busy}
+        className={`w-full py-3.5 rounded-xl font-semibold text-sm transition active:scale-[0.99] mt-3 flex items-center justify-center gap-2 ${
+          !valid || blocked !== null || busy
+            ? "bg-[#EEF0F2] text-[#9EA3A8] cursor-not-allowed"
+            : "bg-[#FFD208] hover:bg-[#F5C800] text-black shadow-xs cursor-pointer"
+        }`}
       >
-        {busy ? <Spinner /> : null} {props.cta}
-      </Button>
+        {busy ? <Spinner /> : null}
+        {blocked !== null
+          ? blocked
+          : !valid
+          ? "Enter an amount"
+          : props.cta}
+      </button>
     </form>
   );
 }
-
-const ASSETS: ReadonlyArray<[Asset, string]> = [
-  ["sol", "SOL"],
-  ["usdc", "USDC"],
-];
 
 const LENDING_TABS: ReadonlySet<Tab> = new Set<Tab>([
   "collateral",
@@ -206,12 +337,31 @@ const LENDING_TABS: ReadonlySet<Tab> = new Set<Tab>([
 
 const min = (a: bigint, b: bigint): bigint => (a < b ? a : b);
 
-export function ActionPanel() {
+export function ActionPanel({
+  activeTab,
+  onTabChange,
+  allowedTabs,
+  initialTab,
+  title = "Manage",
+}: {
+  activeTab?: Tab;
+  onTabChange?: (tab: Tab) => void;
+  allowedTabs?: ReadonlyArray<Tab>;
+  initialTab?: Tab;
+  title?: string;
+} = {}) {
   const w = useWalnut();
   const now = useNowSeconds();
-  const [tab, setTab] = useState<Tab>("deposit");
+  const [internalTab, setInternalTab] = useState<Tab>(
+    initialTab ?? (allowedTabs && allowedTabs[0] ? allowedTabs[0] : "deposit"),
+  );
+  const tab = activeTab !== undefined ? activeTab : internalTab;
+  const setTab = onTabChange !== undefined ? onTabChange : setInternalTab;
   const [asset, setAsset] = useState<Asset>("sol");
   const [collateralMode, setCollateralMode] = useState<"add" | "remove">("add");
+
+  const toggleAsset = () => setAsset(asset === "sol" ? "usdc" : "sol");
+
   const {
     balances,
     walletBalances,
@@ -261,13 +411,13 @@ export function ActionPanel() {
   let body: ReactNode;
   if (LENDING_TABS.has(tab) && lending === null) {
     body = !lendingChecked ? (
-      <p className="flex items-center gap-2 text-small text-walnut-ink/70">
-        <Spinner /> Loading the lending market...
+      <p className="flex items-center gap-2 text-xs text-gray-500 py-6">
+        <Spinner /> Loading lending market...
       </p>
     ) : (
       <Notice tone="info">
-        <p className="font-[800]">Lending market is being initialized</p>
-        <p className="mt-1">
+        <p className="font-semibold text-sm">Lending market is being initialized</p>
+        <p className="mt-1 text-xs">
           Supplying, borrowing and collateral management open as soon as the
           market is live. Deposits and withdrawals work now.
         </p>
@@ -284,62 +434,62 @@ export function ActionPanel() {
             : 0n
           : walletBalances.usdc;
     body = (
-      <>
-        <Segmented value={asset} options={ASSETS} onChange={setAsset} />
-        <div className="mt-5">
-          <AmountForm
-            key={`dep-${asset}`}
-            symbol={isSol ? "SOL" : "USDC"}
-            decimals={isSol ? SOL_DECIMALS : USDC_DECIMALS}
-            max={walletMax}
-            maxLabel="Available in wallet"
-            cta={isSol ? "Deposit SOL" : "Deposit USDC"}
-            note={
-              isSol
-                ? "SOL is wrapped automatically in the same transaction. The deposit amount becomes private once the MPC network credits it."
-                : "The deposit amount is public in the transfer; your resulting balance stays private."
-            }
-            needsUnlock={false}
-            warning={(a) =>
-              walletMax !== null && a > walletMax
-                ? "This is more than your wallet can spend."
-                : null
-            }
-            onSubmit={(a) => w.deposit(asset, a)}
-          />
-        </div>
-      </>
+      <AmountForm
+        key={`dep-${asset}`}
+        inputLabel="You shield"
+        outputLabel="You receive"
+        inputSymbol={isSol ? "SOL" : "USDC"}
+        outputSymbol={isSol ? "cSOL" : "cUSDC"}
+        symbol={isSol ? "SOL" : "USDC"}
+        decimals={isSol ? SOL_DECIMALS : USDC_DECIMALS}
+        max={walletMax}
+        maxLabel="Available in wallet"
+        cta={isSol ? "Shield SOL" : "Shield USDC"}
+        onToggleAsset={toggleAsset}
+        note={
+          isSol
+            ? "SOL is wrapped automatically in the same transaction. The deposit amount becomes private once the MPC network credits it."
+            : "The deposit amount is public in the transfer; your resulting balance stays private."
+        }
+        needsUnlock={false}
+        warning={(a) =>
+          walletMax !== null && a > walletMax
+            ? "This is more than your wallet can spend."
+            : null
+        }
+        onSubmit={(a) => w.deposit(asset, a)}
+      />
     );
   } else if (tab === "withdraw") {
     const isSol = asset === "sol";
     const free =
       balances === null ? null : isSol ? balances.freeSol : balances.freeUsdc;
     body = (
-      <>
-        <Segmented value={asset} options={ASSETS} onChange={setAsset} />
-        <div className="mt-5">
-          <AmountForm
-            key={`wd-${asset}`}
-            symbol={isSol ? "SOL" : "USDC"}
-            decimals={isSol ? SOL_DECIMALS : USDC_DECIMALS}
-            max={free}
-            maxLabel="Free private balance"
-            cta={isSol ? "Withdraw SOL" : "Withdraw USDC"}
-            note={
-              isSol
-                ? "Withdrawing SOL takes two wallet confirmations: the private withdrawal, then unwrapping to native SOL."
-                : "A USDC token account is created in your wallet first if you do not have one."
-            }
-            needsUnlock
-            warning={(a) =>
-              free !== null && a > free
-                ? "This is more than your free private balance, so the withdrawal will be refused."
-                : null
-            }
-            onSubmit={(a) => w.withdraw(asset, a)}
-          />
-        </div>
-      </>
+      <AmountForm
+        key={`wd-${asset}`}
+        inputLabel="You unshield"
+        outputLabel="You receive"
+        inputSymbol={isSol ? "cSOL" : "cUSDC"}
+        outputSymbol={isSol ? "SOL" : "USDC"}
+        symbol={isSol ? "SOL" : "USDC"}
+        decimals={isSol ? SOL_DECIMALS : USDC_DECIMALS}
+        max={free}
+        maxLabel="Free private balance"
+        cta={isSol ? "Unshield SOL" : "Unshield USDC"}
+        onToggleAsset={toggleAsset}
+        note={
+          isSol
+            ? "Withdrawing SOL takes two wallet confirmations: the private withdrawal, then unwrapping to native SOL."
+            : "A USDC token account is created in your wallet first if you do not have one."
+        }
+        needsUnlock
+        warning={(a) =>
+          free !== null && a > free
+            ? "This is more than your free private balance, so the withdrawal will be refused."
+            : null
+        }
+        onSubmit={(a) => w.withdraw(asset, a)}
+      />
     );
   } else if (tab === "collateral") {
     const add = collateralMode === "add";
@@ -351,53 +501,73 @@ export function ActionPanel() {
           : maxRemovableCollateral(balances, price.price, ltv, debt);
     body = (
       <>
-        <Segmented
-          value={collateralMode}
-          options={[
-            ["add", "Add"],
-            ["remove", "Remove"],
-          ]}
-          onChange={setCollateralMode}
-        />
-        <div className="mt-5">
-          <AmountForm
-            key={`col-${collateralMode}`}
-            symbol="SOL"
-            decimals={SOL_DECIMALS}
-            max={max}
-            maxLabel={add ? "Free SOL" : "Removable collateral"}
-            cta={add ? "Add collateral" : "Remove collateral"}
-            mode={mode}
-            strict={privateMode}
-            needsUnlock
-            warning={(a) =>
+        {/* Sub-switcher for Collateral: Add vs Remove */}
+        <div className="grid grid-cols-2 p-1 bg-[#F1F3F5] rounded-xl mb-4">
+          <button
+            type="button"
+            onClick={() => setCollateralMode("add")}
+            className={`py-2 text-xs md:text-sm font-semibold rounded-lg transition cursor-pointer text-center ${
               add
-                ? check(
-                    LendOp.AddCollateral,
-                    a,
-                    "This is more than your free SOL.",
-                  )
-                : check(
-                    LendOp.WithdrawCollateral,
-                    a,
-                    "This is more than you can remove while keeping your debt within the borrow limit.",
-                  )
-            }
-            onSubmit={(a) =>
-              privateMode
-                ? w.privateCollateral(
-                    add ? CollateralOp.Add : CollateralOp.Withdraw,
-                    add ? "Add collateral" : "Remove collateral",
-                    a,
-                  )
-                : w.lendOp(
-                    add ? LendOp.AddCollateral : LendOp.WithdrawCollateral,
-                    add ? "Add collateral" : "Remove collateral",
-                    a,
-                  )
-            }
-          />
+                ? "bg-white text-black shadow-xs"
+                : "text-gray-500 hover:text-black"
+            }`}
+          >
+            Add Collateral
+          </button>
+          <button
+            type="button"
+            onClick={() => setCollateralMode("remove")}
+            className={`py-2 text-xs md:text-sm font-semibold rounded-lg transition cursor-pointer text-center ${
+              !add
+                ? "bg-white text-black shadow-xs"
+                : "text-gray-500 hover:text-black"
+            }`}
+          >
+            Remove Collateral
+          </button>
         </div>
+
+        <AmountForm
+          key={`col-${collateralMode}`}
+          inputLabel={add ? "Collateral to deposit" : "Collateral to remove"}
+          outputLabel={add ? "Borrowing power added" : "Free SOL returned"}
+          inputSymbol={add ? "SOL" : "cSOL"}
+          outputSymbol={add ? "cSOL" : "SOL"}
+          symbol="SOL"
+          decimals={SOL_DECIMALS}
+          max={max}
+          maxLabel={add ? "Free SOL" : "Removable collateral"}
+          cta={add ? "Deposit Collateral" : "Remove Collateral"}
+          mode={mode}
+          strict={privateMode}
+          needsUnlock
+          warning={(a) =>
+            add
+              ? check(
+                  LendOp.AddCollateral,
+                  a,
+                  "This is more than your free SOL.",
+                )
+              : check(
+                  LendOp.WithdrawCollateral,
+                  a,
+                  "This is more than you can remove while keeping your debt within the borrow limit.",
+                )
+          }
+          onSubmit={(a) =>
+            privateMode
+              ? w.privateCollateral(
+                  add ? CollateralOp.Add : CollateralOp.Withdraw,
+                  add ? "Add collateral" : "Remove collateral",
+                  a,
+                )
+              : w.lendOp(
+                  add ? LendOp.AddCollateral : LendOp.WithdrawCollateral,
+                  add ? "Add collateral" : "Remove collateral",
+                  a,
+                )
+          }
+        />
       </>
     );
   } else if (tab === "borrow") {
@@ -411,6 +581,10 @@ export function ActionPanel() {
         : 0n;
     body = (
       <AmountForm
+        inputLabel="You borrow"
+        outputLabel="You receive"
+        inputSymbol="USDC"
+        outputSymbol="cUSDC"
         symbol="USDC"
         decimals={USDC_DECIMALS}
         max={
@@ -450,6 +624,10 @@ export function ActionPanel() {
       balances === null || full === null ? null : min(balances.freeUsdc, full);
     body = (
       <AmountForm
+        inputLabel="You repay"
+        outputLabel="Debt reduction"
+        inputSymbol="cUSDC"
+        outputSymbol="USDC"
         symbol="USDC"
         decimals={USDC_DECIMALS}
         max={max}
@@ -481,6 +659,10 @@ export function ActionPanel() {
   } else if (tab === "supply") {
     body = (
       <AmountForm
+        inputLabel="You supply"
+        outputLabel="Pool shares received"
+        inputSymbol="cUSDC"
+        outputSymbol="cUSDC Shares"
         symbol="USDC"
         decimals={USDC_DECIMALS}
         max={balances === null ? null : balances.freeUsdc}
@@ -503,6 +685,10 @@ export function ActionPanel() {
   } else {
     body = (
       <AmountForm
+        inputLabel="You withdraw"
+        outputLabel="You receive"
+        inputSymbol="cUSDC Shares"
+        outputSymbol="cUSDC"
         symbol="USDC"
         decimals={USDC_DECIMALS}
         max={
@@ -541,26 +727,36 @@ export function ActionPanel() {
     );
   }
 
+  const tabsToRender = allowedTabs
+    ? TABS.filter(([key]) => allowedTabs.includes(key))
+    : TABS;
+
   return (
-    <Card>
-      <CardTitle>Manage</CardTitle>
-      <div className="mb-6 flex flex-wrap gap-1 border-b border-black/5 pb-3">
-        {TABS.map(([key, label]) => (
-          <button
-            key={key}
-            type="button"
-            onClick={() => setTab(key)}
-            className={`rounded-pill px-4 py-2 text-small font-[800] transition ${
-              tab === key
-                ? "bg-walnut-yellow text-walnut-black"
-                : "text-walnut-ink/70 hover:bg-walnut-mist"
-            }`}
-          >
-            {label}
-          </button>
-        ))}
+    <div className="rounded-2xl bg-white border border-black/[0.06] shadow-[0_2px_16px_rgba(0,0,0,0.03)] p-6 md:p-7 max-w-[480px] w-full mx-auto font-app-sans text-left">
+      <div className="mb-4 flex items-center justify-between gap-3">
+        <h2 className="text-base font-semibold text-gray-900 tracking-tight">{title}</h2>
       </div>
+
+      {tabsToRender.length > 1 && (
+        <div className="grid grid-cols-2 p-1 bg-[#F1F3F5] rounded-xl mb-4">
+          {tabsToRender.map(([key, label]) => (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setTab(key)}
+              className={`py-2 text-xs md:text-sm font-semibold rounded-lg transition cursor-pointer text-center ${
+                tab === key
+                  ? "bg-white text-black shadow-xs"
+                  : "text-gray-500 hover:text-black"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {body}
-    </Card>
+    </div>
   );
 }
