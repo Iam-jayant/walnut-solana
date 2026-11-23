@@ -151,18 +151,16 @@ sequenceDiagram
     Liquidator->>Solana: check_health(borrower_pubkey)
     Solana->>Oracle: Query clamped SOL price
     Solana->>Arcium: Queue MPC CheckHealth task
-    Note over Arcium: Confidential Circuit Evaluates:<br/>Collateral * Price * LT vs Debt
     Arcium->>Solana: Callback with predicate (unhealthy: true/false)
     Solana-->>Liquidator: Emit HealthResult event
 
     alt Position is Unhealthy
         Liquidator->>Solana: liquidate_pool(borrower, repay_amount)
-        Solana->>Arcium: Queue confidential Liquidation execution
-        Note over Arcium: Deducts up to 50% debt<br/>Calculates Seized SOL with 5% Bonus
+        Solana->>Arcium: Queue confidential liquidation execution
         Arcium->>Solana: Settle encrypted state and transfer collateral
         Solana-->>Liquidator: Deliver seized SOL with 5% Bonus
     else Position is Healthy
-        Note over Liquidator: Liquidation aborted; position remains protected
+        Solana-->>Liquidator: Abort liquidation (position is safely collateralized)
     end
 ```
 
