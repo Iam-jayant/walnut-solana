@@ -1,155 +1,269 @@
-# Walnut Protocol 🌰
+```
+██╗    ██╗ █████╗ ██╗     ███╗   ██╗██╗   ██╗████████╗
+██║    ██║██╔══██╗██║     ████╗  ██║██║   ██║╚══██╔══╝
+██║ █╗ ██║███████║██║     ██╔██╗ ██║██║   ██║   ██║   
+██║███╗██║██╔══██║██║     ██║╚██╗██║██║   ██║   ██║   
+╚███╔███╔╝██║  ██║███████╗██║ ╚████║╚██████╔╝   ██║   
+ ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   
+```
 
-> **Confidential Lending & Liquidity on Solana L1, powered by Arcium MPC.**
+# Walnut Protocol: Confidential Lending on Solana L1
 
 [![Solana Devnet](https://img.shields.io/badge/Solana-Devnet-14F195?logo=solana&logoColor=black)](https://explorer.solana.com/address/5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea?cluster=devnet)
 [![Arcium MPC](https://img.shields.io/badge/Arcium_MPC-v0.16.0-FFD208?logoColor=black)](https://arcium.com)
-[![Anchor](https://img.shields.io/badge/Anchor-v1.0.2-black)](https://anchor-lang.com)
-[![Next.js](https://img.shields.io/badge/Next.js-16_Turbopack-black?logo=next.js)](https://nextjs.org)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue?logo=typescript)](https://www.typescriptlang.org)
+[![Anchor Framework](https://img.shields.io/badge/Anchor-v1.0.2-black)](https://anchor-lang.com)
+[![TypeScript SDK](https://img.shields.io/badge/%40walnut%2Fsdk-TypeScript-blue?logo=typescript)](https://github.com/Iam-jayant/walnut-solana/tree/v2/packages/sdk)
+[![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+Walnut is a **native confidential lending and liquidity protocol** built on Solana L1, powered by **Arcium Multi-Party Computation (MPC)**.
+
+Unlike legacy DeFi lending markets (Aave, Kamino, Marginfi) that expose borrower balances, exact collateral ratios, and liquidation prices on the public ledger, Walnut enforces account privacy directly at the state level. Account balances, borrowed debt, and collateral positions are stored as encrypted ciphertexts on Solana, while risk validation, solvency checks, and interest index updates execute within off-chain MPC computation enclaves.
 
 ---
 
-## Overview
+## 1. The Architectural Problem
 
-In traditional public DeFi (Aave, Kamino, Marginfi), every wallet's collateral, debt, borrow limits, and liquidation prices are visible to anyone on Solscan. This transparency invites **predatory MEV bots, front-running, and liquidation cascades**, while preventing institutions and funds from executing confidential lending strategies.
+In transparent DeFi lending protocols:
+- **Predatory MEV & Liquidation Cascades**: Onchain liquidator bots constantly scan public memory pools and state accounts. When market volatility occurs, searchers front-run oracle updates, manipulate local pools, and trigger cascading liquidations to harvest liquidation bonuses.
+- **Credit & Strategy Exposure**: Institutional market makers, proprietary trading desks, and treasury managers cannot leverage public lending protocols without broadcasting their net exposure, balance sheet liabilities, and hedging positions to competitors in real time.
+- **Surveillance by Default**: Every debt position, collateral deposit, and yield-earning account is globally indexed, doxxing users' personal financial health.
 
-**Walnut closes this gap.** Built natively on Solana L1 and integrated with the **Arcium Multi-Party Computation (MPC)** network, Walnut encrypts borrower balances, debt, and collateral onchain. Mathematical rules—such as loan-to-value (LTV) limits, continuous interest accrual, and solvency checks—are verified privately in MPC enclaves without publishing raw financial data to the public ledger.
-
-```
-       [ Public Solana L1 ]                           [ Arcium MPC Enclave ]
-+--------------------------------+             +----------------------------------+
-|  User Deposits SOL / USDC      |             |                                  |
-|               │                |             |  Computes Encrypted Deltas       |
-|               ▼                |             |  Verifies LTV & Health Ratios    |
-|  Wrapped into cSOL & cUSDC     | ──────────> |  Zero-Knowledge Solvency Check   |
-|  (Balances Encrypted On-Chain) |             |  Accrues Confidential Interest   |
-|               │                |             |                                  |
-|               ▼                | <────────── |                                  |
-|  Encrypted State Committed     |             +----------------------------------+
-+--------------------------------+
-```
+### The Walnut Solution
+Walnut decouples **macroeconomic pool solvency** from **microeconomic user privacy**:
+1. **Public Macro State**: Total liquidity, utilization bands (revealed in 5% granular steps), and global interest rate index accumulators remain verifiable on Solana L1.
+2. **Private Micro State**: Individual borrower collateral ($S_{\text{collateral}}$), outstanding debt shares ($D_{\text{shares}}$), and free asset allocations are strictly encrypted. Solvency checks are evaluated as zero-knowledge boolean predicates inside Arcium MPC circuits.
 
 ---
 
-## Key Features
+## 2. System Architecture
 
-- **Confidential Balances (`cSOL` & `cUSDC`)**: Wrap native SOL and USDC into confidential token balances where ciphertext balances are stored directly on Solana L1.
-- **Private Collateral & Borrowing**: Post encrypted SOL collateral and borrow USDC. Accrued interest updates continuously without public balance leakages.
-- **Confidential Yield (Supply & Earn)**: Supply USDC to the lending pool to earn real-time APY. Pool shares and earned interest remain private.
-- **Zero-Knowledge Health Checks & Liquidations**: Anyone can trigger permissionless health checks for any borrower. The Arcium MPC returns a single boolean outcome (`Healthy` vs `Below Liquidation Threshold`) without revealing underlying debt or collateral amounts.
-- **Client-Side Viewing Key Custody**: Users sign a zero-gas message to derive an in-memory Viewing Key. Keys feature automatic 5-minute inactivity timeouts to protect against shoulder surfing and open tab exploits.
-- **Selective Auditor Compliance**: Disclose specific balance fields (e.g. proof of assets, tax compliance) to authorized auditor public keys using x25519 asymmetric encryption.
-- **Zama-Inspired Chamfered UI**: Production web application built with chamfered cards (`rounded-2xl`), ambient frosted glassmorphism, real-time toast alerts, and direct Solana Explorer links.
+Walnut combines Solana's high-throughput L1 execution with Arcium's decentralized Multi-Party Execution Environment (MXE).
 
----
+```mermaid
+flowchart TD
+    subgraph Client["Client Application & SDK"]
+        U["User Wallet (Ed25519)"]
+        VK["Viewing Key Custody (x25519)"]
+        ENC["Local Ciphertext Builder"]
+    end
 
-## Deployed Onchain Contracts (Solana Devnet)
+    subgraph Solana["Solana L1 Ledger (Anchor Program)"]
+        PROG["Walnut Core Program"]
+        MARKET["Market State (Public Indexes & Bands)"]
+        POS["Encrypted Position Accounts"]
+        LOCK["Position Optimistic Locks"]
+        QUEUE["MPC Computation Queue"]
+    end
 
-Walnut is live and initialized on Solana Devnet:
+    subgraph Arcium["Arcium MPC Network (MXE)"]
+        CIRCUIT["Arcis MPC Circuits"]
+        NODES["Multi-Party Enclave Nodes"]
+        ZKCHECK["Solvency & LTV Verification"]
+    end
 
-| Contract / Account | Address |
-| :--- | :--- |
-| **Walnut Program ID** | [`5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea`](https://explorer.solana.com/address/5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea?cluster=devnet) |
-| **Lending Market Address** | [`Du5ZWegZJj1RvpZ2GHVNgsy2MXAhiThpP3AHWRkJEEGr`](https://explorer.solana.com/address/Du5ZWegZJj1RvpZ2GHVNgsy2MXAhiThpP3AHWRkJEEGr?cluster=devnet) |
-| **Confidential USDC Mint** | [`GHLMq3gCUHkb9sGPouXNo4Lt9QpGCmz5UMrtF7EwVDLT`](https://explorer.solana.com/address/GHLMq3gCUHkb9sGPouXNo4Lt9QpGCmz5UMrtF7EwVDLT?cluster=devnet) |
-| **Wrapped SOL Mint** | [`So11111111111111111111111111111111111111112`](https://explorer.solana.com/address/So11111111111111111111111111111111111111112?cluster=devnet) |
-| **Arcium Cluster Offset** | `456` (Shared Devnet Cluster) |
-
----
-
-## Repository Architecture
-
-```
-walnut-solana/
-├── programs/walnut/           # Anchor Solana on-chain smart contract
-├── encrypted-ixs/             # Arcis Rust circuits compiled for Arcium MPC
-├── packages/sdk/              # @walnut/sdk TypeScript client library
-├── packages/reference-model/  # High-precision simulation model for verification
-├── web/                       # Next.js 16 Web Application (App Router, Tailwind CSS)
-│   ├── app/                   # Next.js routes (/app, /app/audit, /api/band/refresh)
-│   ├── components/            # Zama-styled UI components, toast provider, sidebar
-│   └── lib/                   # Solana web3 RPC, Anchor IDL, arithmetic & metrics
-├── keeper/                    # Background rate curve & band keeper service
-├── scripts/                   # Toolchain validation, deployment scripts & test suites
-└── tests/                     # Integration tests across Anchor & Arcium
+    U -->|1. Sign Zero-Gas Message| VK
+    VK -->|2. Encrypt Inputs| ENC
+    ENC -->|3. Submit Intent Tx| PROG
+    PROG -->|4. Acquire Lock & Queue Computation| LOCK
+    PROG -->|Enqueue Task| QUEUE
+    QUEUE -->|5. Ingest Encrypted Inputs| NODES
+    NODES -->|6. Execute Confidential Circuit| CIRCUIT
+    CIRCUIT -->|7. Verify LTV / Solvency| ZKCHECK
+    NODES -->|8. Signed Authenticated Callback| PROG
+    PROG -->|9. Commit Encrypted Deltas & Release Lock| POS
+    PROG -->|10. Update Macro Indexes| MARKET
 ```
 
 ---
 
-## Deploying to Vercel
+## 3. Cryptographic State & Account Model
 
-The web application is fully optimized for **Vercel** with instant Turbopack builds and automated cron-based band refresh.
+### Position State Layout
+Each user owns an encrypted `Position` PDA derived from their public key:
 
-### Step 1: Import Repository
-1. Log in to [Vercel](https://vercel.com) and click **"Add New Project"**.
-2. Select your `walnut-solana` repository.
+$$\text{PDA} = \text{find\_program\_address}([\text{"position"}, \text{market}, \text{owner}], \text{PROGRAM\_ID})$$
 
-### Step 2: Configure Project Settings
-- **Framework Preset**: `Next.js`
-- **Root Directory**: Click "Edit" and select **`web`** (ensuring files outside root directory remain accessible for `@walnut/sdk`).
-- **Build Command**: `pnpm sdk:build && next build` (or leave default `npm run build`)
-- **Output Directory**: `.next`
+Within the position, balances are held as homomorphic/Rescue ciphertexts:
+- `free_sol`: Encrypted available SOL balance.
+- `collateral_sol`: Encrypted SOL collateral backing active borrow capacity.
+- `free_usdc`: Encrypted available USDC balance.
+- `debt_shares_usdc`: Encrypted borrow shares accruing interest via the global borrow index.
+- `supply_shares_usdc`: Encrypted pool supply shares accruing interest via the global supply index.
 
-### Step 3: Environment Variables
-Configure the following variable in Vercel project settings:
+### Viewing Key Derivation & Client-Side Decryption
+Walnut employs non-custodial Viewing Keys. Decryption never occurs on a central server.
+1. The user signs an offchain authentication payload with their Ed25519 wallet key.
+2. The signature is expanded into an x25519 keypair used to decrypt Rescue/ElGamal state ciphertexts directly in browser memory.
+3. An automatic 5-minute inactivity timeout purges viewing keys from volatile memory to prevent session hijacking.
 
-| Name | Value | Description |
+---
+
+## 4. Mathematical Model & Risk Management
+
+### 1. Loan-To-Value (LTV) & Borrow Limits
+A borrower's maximum borrowing capacity is bounded by their collateral value and the protocol LTV:
+
+$$\text{Borrow Limit} = \frac{S_{\text{collateral}} \times P_{\text{SOL/USDC}} \times \text{LTV}_{\text{bps}}}{10^4 \times 10^9}$$
+
+- **Max LTV ($\text{LTV}_{\text{bps}}$)**: $5000\text{ bps}$ ($50.0\%$)
+- **Liquidation Threshold ($\text{LT}_{\text{bps}}$)**: $8000\text{ bps}$ ($80.0\%$)
+- **Close Factor**: $5000\text{ bps}$ ($50.0\%$)
+- **Liquidation Bonus**: $500\text{ bps}$ ($5.0\%$)
+
+### 2. Continuous Interest Accrual
+Debt accumulates interest continuously on Solana using ray-style fixed-point indexes ($10^9$ scale):
+
+$$I_{\text{borrow}}(t) = I_{\text{borrow}}(t_0) \times \left(1 + \frac{R_{\text{borrow}} \times (t - t_0)}{\text{SECONDS\_PER\_YEAR}}\right)$$
+
+$$\text{User Debt}(t) = \frac{\text{debt\_shares} \times I_{\text{borrow}}(t)}{10^9}$$
+
+### 3. Macro Utilization Bands
+To prevent observers from deducing private trade sizes by monitoring micro-fluctuations in interest rates, pool utilization is partitioned into discrete $5\%$ bands:
+
+$$U_{\text{band}} = \left\lfloor \frac{U_{\text{exact}}}{5\%} \right\rfloor \times 5\%$$
+
+The dynamic interest rate curve updates only when utilization crosses a band boundary, completely masking individual transaction sizes.
+
+---
+
+## 5. Confidential Liquidation Engine
+
+In Walnut, liquidations are permissionless yet confidential. Any liquidator can check whether a borrower is insolvent without knowing their balances:
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Liquidator
+    participant Solana as Solana L1 (Walnut Program)
+    participant Arcium as Arcium MPC Cluster
+    participant Oracle as Pyth Network (SOL/USD)
+
+    Liquidator->>Solana: check_health(borrower_pubkey)
+    Solana->>Oracle: Read current clamped price
+    Solana->>Arcium: Queue MPC CheckHealth task
+    Note over Arcium: Computes inside MPC:<br/>Collateral * Price * LT < Debt * 10^4
+    Arcium->>Solana: Callback with 1-bit predicate (unhealthy: true/false)
+    Solana-->>Liquidator: Emit HealthResult event
+
+    alt Position is Unhealthy
+        Liquidator->>Solana: liquidate_pool(borrower, repay_usdc_amount)
+        Solana->>Arcium: Queue confidential Liquidation execution
+        Note over Arcium: Deducts up to CloseFactor (50%) debt<br/>Calculates Seized SOL = Repay / Price * (1 + 5% Bonus)
+        Arcium->>Solana: Settle encrypted state & Transfer seized collateral
+        Solana-->>Liquidator: Deliver seized SOL + 5% Bonus
+    else Position is Healthy
+        Note over Liquidator: Liquidation aborted; position remains protected
+    end
+```
+
+---
+
+## 6. Deployed Onchain Infrastructure
+
+Walnut is live on **Solana Devnet** connected to the official **Arcium MXE cluster**:
+
+| Entity | Address | Explorer |
 | :--- | :--- | :--- |
-| `NEXT_PUBLIC_RPC_URL` | `https://api.devnet.solana.com` | Solana Devnet RPC endpoint (or custom Helius/QuickNode RPC) |
-
-### Step 4: Deploy
-Click **Deploy**. Your confidential lending application will be live in under 2 minutes!
-
----
-
-## Local Development Setup
-
-### Prerequisites
-- **Node.js**: `>= 20.18.0`
-- **pnpm**: `>= 9.15.0`
-- **Rust & Solana CLI** *(optional, only if compiling onchain programs)*
-
-### 1. Clone & Install Dependencies
-```bash
-git clone https://github.com/Iam-jayant/walnut-solana.git
-cd walnut-solana
-pnpm install
-```
-
-### 2. Build the TypeScript SDK
-```bash
-pnpm --filter @walnut/sdk build
-```
-
-### 3. Run the Web dApp Locally
-```bash
-cd web
-pnpm dev
-```
-Open [http://localhost:3000](http://localhost:3000) in your browser. Connect any Solana wallet (Phantom, Solflare, Backpack) on **Devnet**.
+| **Walnut Core Program** | `5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea` | [Inspect on Solscan](https://explorer.solana.com/address/5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea?cluster=devnet) |
+| **Lending Market Account** | `Du5ZWegZJj1RvpZ2GHVNgsy2MXAhiThpP3AHWRkJEEGr` | [Inspect on Solscan](https://explorer.solana.com/address/Du5ZWegZJj1RvpZ2GHVNgsy2MXAhiThpP3AHWRkJEEGr?cluster=devnet) |
+| **Confidential USDC Mint** | `GHLMq3gCUHkb9sGPouXNo4Lt9QpGCmz5UMrtF7EwVDLT` | [Inspect on Solscan](https://explorer.solana.com/address/GHLMq3gCUHkb9sGPouXNo4Lt9QpGCmz5UMrtF7EwVDLT?cluster=devnet) |
+| **Wrapped SOL (wSOL) Mint** | `So11111111111111111111111111111111111111112` | [Inspect on Solscan](https://explorer.solana.com/address/So11111111111111111111111111111111111111112?cluster=devnet) |
+| **Arcium Cluster Offset** | `456` | Shared Devnet Enclave |
 
 ---
 
-## Protocol Lifecycle
+## 7. Developer SDK & Integration
 
-1. **Shield (`Deposit`)**: Wraps public SOL or USDC into encrypted `cSOL` or `cUSDC`.
-2. **Post Collateral**: Allocates confidential SOL to back your personal borrow limit.
-3. **Borrow USDC**: Computes available liquidity and mints confidential USDC up to 50% LTV.
-4. **Supply USDC**: Lends confidential USDC into the shared liquidity pool, earning dynamic interest rates.
-5. **Repay & Unshield**: Repays outstanding debt and burns/unwraps confidential tokens back to public Solana assets.
-6. **Liquidate**: Permissionless solvency check runs inside Arcium MPC to protect pool health with a 5% collateral bonus for liquidators.
+### Installation
+```bash
+pnpm add @walnut/sdk @solana/web3.js @anchor-lang/core
+```
+
+### Initializing the Client & Reading Private Positions
+```typescript
+import { Connection, PublicKey } from "@solana/web3.js";
+import { WalnutClient, deriveViewingKey, positionValues } from "@walnut/sdk";
+
+const connection = new Connection("https://api.devnet.solana.com", "confirmed");
+const client = new WalnutClient({
+  connection,
+  programId: new PublicKey("5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea"),
+  market: new PublicKey("Du5ZWegZJj1RvpZ2GHVNgsy2MXAhiThpP3AHWRkJEEGr"),
+});
+
+// 1. Derive Viewing Key from off-chain wallet signature
+const viewingKey = await deriveViewingKey(wallet);
+
+// 2. Fetch and decrypt confidential balances
+const encryptedPosition = await client.getPosition(wallet.publicKey);
+const decryptedBalances = client.decryptPosition(encryptedPosition, viewingKey);
+
+console.log("Free SOL:", decryptedBalances.freeSol);
+console.log("Collateral SOL:", decryptedBalances.collateralSol);
+console.log("Confidential Debt:", decryptedBalances.debtSharesUsdc);
+```
+
+### Performing a Zero-Knowledge Health Check
+```typescript
+// Query borrower solvency through Arcium MPC without learning balance values
+const healthResult = await client.checkHealth(borrowerPublicKey);
+
+if (healthResult.unhealthy) {
+  console.log("Account is liquidatable! Executing liquidation...");
+  await client.liquidate({
+    borrower: borrowerPublicKey,
+    repayAmount: 10_000_000n, // 10 USDC
+  });
+} else {
+  console.log("Account is safely collateralized.");
+}
+```
 
 ---
 
-## Security & Verification
+## 8. Selective Disclosure & Institutional Compliance
 
-- **State Encryption**: Ciphertexts use Rescue / ElGamal encryption verified inside Arcium MPC nodes.
-- **Position Locks**: Double-spend prevention via optimistic account locks on Solana L1 while multi-party computations finalize.
-- **Non-Custodial Viewing Keys**: Zero plaintext balance information is stored on backend servers or databases. Decryption is performed purely in client memory.
+To comply with regulatory standards (e.g. proof of assets, tax reporting) without publishing data globally, Walnut includes an on-chain **Auditor Disclosure protocol**:
+
+```typescript
+import { discloseToAuditor, DISCLOSURE_FIELDS } from "@walnut/sdk";
+
+// Selectively reveal only collateral and debt to an authorized auditor's x25519 public key
+const auditorKey = new Uint8Array(/* Auditor's 32-byte public key */);
+const mask = DISCLOSURE_FIELDS.COLLATERAL | DISCLOSURE_FIELDS.DEBT;
+
+await client.disclose({
+  auditorPublicKey: auditorKey,
+  fieldMask: mask,
+});
+```
+
+---
+
+## 9. Security & Formal Invariants
+
+1. **Optimistic Locking**: Position accounts are locked on Solana L1 upon queueing an MPC transaction. No subsequent operations can execute on that position until the MPC callback finalizes or times out, eliminating double-spend and concurrency race conditions.
+2. **Oracle Sanity Clamping**: Pyth price feeds are mathematically bounded by strict upper/lower deviation bands (`clampPrice`) to prevent flash-loan price manipulation attacks.
+3. **Double-Blind Enclaves**: Arcium MPC nodes process encrypted shares using secure multiparty computation. No individual node ever possesses the complete plaintext state.
+
+---
+
+## Repository Structure
+
+```
+├── programs/walnut/           # Anchor Solana L1 smart contracts
+│   └── src/                   # Lending market, position management, callbacks
+├── encrypted-ixs/             # Arcis Rust circuits compiled for Arcium MPC
+│   ├── src/                   # Confidential balance math, health checks & pool ops
+├── packages/sdk/              # @walnut/sdk TypeScript client library
+├── packages/reference-model/  # High-precision verification and testing model
+├── web/                       # Next.js 16 Web dApp (App Router, Tailwind CSS, Turbopack)
+├── keeper/                    # Autonomous band refresh and rate curve keeper
+└── scripts/                   # Toolchain coordination and test harnesses
+```
 
 ---
 
 ## License
 
-This project is licensed under the Apache 2.0 / MIT License.
+Walnut is dual-licensed under [Apache 2.0](LICENSE) and [MIT](LICENSE).
