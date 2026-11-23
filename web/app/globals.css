@@ -32,6 +32,11 @@ html {
   scrollbar-color: #e2e2e5 #fbfbfb;
 }
 
+/* Dedicated modern app typography matching reference */
+.font-app-sans {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
+}
+
 /*
  * Walnut design tokens (Task 15.1).
  *
@@ -169,4 +174,20 @@ html {
 
 .animate-devtools-slide:hover {
   animation-play-state: paused;
+}
+
+/* Minimalist sleek scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.22);
 }
