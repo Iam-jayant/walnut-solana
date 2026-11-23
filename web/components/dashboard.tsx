@@ -215,13 +215,13 @@ export function Overview({ onSelectTab }: { onSelectTab?: ((tab: AppTab) => void
     <div className="space-y-6">
       {/* Unlock Viewing Key Banner if balances are encrypted */}
       {!unlocked && (
-        <div className="rounded-2xl bg-white border border-black/[0.06] shadow-2xs p-5 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3.5">
-            <div className="h-10 w-10 rounded-xl bg-amber-50 text-amber-700 flex items-center justify-center shrink-0 border border-amber-200/50">
+        <div className="relative overflow-hidden rounded-2xl bg-white/70 backdrop-blur-xl border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-5 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ring-1 ring-black/[0.04] before:absolute before:inset-0 before:bg-linear-to-b before:from-white/50 before:to-transparent before:pointer-events-none">
+          <div className="flex items-center gap-3.5 relative z-10">
+            <div className="h-10 w-10 rounded-xl bg-amber-500/10 backdrop-blur-md text-amber-700 flex items-center justify-center shrink-0 border border-amber-300/40 shadow-2xs">
               <LockIcon />
             </div>
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">
+              <h3 className="text-sm font-semibold text-gray-900 tracking-tight">
                 Private positions are encrypted
               </h3>
               <p className="text-xs text-gray-500 mt-0.5">
@@ -232,7 +232,7 @@ export function Overview({ onSelectTab }: { onSelectTab?: ((tab: AppTab) => void
           <button
             type="button"
             onClick={() => void unlock()}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFD208] hover:bg-[#F5C800] px-5 py-2.5 font-medium text-xs text-black shadow-xs transition active:scale-[0.99] shrink-0 cursor-pointer"
+            className="relative z-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFD208] hover:bg-[#F5C800] px-5 py-2.5 font-semibold text-xs text-black shadow-[0_2px_12px_rgba(255,210,8,0.25)] transition active:scale-[0.99] shrink-0 cursor-pointer"
           >
             <LockIcon /> Unlock private balances
           </button>
