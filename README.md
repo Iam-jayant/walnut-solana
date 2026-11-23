@@ -1,19 +1,29 @@
-```
+<div align="center">
+
+<pre>
 ██╗    ██╗ █████╗ ██╗     ███╗   ██╗██╗   ██╗████████╗
 ██║    ██║██╔══██╗██║     ████╗  ██║██║   ██║╚══██╔══╝
 ██║ █╗ ██║███████║██║     ██╔██╗ ██║██║   ██║   ██║   
 ██║███╗██║██╔══██║██║     ██║╚██╗██║██║   ██║   ██║   
 ╚███╔███╔╝██║  ██║███████╗██║ ╚████║╚██████╔╝   ██║   
  ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   
-```
+</pre>
 
-# Walnut Protocol: Confidential Lending on Solana L1
+# Walnut Protocol
+
+**Native Confidential Lending and Liquidity on Solana L1, powered by Arcium MPC**
+
+<br/>
 
 [![Solana Devnet](https://img.shields.io/badge/Solana-Devnet-14F195?logo=solana&logoColor=black)](https://explorer.solana.com/address/5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea?cluster=devnet)
 [![Arcium MPC](https://img.shields.io/badge/Arcium_MPC-v0.16.0-FFD208?logoColor=black)](https://arcium.com)
 [![Anchor Framework](https://img.shields.io/badge/Anchor-v1.0.2-black)](https://anchor-lang.com)
 [![TypeScript SDK](https://img.shields.io/badge/%40walnut%2Fsdk-TypeScript-blue?logo=typescript)](https://github.com/Iam-jayant/walnut-solana/tree/v2/packages/sdk)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
+
+</div>
+
+<br/>
 
 Walnut is a **native confidential lending and liquidity protocol** built on Solana L1, powered by **Arcium Multi-Party Computation (MPC)**.
 
@@ -24,14 +34,14 @@ Unlike legacy DeFi lending markets (Aave, Kamino, Marginfi) that expose borrower
 ## 1. The Architectural Problem
 
 In transparent DeFi lending protocols:
-- **Predatory MEV & Liquidation Cascades**: Onchain liquidator bots constantly scan public memory pools and state accounts. When market volatility occurs, searchers front-run oracle updates, manipulate local pools, and trigger cascading liquidations to harvest liquidation bonuses.
-- **Credit & Strategy Exposure**: Institutional market makers, proprietary trading desks, and treasury managers cannot leverage public lending protocols without broadcasting their net exposure, balance sheet liabilities, and hedging positions to competitors in real time.
+- **Predatory MEV and Liquidation Cascades**: Onchain liquidator bots constantly scan public memory pools and state accounts. When market volatility occurs, searchers front-run oracle updates, manipulate local pools, and trigger cascading liquidations to harvest liquidation bonuses.
+- **Credit and Strategy Exposure**: Institutional market makers, proprietary trading desks, and treasury managers cannot leverage public lending protocols without broadcasting their net exposure, balance sheet liabilities, and hedging positions to competitors in real time.
 - **Surveillance by Default**: Every debt position, collateral deposit, and yield-earning account is globally indexed, doxxing users' personal financial health.
 
 ### The Walnut Solution
 Walnut decouples **macroeconomic pool solvency** from **microeconomic user privacy**:
 1. **Public Macro State**: Total liquidity, utilization bands (revealed in 5% granular steps), and global interest rate index accumulators remain verifiable on Solana L1.
-2. **Private Micro State**: Individual borrower collateral ($S_{\text{collateral}}$), outstanding debt shares ($D_{\text{shares}}$), and free asset allocations are strictly encrypted. Solvency checks are evaluated as zero-knowledge boolean predicates inside Arcium MPC circuits.
+2. **Private Micro State**: Individual borrower collateral, outstanding debt shares, and free asset allocations are strictly encrypted. Solvency checks are evaluated as zero-knowledge boolean predicates inside Arcium MPC circuits.
 
 ---
 
@@ -40,43 +50,43 @@ Walnut decouples **macroeconomic pool solvency** from **microeconomic user priva
 Walnut combines Solana's high-throughput L1 execution with Arcium's decentralized Multi-Party Execution Environment (MXE).
 
 ```mermaid
-flowchart TD
-    subgraph Client["Client Application & SDK"]
-        U["User Wallet (Ed25519)"]
-        VK["Viewing Key Custody (x25519)"]
-        ENC["Local Ciphertext Builder"]
+graph TD
+    subgraph Client [Client Application and SDK]
+        U[User Wallet]
+        VK[Viewing Key Custody]
+        ENC[Local Ciphertext Builder]
     end
 
-    subgraph Solana["Solana L1 Ledger (Anchor Program)"]
-        PROG["Walnut Core Program"]
-        MARKET["Market State (Public Indexes & Bands)"]
-        POS["Encrypted Position Accounts"]
-        LOCK["Position Optimistic Locks"]
-        QUEUE["MPC Computation Queue"]
+    subgraph Solana [Solana L1 Ledger]
+        PROG[Walnut Core Program]
+        MARKET[Market State and Indexes]
+        POS[Encrypted Position Accounts]
+        LOCK[Position Optimistic Locks]
+        QUEUE[MPC Computation Queue]
     end
 
-    subgraph Arcium["Arcium MPC Network (MXE)"]
-        CIRCUIT["Arcis MPC Circuits"]
-        NODES["Multi-Party Enclave Nodes"]
-        ZKCHECK["Solvency & LTV Verification"]
+    subgraph Arcium [Arcium MPC Network]
+        CIRCUIT[Arcis MPC Circuits]
+        NODES[Multi-Party Enclave Nodes]
+        ZKCHECK[Solvency and LTV Verification]
     end
 
-    U -->|1. Sign Zero-Gas Message| VK
-    VK -->|2. Encrypt Inputs| ENC
-    ENC -->|3. Submit Intent Tx| PROG
-    PROG -->|4. Acquire Lock & Queue Computation| LOCK
+    U -->|Sign Zero-Gas Auth| VK
+    VK -->|Derive Viewing Key| ENC
+    ENC -->|Submit Intent Transaction| PROG
+    PROG -->|Acquire Lock| LOCK
     PROG -->|Enqueue Task| QUEUE
-    QUEUE -->|5. Ingest Encrypted Inputs| NODES
-    NODES -->|6. Execute Confidential Circuit| CIRCUIT
-    CIRCUIT -->|7. Verify LTV / Solvency| ZKCHECK
-    NODES -->|8. Signed Authenticated Callback| PROG
-    PROG -->|9. Commit Encrypted Deltas & Release Lock| POS
-    PROG -->|10. Update Macro Indexes| MARKET
+    QUEUE -->|Ingest Encrypted Inputs| NODES
+    NODES -->|Execute Confidential Circuit| CIRCUIT
+    CIRCUIT -->|Verify LTV and Solvency| ZKCHECK
+    NODES -->|Signed Authenticated Callback| PROG
+    PROG -->|Commit Encrypted Deltas and Release Lock| POS
+    PROG -->|Update Macro Indexes| MARKET
 ```
 
 ---
 
-## 3. Cryptographic State & Account Model
+## 3. Cryptographic State and Account Model
 
 ### Position State Layout
 Each user owns an encrypted `Position` PDA derived from their public key:
@@ -90,7 +100,7 @@ Within the position, balances are held as homomorphic/Rescue ciphertexts:
 - `debt_shares_usdc`: Encrypted borrow shares accruing interest via the global borrow index.
 - `supply_shares_usdc`: Encrypted pool supply shares accruing interest via the global supply index.
 
-### Viewing Key Derivation & Client-Side Decryption
+### Viewing Key Derivation and Client-Side Decryption
 Walnut employs non-custodial Viewing Keys. Decryption never occurs on a central server.
 1. The user signs an offchain authentication payload with their Ed25519 wallet key.
 2. The signature is expanded into an x25519 keypair used to decrypt Rescue/ElGamal state ciphertexts directly in browser memory.
@@ -98,9 +108,9 @@ Walnut employs non-custodial Viewing Keys. Decryption never occurs on a central 
 
 ---
 
-## 4. Mathematical Model & Risk Management
+## 4. Mathematical Model and Risk Management
 
-### 1. Loan-To-Value (LTV) & Borrow Limits
+### 1. Loan-To-Value (LTV) and Borrow Limits
 A borrower's maximum borrowing capacity is bounded by their collateral value and the protocol LTV:
 
 $$\text{Borrow Limit} = \frac{S_{\text{collateral}} \times P_{\text{SOL/USDC}} \times \text{LTV}_{\text{bps}}}{10^4 \times 10^9}$$
@@ -134,23 +144,23 @@ In Walnut, liquidations are permissionless yet confidential. Any liquidator can 
 sequenceDiagram
     autonumber
     actor Liquidator
-    participant Solana as Solana L1 (Walnut Program)
-    participant Arcium as Arcium MPC Cluster
-    participant Oracle as Pyth Network (SOL/USD)
+    participant Solana as Solana L1
+    participant Arcium as Arcium MPC
+    participant Oracle as Pyth Oracle
 
     Liquidator->>Solana: check_health(borrower_pubkey)
-    Solana->>Oracle: Read current clamped price
+    Solana->>Oracle: Query clamped SOL price
     Solana->>Arcium: Queue MPC CheckHealth task
-    Note over Arcium: Computes inside MPC:<br/>Collateral * Price * LT < Debt * 10^4
-    Arcium->>Solana: Callback with 1-bit predicate (unhealthy: true/false)
+    Note over Arcium: Confidential Circuit Evaluates:<br/>Collateral * Price * LT vs Debt
+    Arcium->>Solana: Callback with predicate (unhealthy: true/false)
     Solana-->>Liquidator: Emit HealthResult event
 
     alt Position is Unhealthy
-        Liquidator->>Solana: liquidate_pool(borrower, repay_usdc_amount)
+        Liquidator->>Solana: liquidate_pool(borrower, repay_amount)
         Solana->>Arcium: Queue confidential Liquidation execution
-        Note over Arcium: Deducts up to CloseFactor (50%) debt<br/>Calculates Seized SOL = Repay / Price * (1 + 5% Bonus)
-        Arcium->>Solana: Settle encrypted state & Transfer seized collateral
-        Solana-->>Liquidator: Deliver seized SOL + 5% Bonus
+        Note over Arcium: Deducts up to 50% debt<br/>Calculates Seized SOL with 5% Bonus
+        Arcium->>Solana: Settle encrypted state and transfer collateral
+        Solana-->>Liquidator: Deliver seized SOL with 5% Bonus
     else Position is Healthy
         Note over Liquidator: Liquidation aborted; position remains protected
     end
@@ -172,14 +182,14 @@ Walnut is live on **Solana Devnet** connected to the official **Arcium MXE clust
 
 ---
 
-## 7. Developer SDK & Integration
+## 7. Developer SDK and Integration
 
 ### Installation
 ```bash
 pnpm add @walnut/sdk @solana/web3.js @anchor-lang/core
 ```
 
-### Initializing the Client & Reading Private Positions
+### Initializing the Client and Reading Private Positions
 ```typescript
 import { Connection, PublicKey } from "@solana/web3.js";
 import { WalnutClient, deriveViewingKey, positionValues } from "@walnut/sdk";
@@ -221,7 +231,7 @@ if (healthResult.unhealthy) {
 
 ---
 
-## 8. Selective Disclosure & Institutional Compliance
+## 8. Selective Disclosure and Institutional Compliance
 
 To comply with regulatory standards (e.g. proof of assets, tax reporting) without publishing data globally, Walnut includes an on-chain **Auditor Disclosure protocol**:
 
@@ -240,7 +250,7 @@ await client.disclose({
 
 ---
 
-## 9. Security & Formal Invariants
+## 9. Security and Formal Invariants
 
 1. **Optimistic Locking**: Position accounts are locked on Solana L1 upon queueing an MPC transaction. No subsequent operations can execute on that position until the MPC callback finalizes or times out, eliminating double-spend and concurrency race conditions.
 2. **Oracle Sanity Clamping**: Pyth price feeds are mathematically bounded by strict upper/lower deviation bands (`clampPrice`) to prevent flash-loan price manipulation attacks.
