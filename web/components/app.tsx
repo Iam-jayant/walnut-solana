@@ -100,15 +100,19 @@ function AppMain() {
   );
 }
 
+import { ToastProvider } from "./toast.tsx";
+
 export default function App() {
   // Wallet Standard wallets (Phantom, Solflare, Backpack, ...) are detected
   // automatically, so no adapter list is needed.
   return (
     <WalletProvider wallets={[]} autoConnect>
       <WalletModalProvider>
-        <WalnutProvider>
-          <AppMain />
-        </WalnutProvider>
+        <ToastProvider>
+          <WalnutProvider>
+            <AppMain />
+          </WalnutProvider>
+        </ToastProvider>
       </WalletModalProvider>
     </WalletProvider>
   );

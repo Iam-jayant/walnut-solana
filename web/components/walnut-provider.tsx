@@ -79,6 +79,7 @@ import {
   type StuckOperation,
 } from "../lib/ops.ts";
 import walnutIdl from "../lib/idl/walnut.json";
+import { useToast } from "./toast.tsx";
 
 export interface ActivityLink {
   label: string;
@@ -124,6 +125,7 @@ export interface WalnutState {
   stuck: StuckOperation | null;
   pendingLiquidation: PendingLiquidation | null;
   activity: ActivityItem[];
+  clearActivity(): void;
   busy: boolean;
   error: string | null;
   refreshing: boolean;
@@ -207,10 +209,64 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
+  const { showToast, updateToast } = useToast();
+
   const sessionRef = useRef<ViewingKeySession | null>(null);
   const positionRef = useRef<PositionAccount | null>(null);
   const activityId = useRef(0);
   const busyRef = useRef(false);
+
+  // Load persistent activity from localStorage
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    try {
+      const key = publicKey
+        ? `walnut_act_${publicKey.toBase58()}`
+        : "walnut_act_guest";
+      const raw = localStorage.getItem(key);
+      if (raw) {
+        const items = JSON.parse(raw);
+        if (Array.isArray(items)) {
+          setActivity(items);
+        }
+      } else {
+        setActivity([]);
+      }
+    } catch (e) {
+      console.warn("Failed to load activity from storage:", e);
+    }
+  }, [publicKey]);
+
+  const persistActivity = useCallback(
+    (items: ActivityItem[]) => {
+      if (typeof window === "undefined") return;
+      try {
+        const key = publicKey
+          ? `walnut_act_${publicKey.toBase58()}`
+          : "walnut_act_guest";
+        localStorage.setItem(key, JSON.stringify(items.slice(0, 50)));
+      } catch (e) {
+        console.warn("Failed to persist activity:", e);
+      }
+    },
+    [publicKey],
+  );
+
+  const clearActivity = useCallback(() => {
+    setActivity([]);
+    if (typeof window !== "undefined") {
+      const key = publicKey
+        ? `walnut_act_${publicKey.toBase58()}`
+        : "walnut_act_guest";
+      localStorage.removeItem(key);
+    }
+    showToast({
+      type: "info",
+      title: "Activity Cleared",
+      message: "Your transaction history has been cleared.",
+      duration: 3500,
+    });
+  }, [publicKey, showToast]);
 
   // ---- protocol and price (no wallet needed)
   useEffect(() => {
@@ -476,14 +532,42 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
       setBusy(true);
       setError(null);
       const id = (activityId.current += 1);
-      setActivity((items) => [
-        { id, label, stage: "signing", links: [], startedAt: Date.now() },
-        ...items,
-      ]);
+      const toastId = `toast-act-${id}-${Date.now()}`;
+
+      // Show initial pending toast
+      showToast({
+        id: toastId,
+        type: "pending",
+        title: label,
+        message: "Please sign and approve the transaction in your wallet...",
+      });
+
+      const newItem: ActivityItem = {
+        id,
+        label,
+        stage: "signing",
+        links: [],
+        startedAt: Date.now(),
+      };
+
+      setActivity((items) => {
+        const updated = [newItem, ...items].slice(0, 50);
+        persistActivity(updated);
+        return updated;
+      });
+
       const patch = (fn: (item: ActivityItem) => ActivityItem) =>
-        setActivity((items) => items.map((i) => (i.id === id ? fn(i) : i)));
+        setActivity((items) => {
+          const updated = items.map((i) => (i.id === id ? fn(i) : i));
+          persistActivity(updated);
+          return updated;
+        });
+
+      let lastSignature: string | undefined;
+
       const report: Report = (p: Progress) =>
         patch((item) => {
+          if (p.signature) lastSignature = p.signature;
           const links =
             p.signature !== undefined &&
             !item.links.some((l) => l.signature === p.signature)
@@ -501,16 +585,91 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
           else if (p.label !== undefined && p.label !== label) {
             next.detail = p.label;
           } else delete next.detail;
+
+          // Sync toast notifications in real-time
+          if (p.stage === "submitted") {
+            updateToast(toastId, {
+              type: "pending",
+              title: label,
+              message: "Transaction submitted to Solana. Awaiting confirmation...",
+              signature: p.signature,
+            });
+          } else if (p.stage === "computing") {
+            updateToast(toastId, {
+              type: "pending",
+              title: label,
+              message: p.detail ?? "Arcium MPC network is computing confidential state...",
+              signature: p.signature,
+            });
+          } else if (p.stage === "applied") {
+            updateToast(toastId, {
+              type: "success",
+              title: `${label} Successful`,
+              message: p.detail ?? "Operation applied and verified privately onchain.",
+              signature: p.signature,
+              duration: 6500,
+            });
+          } else if (p.stage === "rejected") {
+            updateToast(toastId, {
+              type: "error",
+              title: `${label} Refused`,
+              message: p.detail ?? "Refused by the MPC circuit. State unchanged.",
+              signature: p.signature,
+              duration: 8000,
+            });
+          } else if (p.stage === "failed") {
+            updateToast(toastId, {
+              type: "error",
+              title: `${label} Failed`,
+              message: p.detail ?? "Operation failed. Balances unchanged.",
+              signature: p.signature,
+              duration: 8000,
+            });
+          }
+
           return next;
         });
+
       try {
-        return await run(report, opsContext());
+        const result = await run(report, opsContext());
+        // For non-queued L1 actions (e.g. deposit SOL wrap), complete with success if not already terminal
+        updateToast(toastId, {
+          type: "success",
+          title: `${label} Completed`,
+          message: "Transaction confirmed on Solana.",
+          signature: lastSignature,
+          duration: 6000,
+        });
+        return result;
       } catch (err) {
+        const errMsg = friendlyError(err);
+        const isCancelled =
+          errMsg.toLowerCase().includes("user rejected") ||
+          errMsg.toLowerCase().includes("cancelled") ||
+          errMsg.toLowerCase().includes("canceled");
+
         patch((item) => ({
           ...item,
           stage: "failed",
-          detail: friendlyError(err),
+          detail: isCancelled ? "Cancelled by user" : errMsg,
         }));
+
+        if (isCancelled) {
+          updateToast(toastId, {
+            type: "cancelled",
+            title: `${label} Cancelled`,
+            message: "Transaction request was cancelled in your wallet.",
+            duration: 5000,
+          });
+        } else {
+          updateToast(toastId, {
+            type: "error",
+            title: `${label} Failed`,
+            message: errMsg,
+            duration: 8500,
+          });
+        }
+        setError(errMsg);
         return undefined;
       } finally {
         busyRef.current = false;
@@ -518,7 +677,7 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
         await refresh();
       }
     },
-    [opsContext, refresh],
+    [opsContext, persistActivity, refresh, showToast, updateToast],
   );
 
   // ---- actions
@@ -531,6 +690,12 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
           "This wallet cannot sign messages, so it cannot unlock private balances.",
         );
       }
+      showToast({
+        id: "toast-unlock",
+        type: "pending",
+        title: "Unlock Private Balances",
+        message: "Please sign the zero-gas Viewing Key message in your wallet...",
+      });
       const position = await fetchAccount<PositionAccount>(
         chain.program,
         "position",
@@ -558,10 +723,37 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
       }
       adoptSession(session);
       await refresh();
+      updateToast("toast-unlock", {
+        type: "success",
+        title: "Private Balances Unlocked",
+        message: "Viewing Key derived. Session stays active for 5 minutes.",
+        duration: 5000,
+      });
     } catch (err) {
-      setError(friendlyError(err));
+      const errMsg = friendlyError(err);
+      const isCancelled =
+        errMsg.toLowerCase().includes("user rejected") ||
+        errMsg.toLowerCase().includes("cancelled") ||
+        errMsg.toLowerCase().includes("canceled");
+
+      if (isCancelled) {
+        updateToast("toast-unlock", {
+          type: "cancelled",
+          title: "Unlock Cancelled",
+          message: "Viewing Key signature was cancelled in your wallet.",
+          duration: 4500,
+        });
+      } else {
+        updateToast("toast-unlock", {
+          type: "error",
+          title: "Unlock Failed",
+          message: errMsg,
+          duration: 7500,
+        });
+        setError(errMsg);
+      }
     }
-  }, [adoptSession, chain, protocol, publicKey, refresh, wallet]);
+  }, [adoptSession, chain, protocol, publicKey, refresh, showToast, updateToast, wallet]);
 
   const createAccount = useCallback(async () => {
     if (sessionRef.current === null || !sessionRef.current.isUnlocked) {
@@ -657,6 +849,7 @@ export function WalnutProvider({ children }: { children: ReactNode }) {
     stuck,
     pendingLiquidation,
     activity,
+    clearActivity,
     busy,
     error,
     refreshing,
