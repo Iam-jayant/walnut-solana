@@ -26,6 +26,7 @@ import {
 } from "./ui.tsx";
 import { useNowSeconds } from "./use-now.ts";
 import { useWalnut } from "./walnut-provider.tsx";
+import { TokenLogo } from "./token-logo.tsx";
 
 export type Tab =
   | "deposit"
@@ -46,79 +47,9 @@ const TABS: ReadonlyArray<[Tab, string]> = [
   ["unsupply", "Withdraw Supply"],
 ];
 
-/**
- * Reusable vector token badge with official Solana and USDC artwork,
- * plus the signature golden confidential shield for encrypted tokens.
- */
+/** Real token logos (USDC, SOL) with the confidential shield badge for c-tokens. */
 export function TokenIcon({ symbol }: { symbol: string }) {
-  const isC = symbol.startsWith("c");
-  const base = isC ? symbol.slice(1) : symbol;
-  const isSol = base.toUpperCase().startsWith("SOL");
-
-  if (isSol) {
-    return (
-      <div className="relative shrink-0 flex items-center justify-center">
-        <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#101217] border border-black/10 shadow-2xs">
-          <svg className="h-2.5 w-3" viewBox="0 0 397 311" fill="none">
-            <linearGradient id={`solGrad-${symbol}`} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#00FFA3" />
-              <stop offset="100%" stopColor="#DC1FFF" />
-            </linearGradient>
-            <path
-              fill={`url(#solGrad-${symbol})`}
-              d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7zM64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8zM333.1 120.1c-2.4-2.4-5.7-3.8-9.2-3.8H6.5c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z"
-            />
-          </svg>
-        </div>
-        {isC && (
-          <div className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white shadow-2xs">
-            <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none">
-              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="#FFD208" />
-              <path
-                d="M8.5 12l2.5 2.5 4.5-4.5"
-                stroke="#000000"
-                strokeWidth="2.5"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              />
-            </svg>
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // USDC / cUSDC / Shares
-  return (
-    <div className="relative shrink-0 flex items-center justify-center">
-      <div className="flex h-6 w-6 items-center justify-center rounded-full bg-[#2775CA] shadow-2xs">
-        <svg className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-          <circle cx="12" cy="12" r="10" stroke="#FFFFFF" strokeWidth="1.5" strokeOpacity="0.5" />
-          <path
-            d="M12 6.5v11M14.5 9.5a2.5 2.5 0 0 0-5 0c0 2.5 5 1.5 5 4a2.5 2.5 0 0 1-5 0"
-            stroke="#FFFFFF"
-            strokeWidth="1.75"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        </svg>
-      </div>
-      {isC && (
-        <div className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white shadow-2xs">
-          <svg className="h-2.5 w-2.5" viewBox="0 0 24 24" fill="none">
-            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" fill="#FFD208" />
-            <path
-              d="M8.5 12l2.5 2.5 4.5-4.5"
-              stroke="#000000"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            />
-          </svg>
-        </div>
-      )}
-    </div>
-  );
+  return <TokenLogo symbol={symbol} size={24} />;
 }
 
 interface AmountFormProps {

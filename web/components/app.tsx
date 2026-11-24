@@ -24,7 +24,7 @@ function AppMain() {
   const { unlocked, lock } = useWalnut();
 
   return (
-    <div className="min-h-screen flex bg-[#FAFAFA] bg-[radial-gradient(ellipse_55%_45%_at_0%_0%,_#FCF0B6_0%,_transparent_100%),radial-gradient(ellipse_35%_35%_at_100%_100%,_#E2E9F6_0%,_transparent_100%)] text-gray-900 font-app-sans antialiased relative overflow-x-hidden">
+    <div className="min-h-dvh flex bg-[#FAFAFA] bg-[radial-gradient(ellipse_55%_45%_at_0%_0%,_#FCF0B6_0%,_transparent_100%),radial-gradient(ellipse_35%_35%_at_100%_100%,_#E2E9F6_0%,_transparent_100%)] text-gray-900 font-app-sans antialiased relative overflow-x-hidden">
       {/* Mobile Backdrop Overlay when sidebar is open */}
       {sidebarOpen && (
         <div
@@ -51,7 +51,7 @@ function AppMain() {
       />
 
       {/* Main Canvas Area */}
-      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 h-dvh overflow-y-auto">
         {connected ? (
           <>
             <AppHeaderBar

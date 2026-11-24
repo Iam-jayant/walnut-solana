@@ -3,6 +3,7 @@
 import React from "react";
 import type { PublicKey } from "@solana/web3.js";
 import { shortAddress } from "../lib/format.ts";
+import { WalletAvatar } from "./wallet-avatar.tsx";
 
 export type AppTab =
   | "dashboard"
@@ -217,7 +218,7 @@ export function AppSidebar({
 
   return (
     <aside
-      className={`fixed lg:sticky top-0 left-0 z-50 h-screen bg-[#FAFAFA] lg:bg-transparent border-r border-black/[0.06] flex flex-col justify-between py-5 px-3 select-none font-app-sans transition-all duration-200 ease-in-out ${
+      className={`fixed lg:sticky top-0 left-0 z-50 h-dvh bg-[#FAFAFA] lg:bg-transparent border-r border-black/[0.06] flex flex-col justify-between py-5 px-3 select-none font-app-sans transition-all duration-200 ease-in-out ${
         isOpen
           ? "translate-x-0 shadow-2xl lg:shadow-none"
           : "-translate-x-full lg:translate-x-0"
@@ -368,10 +369,8 @@ export function AppSidebar({
                 className="flex items-center gap-2 min-w-0"
                 title={isCollapsed ? publicKey.toBase58() : undefined}
               >
-                {/* Zama-style colorful jazzicon avatar */}
-                <div className="h-7 w-7 rounded-full bg-gradient-to-tr from-purple-600 via-emerald-400 to-amber-300 flex items-center justify-center text-[10px] font-bold text-white shadow-2xs shrink-0 ring-1 ring-white">
-                  {publicKey.toBase58().slice(0, 1)}
-                </div>
+                {/* Profile picture generated from the wallet address */}
+                <WalletAvatar address={publicKey.toBase58()} size={32} />
                 {!isCollapsed && (
                   <div className="min-w-0">
                     <p className="text-[12px] font-semibold text-black truncate leading-tight">
