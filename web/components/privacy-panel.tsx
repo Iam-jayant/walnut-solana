@@ -130,8 +130,7 @@ export function PrivacyPanel() {
         {done ? (
           <div className="mt-3">
             <Notice tone="info">
-              Disclosure sealed. Share your position address with the auditor so
-              they can open it on the Audit page.
+              Disclosure sealed. Share your position address with the auditor so they can verify it with their key.
             </Notice>
           </div>
         ) : null}

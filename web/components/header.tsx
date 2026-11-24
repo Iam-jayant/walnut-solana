@@ -32,9 +32,6 @@ export function Header() {
             <a href="/app" className="underline-offset-4 hover:underline">
               App
             </a>
-            <a href="/app/audit" className="underline-offset-4 hover:underline">
-              Audit
-            </a>
           </nav>
         </div>
         <div className="flex flex-wrap items-center gap-2">
