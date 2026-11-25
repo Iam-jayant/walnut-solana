@@ -2,61 +2,28 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
+import { TokenLogo, WalnutMark } from "../token-logo.tsx";
 
 const APP_HREF = "/app";
 
-// Token & Badge SVGs
+// Real token logos shared with the rest of the app
 function UsdcLogo({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none">
-      <circle cx="12" cy="12" r="11" fill="#2775CA" />
-      <path
-        d="M12 4.5v15M14.5 7.5h-4a2 2 0 000 4h3a2 2 0 010 4h-4"
-        stroke="#FFFFFF"
-        strokeWidth="1.8"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      />
-    </svg>
-  );
+  return <TokenLogo symbol="USDC" size={20} className={className} />;
 }
 
 function CUsdcLogo({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <div className={`relative inline-flex items-center justify-center ${className}`}>
-      <svg className="w-full h-full" viewBox="0 0 24 24" fill="none">
-        <circle cx="12" cy="12" r="11" fill="#2775CA" />
-        <path
-          d="M12 5.5v13M14 8h-3.2a1.8 1.8 0 000 3.6h2.4a1.8 1.8 0 010 3.6H9.5"
-          stroke="#FFFFFF"
-          strokeWidth="1.6"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-      {/* Tiny lock / confidential badge indicator */}
-      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#FFE052] border border-white" />
-    </div>
-  );
+  return <TokenLogo symbol="cUSDC" size={20} className={className} />;
 }
 
 function CSolLogo({ className = "w-4 h-4" }: { className?: string }) {
-  return (
-    <div className={`relative inline-flex items-center justify-center ${className}`}>
-      <svg className="w-full h-full" viewBox="0 0 397 311" fill="currentColor">
-        <path d="M64.6 237.9c2.4-2.4 5.7-3.8 9.2-3.8h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1l62.7-62.7zM64.6 3.8C67.1 1.4 70.4 0 73.8 0h317.4c5.8 0 8.7 7 4.6 11.1l-62.7 62.7c-2.4 2.4-5.7 3.8-9.2 3.8H6.5c-5.8 0-8.7-7-4.6-11.1L64.6 3.8zM332.4 120.9c-2.4-2.4-5.7-3.8-9.2-3.8H5.8c-5.8 0-8.7 7-4.6 11.1l62.7 62.7c2.4 2.4 5.7 3.8 9.2 3.8h317.4c5.8 0 8.7-7 4.6-11.1l-62.7-62.7z" />
-      </svg>
-      {/* Tiny lock / confidential badge indicator */}
-      <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-[#FFE052] border border-white" />
-    </div>
-  );
+  return <TokenLogo symbol="cSOL" size={20} className={className} />;
 }
 
 function WalnutEmblem({ className = "w-6 h-6" }: { className?: string }) {
   return (
-    <div className={`rounded-full bg-black flex items-center justify-center ${className}`}>
-      <span className="text-[12px] font-black text-[#FFE052] leading-none">W</span>
-    </div>
+    <span className={`inline-flex ${className}`}>
+      <WalnutMark size={28} />
+    </span>
   );
 }
 

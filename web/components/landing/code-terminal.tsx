@@ -1,9 +1,8 @@
 "use client";
 
 import React, { useState } from "react";
-import Link from "next/link";
 
-const AUDIT_HREF = "/app/audit";
+const DOCS_HREF = "https://github.com/Iam-jayant/walnut-solana";
 
 export function CodeTerminal() {
   const [activeTab, setActiveTab] = useState<"ts" | "sol">("ts");
@@ -80,13 +79,15 @@ export function CodeTerminal() {
             </div>
 
             {/* Solid Yellow Docs Button matching Image 1 */}
-            <Link
-              href={AUDIT_HREF}
+            <a
+              href={DOCS_HREF}
+              target="_blank"
+              rel="noreferrer"
               className="inline-flex items-center gap-1 bg-[#FED022] hover:bg-[#ffda33] text-black text-xs font-semibold px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-[6px] transition cursor-pointer shadow-xs active:scale-[0.98]"
             >
               <span>Docs</span>
               <span className="text-[11px]">↗</span>
-            </Link>
+            </a>
           </div>
 
           {/* Syntax Highlighted Code Body with Line Numbers */}

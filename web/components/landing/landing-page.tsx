@@ -13,7 +13,7 @@ import { Footer } from "./footer.tsx";
 
 export function LandingPage() {
   return (
-    <div className="min-h-screen bg-[#fbfbfb] text-[#111111] font-sans antialiased selection:bg-[#FFE052] selection:text-black">
+    <div className="min-h-screen overflow-x-clip bg-[#fbfbfb] text-[#111111] font-sans antialiased selection:bg-[#FFE052] selection:text-black">
       {/* 1. Hero Section */}
       <Hero />
 
