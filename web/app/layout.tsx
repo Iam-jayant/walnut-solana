@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
 
@@ -36,6 +36,12 @@ export const metadata: Metadata = {
   title: "Walnut - Private lending on Solana",
   description:
     "Walnut is private lending on Solana powered by Arcium MPC. Balances, collateral and debt are encrypted, and only you can decrypt them with your Viewing Key.",
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({

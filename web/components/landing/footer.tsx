@@ -3,9 +3,36 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight } from "./icons.tsx";
+import { PartnerLogo } from "./partner-logo.tsx";
 
 const APP_HREF = "/app";
-const AUDIT_HREF = "/app/audit";
+const GITHUB_HREF = "https://github.com/Iam-jayant/walnut-solana";
+const X_HREF = "https://x.com/walnut_solana";
+const TG_HREF = "https://t.me/walnut_solana";
+
+function FooterLink({
+  href,
+  logo,
+  name,
+  children,
+}: {
+  href: string;
+  logo: string;
+  name: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <a
+      href={href}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex items-center gap-2 hover:text-black transition"
+    >
+      <PartnerLogo src={logo} name={name} size={16} className="rounded-[4px]" />
+      <span>{children}</span>
+    </a>
+  );
+}
 
 export function Footer() {
   const [contactModalOpen, setContactModalOpen] = useState(false);
@@ -21,9 +48,7 @@ export function Footer() {
               <div className="font-bold text-black uppercase tracking-wider mb-3">Protocol</div>
               <ul className="space-y-2">
                 <li><Link href={APP_HREF} className="hover:text-black transition">Launch App ↗</Link></li>
-                <li><Link href={AUDIT_HREF} className="hover:text-black transition">Audit & Verifier ↗</Link></li>
-                <li><a href="#solana-spotlight" className="hover:text-black transition">Architecture</a></li>
-                <li><a href="https://explorer.solana.com/?cluster=devnet" target="_blank" rel="noreferrer" className="hover:text-black transition">Solana Devnet ↗</a></li>
+                <li><a href="#developers" className="hover:text-black transition">TypeScript SDK</a></li>
               </ul>
             </div>
 
@@ -34,37 +59,51 @@ export function Footer() {
                 <li><Link href={APP_HREF} className="hover:text-black transition">Confidential Lending</Link></li>
                 <li><Link href={APP_HREF} className="hover:text-black transition">Shield & Unshield</Link></li>
                 <li><Link href={APP_HREF} className="hover:text-black transition">Private Positions</Link></li>
-                <li><Link href={AUDIT_HREF} className="hover:text-black transition">Viewing Keys</Link></li>
               </ul>
             </div>
 
-            {/* Col 3: Resources */}
+            {/* Col 3: Built with */}
             <div>
-              <div className="font-bold text-black uppercase tracking-wider mb-3">Resources</div>
-              <ul className="space-y-2">
-                <li><a href="https://arcium.com" target="_blank" rel="noreferrer" className="hover:text-black transition">Arcium MPC ↗</a></li>
-                <li><a href="https://pyth.network" target="_blank" rel="noreferrer" className="hover:text-black transition">Pyth Network ↗</a></li>
-                <li><a href="#developers" className="hover:text-black transition">TypeScript SDK</a></li>
-                <li><a href="https://github.com/walnut-solana" target="_blank" rel="noreferrer" className="hover:text-black transition">GitHub Repository ↗</a></li>
+              <div className="font-bold text-black uppercase tracking-wider mb-3">Built with</div>
+              <ul className="space-y-2.5">
+                <li><FooterLink href="https://arcium.com" logo="/logos/arcium.png" name="Arcium">Arcium MPC</FooterLink></li>
+                <li><FooterLink href="https://pyth.network" logo="/logos/pyth.png" name="Pyth">Pyth Network</FooterLink></li>
+                <li><FooterLink href={GITHUB_HREF} logo="/logos/github.svg" name="GitHub">GitHub Repository</FooterLink></li>
               </ul>
             </div>
 
             {/* Col 4: Community */}
             <div>
               <div className="font-bold text-black uppercase tracking-wider mb-3">Community</div>
-              <ul className="space-y-2">
-                <li><a href="https://x.com/walnut_solana" target="_blank" rel="noreferrer" className="hover:text-black transition">X / Twitter ↗</a></li>
-                <li><a href="https://t.me/walnut_solana" target="_blank" rel="noreferrer" className="hover:text-black transition">Telegram ↗</a></li>
-                <li><a href="https://github.com/walnut-solana" target="_blank" rel="noreferrer" className="hover:text-black transition">GitHub ↗</a></li>
+              <ul className="space-y-2.5">
+                <li><FooterLink href={X_HREF} logo="/logos/x.svg" name="X">X / Twitter</FooterLink></li>
+                <li><FooterLink href={TG_HREF} logo="/logos/telegram.svg" name="Telegram">Telegram</FooterLink></li>
                 <li><button type="button" onClick={() => setContactModalOpen(true)} className="hover:text-black transition text-left cursor-pointer">Contact Us ↗</button></li>
               </ul>
             </div>
           </div>
 
-          {/* Devnet Status Bar */}
-          <div className="flex items-center justify-center gap-2 mb-6 text-black/50 text-[12px]">
-            <span className="h-2 w-2 rounded-full bg-[#FFE052] animate-pulse" />
-            <span>Solana Devnet: All 7 Arcium MPC Circuits Operational</span>
+          {/* Social links */}
+          <div className="flex items-center justify-center gap-3 mb-5">
+            {[
+              { href: "https://arcium.com", logo: "/logos/arcium.png", name: "Arcium" },
+              { href: "https://pyth.network", logo: "/logos/pyth.png", name: "Pyth Network" },
+              { href: GITHUB_HREF, logo: "/logos/github.svg", name: "GitHub" },
+              { href: X_HREF, logo: "/logos/x.svg", name: "X" },
+              { href: TG_HREF, logo: "/logos/telegram.svg", name: "Telegram" },
+            ].map((item) => (
+              <a
+                key={item.name}
+                href={item.href}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={item.name}
+                title={item.name}
+                className="flex h-9 w-9 items-center justify-center rounded-full border border-black/[0.08] bg-white hover:border-black/25 hover:-translate-y-0.5 transition"
+              >
+                <PartnerLogo src={item.logo} name={item.name} size={18} className="rounded-[4px]" />
+              </a>
+            ))}
           </div>
 
           {/* Copyright centered matching Zama exact reference */}
