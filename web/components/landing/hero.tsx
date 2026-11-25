@@ -21,7 +21,7 @@ export function Hero() {
 
       {/* 2. Hero Section Rectangle: Zama warm luminous yellow atmosphere with desktop widescreen aspect ratio */}
       <div className="w-full px-4 sm:px-8 lg:px-[70px] mt-3 sm:mt-3.5">
-        <div className="relative overflow-hidden rounded-[18px] sm:rounded-[22px] border border-black/[0.04] min-h-[780px] sm:min-h-[820px] lg:min-h-[860px] flex flex-col justify-between shadow-[0_16px_50px_-15px_rgba(250,222,138,0.22),inset_0_1px_2px_rgba(255,255,255,0.85)]">
+        <div className="relative overflow-hidden rounded-[18px] sm:rounded-[22px] border border-black/[0.04] min-h-[640px] sm:min-h-[820px] lg:min-h-[860px] flex flex-col justify-between shadow-[0_16px_50px_-15px_rgba(250,222,138,0.22),inset_0_1px_2px_rgba(255,255,255,0.85)]">
           {/* Luminous, rich warm yellow atmospheric background matching Zama.org exact color sampling */}
           <div
             className="pointer-events-none absolute inset-0 z-0"
@@ -40,10 +40,10 @@ export function Hero() {
           />
 
           {/* Content inside Hero rectangle: Left-aligned with comfortable vertical offset matching Zama headroom */}
-          <div className="relative z-10 max-w-3xl px-8 sm:px-12 lg:px-16 pt-[250px] sm:pt-[280px] lg:pt-[310px] pb-6">
+          <div className="relative z-10 max-w-5xl px-5 sm:px-12 lg:px-16 pt-[120px] sm:pt-[230px] lg:pt-[250px] pb-6">
             {/* Main Headline: Exactly two lines, elegant light grotesque font */}
             <h1
-              className="text-5xl sm:text-6xl lg:text-[72px] xl:text-[76px] tracking-tight text-black mb-5 select-none"
+              className="text-[34px] min-[400px]:text-[42px] sm:text-6xl lg:text-[88px] xl:text-[104px] tracking-tight text-black mb-7 select-none"
               style={{
                 fontFamily: "var(--font-telegraf), ui-sans-serif, system-ui, sans-serif",
                 fontWeight: 200,
@@ -57,32 +57,53 @@ export function Hero() {
             </h1>
 
             {/* Supporting Prose: Narrow 4-line block matching Zama layout */}
-            <p className="max-w-[390px] text-xs sm:text-[13px] font-normal leading-[1.55] text-black/80">
+            <p className="max-w-[560px] text-base sm:text-lg lg:text-xl font-normal leading-[1.55] text-black/80">
               The Walnut Protocol brings confidential lending, shielded balances, and private yield natively to Solana, powered by Arcium multi-party computation.
             </p>
+
+            {/* Primary actions */}
+            <div className="mt-8 flex flex-wrap items-center gap-3">
+              <a
+                href="/app"
+                className="inline-flex items-center gap-2 rounded-[8px] bg-black px-6 py-3 text-sm font-medium text-white shadow-sm transition hover:bg-neutral-800 active:scale-[0.99]"
+              >
+                Launch App
+                <span aria-hidden>→</span>
+              </a>
+              <a
+                href="https://github.com/Iam-jayant/walnut-solana"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-2 rounded-[8px] border border-black/15 bg-white/60 px-6 py-3 text-sm font-medium text-black backdrop-blur-sm transition hover:bg-white active:scale-[0.99]"
+              >
+                View on GitHub
+                <span aria-hidden>↗</span>
+              </a>
+            </div>
           </div>
 
           {/* Bottom Row: Frosted Glass Metric Cards on Left, Scroll to Explore Button on Right */}
-          <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4 px-8 sm:px-12 lg:px-16 pb-8 sm:pb-10">
+          <div className="relative z-10 flex flex-col sm:flex-row sm:items-end justify-between gap-4 px-5 sm:px-12 lg:px-16 pb-6 sm:pb-10">
             {/* Left: The Two Frosted Glass Metric Cards */}
             <div className="flex flex-wrap items-center gap-3.5 sm:gap-4">
-              {/* Shielded volume Card */}
-              <div className="rounded-[10px] sm:rounded-[12px] bg-white/[0.18] backdrop-blur-md border border-white/35 px-5 py-3 sm:px-6 sm:py-3.5 min-w-[170px] sm:min-w-[190px] shadow-2xs">
+              {/* Network card */}
+              <div className="rounded-[10px] sm:rounded-[12px] bg-white/[0.35] backdrop-blur-md border border-white/50 px-5 py-3 sm:px-6 sm:py-3.5 min-w-[150px] sm:min-w-[190px] shadow-2xs">
                 <div className="text-[11px] text-black/60 font-normal mb-0.5">
-                  Shielded volume
+                  Network
                 </div>
-                <div className="text-xl sm:text-[22px] font-normal text-black font-sans tracking-tight">
-                  $871,393,540
+                <div className="flex items-center gap-2 text-lg sm:text-xl font-medium text-black tracking-tight">
+                  <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                  Solana Devnet
                 </div>
               </div>
 
-              {/* Shielded TVL Card */}
-              <div className="rounded-[10px] sm:rounded-[12px] bg-white/[0.18] backdrop-blur-md border border-white/35 px-5 py-3 sm:px-6 sm:py-3.5 min-w-[170px] sm:min-w-[190px] shadow-2xs">
+              {/* Privacy engine card */}
+              <div className="rounded-[10px] sm:rounded-[12px] bg-white/[0.35] backdrop-blur-md border border-white/50 px-5 py-3 sm:px-6 sm:py-3.5 min-w-[150px] sm:min-w-[190px] shadow-2xs">
                 <div className="text-[11px] text-black/60 font-normal mb-0.5">
-                  Shielded TVL
+                  Privacy engine
                 </div>
-                <div className="text-xl sm:text-[22px] font-normal text-black font-sans tracking-tight">
-                  $87,043,978
+                <div className="text-lg sm:text-xl font-medium text-black tracking-tight">
+                  Arcium MPC
                 </div>
               </div>
             </div>

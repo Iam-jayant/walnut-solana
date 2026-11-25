@@ -1,29 +1,179 @@
 "use client";
 
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, type ReactNode } from "react";
 import Link from "next/link";
 import {
   ArrowUpRight,
   ChevronDown,
   ShieldIcon,
   UnshieldIcon,
-  SendIcon,
   EarnIcon,
-  SwapIcon,
+  BorrowIcon,
   TokensIcon,
   VaultIcon,
   LayersIcon,
   SdkIcon,
 } from "./icons.tsx";
+import { PartnerLogo } from "./partner-logo.tsx";
 
 const APP_HREF = "/app";
-const AUDIT_HREF = "/app/audit";
+
+const GITHUB_HREF = "https://github.com/Iam-jayant/walnut-solana";
+
+interface NavLeaf {
+  label: string;
+  href: string;
+  desc?: string;
+  icon?: ReactNode;
+  logo?: string;
+  external?: boolean;
+}
+
+type NavEntry =
+  | { kind: "link"; label: string; href: string }
+  | {
+      kind: "menu";
+      id: string;
+      label: string;
+      width: string;
+      columns: ReadonlyArray<{ title: string; items: ReadonlyArray<NavLeaf> }>;
+    };
+
+const NAV: ReadonlyArray<NavEntry> = [
+  {
+    kind: "menu",
+    id: "products",
+    label: "Products",
+    width: "w-[760px]",
+    columns: [
+      {
+        title: "Confidential tokens",
+        items: [
+          { label: "Shield", desc: "Wrap SOL and USDC into encrypted tokens", href: APP_HREF, icon: <ShieldIcon /> },
+          { label: "Unshield", desc: "Withdraw back to your public wallet", href: APP_HREF, icon: <UnshieldIcon /> },
+        ],
+      },
+      {
+        title: "Lending",
+        items: [
+          { label: "Collateral", desc: "Add or withdraw private collateral", href: APP_HREF, icon: <LayersIcon /> },
+          { label: "Borrow & Repay", desc: "Private debt, checked by MPC", href: APP_HREF, icon: <BorrowIcon /> },
+          { label: "Supply & Earn", desc: "Earn yield on supplied USDC", href: APP_HREF, icon: <EarnIcon /> },
+        ],
+      },
+      {
+        title: "Monitor",
+        items: [
+          { label: "Liquidations", desc: "Health checks and liquidations", href: APP_HREF, icon: <VaultIcon /> },
+          { label: "Activity", desc: "Live status of your operations", href: APP_HREF, icon: <TokensIcon /> },
+        ],
+      },
+    ],
+  },
+  { kind: "link", label: "How it works", href: "#solana-spotlight" },
+  { kind: "link", label: "Use cases", href: "#industries" },
+  {
+    kind: "menu",
+    id: "developers",
+    label: "Developers",
+    width: "w-[520px]",
+    columns: [
+      {
+        title: "Build",
+        items: [
+          { label: "TypeScript SDK", desc: "Client code and examples", href: "#developers", icon: <SdkIcon /> },
+          { label: "GitHub", desc: "Source code and issues", href: GITHUB_HREF, logo: "/logos/github.svg", external: true },
+        ],
+      },
+      {
+        title: "Powered by",
+        items: [
+          { label: "Arcium", desc: "Multi-party computation", href: "https://arcium.com", logo: "/logos/arcium.png", external: true },
+          { label: "Pyth Network", desc: "SOL/USD price oracle", href: "https://pyth.network", logo: "/logos/pyth.png", external: true },
+        ],
+      },
+    ],
+  },
+  {
+    kind: "menu",
+    id: "community",
+    label: "Community",
+    width: "w-[300px]",
+    columns: [
+      {
+        title: "Follow Walnut",
+        items: [
+          { label: "X / Twitter", desc: "News and updates", href: "https://x.com/walnut_solana", logo: "/logos/x.svg", external: true },
+          { label: "Telegram", desc: "Chat with the team", href: "https://t.me/walnut_solana", logo: "/logos/telegram.svg", external: true },
+          { label: "GitHub", desc: "Star and contribute", href: GITHUB_HREF, logo: "/logos/github.svg", external: true },
+        ],
+      },
+    ],
+  },
+];
+
+function NavLeafLink({ item, onNavigate }: { item: NavLeaf; onNavigate: () => void }) {
+  const inner = (
+    <>
+      {item.logo ? (
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] border border-black/[0.08] bg-white">
+          <PartnerLogo src={item.logo} name={item.label} size={18} className="rounded-[4px]" />
+        </span>
+      ) : (
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-[#FED022] shadow-xs transition-transform group-hover:scale-105">
+          {item.icon}
+        </span>
+      )}
+      <span className="min-w-0">
+        <span className="flex items-center gap-1 text-[14px] font-medium text-black">
+          {item.label}
+          {item.external ? <span className="text-[12px] text-black/50">↗</span> : null}
+        </span>
+        {item.desc ? (
+          <span className="mt-0.5 block text-[12px] leading-snug text-black/50">{item.desc}</span>
+        ) : null}
+      </span>
+    </>
+  );
+  const cls = "group flex items-start gap-3 rounded-xl p-2 transition-colors hover:bg-black/[0.04]";
+
+  if (item.external) {
+    return (
+      <a href={item.href} target="_blank" rel="noreferrer" onClick={onNavigate} className={cls}>
+        {inner}
+      </a>
+    );
+  }
+  if (item.href.startsWith("#")) {
+    return (
+      <a href={item.href} onClick={onNavigate} className={cls}>
+        {inner}
+      </a>
+    );
+  }
+  return (
+    <Link href={item.href} onClick={onNavigate} className={cls}>
+      {inner}
+    </Link>
+  );
+}
 
 export function Navbar() {
   const [dropdownOpen, setDropdownOpen] = useState<string | null>(null);
   const [contactModalOpen, setContactModalOpen] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const navRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    function onKey(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setDropdownOpen(null);
+        setMobileMenuOpen(false);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, []);
 
   const toggleDropdown = (name: string) => {
     setDropdownOpen(dropdownOpen === name ? null : name);
@@ -57,193 +207,68 @@ export function Navbar() {
             </Link>
           </div>
 
-          {/* Center: Navigation Links matching Zama header styling */}
-          <nav className="hidden md:flex items-center gap-7 text-[13.5px] font-normal text-black">
-            {/* Products Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => toggleDropdown("products")}
-                className="flex items-center gap-1 text-black hover:text-black/70 transition py-2 cursor-pointer font-normal"
-              >
-                Products
-                <ChevronDown
-                  className={`w-3.5 h-3.5 text-black/70 transition-transform duration-200 ${
-                    dropdownOpen === "products" ? "rotate-180" : ""
-                  }`}
-                />
-              </button>
+          {/* Center: Navigation (desktop) */}
+          <nav className="hidden lg:flex items-center gap-7 text-[13.5px] font-normal text-black" aria-label="Main">
+            {NAV.map((entry) =>
+              entry.kind === "link" ? (
+                <a
+                  key={entry.label}
+                  href={entry.href}
+                  className="py-2 text-black transition hover:text-black/70"
+                >
+                  {entry.label}
+                </a>
+              ) : (
+                <div key={entry.id}>
+                  <button
+                    type="button"
+                    onClick={() => toggleDropdown(entry.id)}
+                    aria-expanded={dropdownOpen === entry.id}
+                    aria-haspopup="true"
+                    className="flex cursor-pointer items-center gap-1 py-2 font-normal text-black transition hover:text-black/70"
+                  >
+                    {entry.label}
+                    <ChevronDown
+                      className={`h-3.5 w-3.5 text-black/70 transition-transform duration-200 ${
+                        dropdownOpen === entry.id ? "rotate-180" : ""
+                      }`}
+                    />
+                  </button>
 
-              {dropdownOpen === "products" && (
-                <div className="absolute top-full left-1/2 -translate-x-1/2 mt-3 w-[780px] rounded-2xl bg-white p-7 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.15)] border border-black/[0.08] grid grid-cols-3 gap-0 z-50 animate-in fade-in slide-in-from-top-2 duration-150">
-                  {/* Column 1: Walnut App */}
-                  <div className="border-r border-black/[0.08] pr-6">
-                    <div className="text-[13px] font-bold uppercase tracking-wider text-black/50 mb-3.5">
-                      Walnut App
+                  {dropdownOpen === entry.id && (
+                    <div
+                      className={`absolute left-1/2 top-full z-50 mt-3 max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-2xl border border-black/[0.08] bg-white p-5 shadow-[0_25px_60px_-15px_rgba(0,0,0,0.15)] animate-in fade-in slide-in-from-top-2 duration-150 ${entry.width}`}
+                    >
+                      <div
+                        className="grid gap-x-6 gap-y-4"
+                        style={{ gridTemplateColumns: `repeat(${entry.columns.length}, minmax(0, 1fr))` }}
+                      >
+                        {entry.columns.map((col) => (
+                          <div key={col.title}>
+                            <div className="mb-2 px-2 text-[11px] font-bold uppercase tracking-wider text-black/45">
+                              {col.title}
+                            </div>
+                            <div className="flex flex-col gap-0.5">
+                              {col.items.map((item) => (
+                                <NavLeafLink
+                                  key={item.label}
+                                  item={item}
+                                  onNavigate={() => setDropdownOpen(null)}
+                                />
+                              ))}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex flex-col gap-1.5">
-                      <Link
-                        href={APP_HREF}
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <ShieldIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Shield <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </Link>
-
-                      <Link
-                        href={APP_HREF}
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <UnshieldIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Unshield <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </Link>
-
-                      <Link
-                        href={APP_HREF}
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <SendIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Send <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </Link>
-
-                      <Link
-                        href={APP_HREF}
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <EarnIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Earn <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </Link>
-
-                      <Link
-                        href={APP_HREF}
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <SwapIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Swap <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </Link>
-                    </div>
-                  </div>
-
-                  {/* Column 2: Onchain Finance */}
-                  <div className="border-r border-black/[0.08] px-6">
-                    <div className="text-[13px] font-bold uppercase tracking-wider text-black/50 mb-3.5">
-                      Onchain Finance
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <a
-                        href="#products"
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <TokensIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Confidential Tokens <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </a>
-
-                      <a
-                        href="#products"
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <VaultIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Confidential Vaults <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </a>
-
-                      <a
-                        href="#products"
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <SwapIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Confidential Swap <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </a>
-                    </div>
-                  </div>
-
-                  {/* Column 3: Infra */}
-                  <div className="pl-6">
-                    <div className="text-[13px] font-bold uppercase tracking-wider text-black/50 mb-3.5">
-                      Infra
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <a
-                        href="#solana-spotlight"
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <LayersIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          Confidential SPL <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </a>
-
-                      <a
-                        href="#developers"
-                        onClick={() => setDropdownOpen(null)}
-                        className="group flex items-center gap-3 py-1.5 px-2 -mx-2 rounded-xl hover:bg-black/[0.03] transition-colors"
-                      >
-                        <div className="flex h-7 w-7 items-center justify-center rounded-[6px] bg-[#FED022] text-black shrink-0 shadow-xs transition-transform group-hover:scale-105">
-                          <SdkIcon />
-                        </div>
-                        <span className="text-[14px] font-normal text-black group-hover:opacity-75 transition-colors flex items-center gap-1">
-                          SDK <span className="text-[12px] text-black/60">↗</span>
-                        </span>
-                      </a>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
-            </div>
-
-            {/* Audit Link in Center */}
-            <Link
-              href={AUDIT_HREF}
-              className="text-black hover:text-black/70 transition py-2 font-normal"
-            >
-              Audit
-            </Link>
+              ),
+            )}
           </nav>
 
           {/* Right Action Buttons matching Zama: Jet black Contact us + #FED022 Launch App */}
-          <div className="hidden sm:flex items-center gap-2.5">
+          <div className="hidden lg:flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => setContactModalOpen(true)}
@@ -261,7 +286,7 @@ export function Navbar() {
           </div>
 
           {/* Mobile Menu Hamburger */}
-          <div className="flex md:hidden items-center gap-2">
+          <div className="flex lg:hidden items-center gap-2">
             <Link
               href={APP_HREF}
               className="inline-flex items-center justify-center rounded-[6px] bg-[#FFE052] px-3.5 py-1.5 text-[13px] font-semibold text-black"
@@ -285,10 +310,35 @@ export function Navbar() {
 
         {/* Mobile Dropdown Drawer */}
         {mobileMenuOpen && (
-          <div className="border-b border-black/[0.08] bg-white px-6 py-5 md:hidden space-y-4 animate-in slide-in-from-top-2">
-            <div className="flex flex-col gap-3 text-sm font-semibold text-black">
-              <a href="#products" onClick={() => setMobileMenuOpen(false)} className="py-1">Products</a>
-              <Link href={AUDIT_HREF} onClick={() => setMobileMenuOpen(false)} className="py-1">Audit ↗</Link>
+          <div className="border-b border-black/[0.08] bg-white px-6 py-5 lg:hidden space-y-4 animate-in slide-in-from-top-2">
+            <div className="flex max-h-[60vh] flex-col gap-4 overflow-y-auto text-sm text-black">
+              {NAV.map((entry) =>
+                entry.kind === "link" ? (
+                  <a
+                    key={entry.label}
+                    href={entry.href}
+                    onClick={() => setMobileMenuOpen(false)}
+                    className="py-1 font-semibold"
+                  >
+                    {entry.label}
+                  </a>
+                ) : (
+                  <div key={entry.id}>
+                    <div className="mb-1.5 text-[11px] font-bold uppercase tracking-wider text-black/45">
+                      {entry.label}
+                    </div>
+                    <div className="flex flex-col">
+                      {entry.columns.flatMap((col) => col.items).map((item) => (
+                        <NavLeafLink
+                          key={`${entry.id}-${item.label}`}
+                          item={item}
+                          onNavigate={() => setMobileMenuOpen(false)}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                ),
+              )}
             </div>
             <div className="pt-3 border-t border-black/[0.08] flex gap-3">
               <button
