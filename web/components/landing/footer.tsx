@@ -2,35 +2,107 @@
 
 import React, { useState } from "react";
 import Link from "next/link";
-import { ArrowUpRight } from "./icons.tsx";
+import { ArrowUpRight, ShieldIcon, BorrowIcon, EarnIcon, ChartIcon } from "./icons.tsx";
 import { PartnerLogo } from "./partner-logo.tsx";
+import { WalnutLogo } from "../brand-logo.tsx";
+import { PROGRAM_ID } from "../../lib/config.ts";
+import { LINKS } from "./links.ts";
 
 const APP_HREF = "/app";
-const GITHUB_HREF = "https://github.com/Iam-jayant/walnut-solana";
-const X_HREF = "https://x.com/walnut_solana";
-const TG_HREF = "https://t.me/walnut_solana";
 
-function FooterLink({
-  href,
-  logo,
-  name,
-  children,
-}: {
-  href: string;
-  logo: string;
-  name: string;
-  children: React.ReactNode;
-}) {
+const pill =
+  "inline-flex items-center gap-2 rounded-full border border-black/[0.08] bg-white px-3.5 py-2 text-[13px] font-medium text-black/75 transition hover:border-black/25 hover:text-black";
+const pillSoon =
+  "inline-flex items-center gap-2 rounded-full border border-dashed border-black/[0.12] bg-transparent px-3.5 py-2 text-[13px] font-medium text-black/40 cursor-default";
+
+function Glyph({ d }: { d: string }) {
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noreferrer"
-      className="inline-flex items-center gap-2 hover:text-black transition"
-    >
-      <PartnerLogo src={logo} name={name} size={16} className="rounded-[4px]" />
-      <span>{children}</span>
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d={d} />
+    </svg>
+  );
+}
+
+type PillItem = { label: string; href: string; logo?: string; glyph?: string; internal?: boolean };
+
+const PILLS: PillItem[] = [
+  { label: "Launch app", href: APP_HREF, glyph: "M5 12h14M13 6l6 6-6 6", internal: true },
+  { label: "Litepaper", href: LINKS.litepaper, glyph: "M6 3h9l4 4v14H6zM14 3v5h5M9 13h6M9 17h6" },
+  { label: "GitHub", href: LINKS.github, logo: "/logos/github.svg" },
+  { label: "X", href: LINKS.x, logo: "/logos/x.svg" },
+  { label: "Telegram", href: LINKS.telegram, logo: "/logos/telegram.svg" },
+  { label: "Discord", href: LINKS.discord, logo: "/logos/discord.svg" },
+  { label: "Pitch deck", href: LINKS.pitchDeck, glyph: "M3 4h18v12H3zM12 16v4M8 20h8" },
+  { label: "Demo video", href: LINKS.demoVideo, glyph: "M3 6h12v12H3zM15 10l6-3v10l-6-3" },
+];
+
+function Pill({ item }: { item: PillItem }) {
+  const icon = item.logo ? (
+    <PartnerLogo src={item.logo} name={item.label} size={16} className="rounded-[4px]" />
+  ) : (
+    <Glyph d={item.glyph ?? ""} />
+  );
+  if (!item.href) {
+    return (
+      <span className={pillSoon} aria-disabled="true" title="Coming soon">
+        {icon}
+        {item.label}
+        <span className="text-[10px] uppercase tracking-wider">Soon</span>
+      </span>
+    );
+  }
+  if (item.internal) {
+    return (
+      <Link href={item.href} className={pill}>
+        {icon}
+        {item.label}
+      </Link>
+    );
+  }
+  return (
+    <a href={item.href} target="_blank" rel="noreferrer" className={pill}>
+      {icon}
+      {item.label}
     </a>
+  );
+}
+
+const PRODUCTS = [
+  { title: "Shield", sub: "Wrap SOL and USDC privately", icon: <ShieldIcon /> },
+  { title: "Borrow", sub: "Private collateral and debt", icon: <BorrowIcon /> },
+  { title: "Supply & Earn", sub: "Yield on hidden balances", icon: <EarnIcon /> },
+  { title: "Liquidations", sub: "Confidential health checks", icon: <ChartIcon /> },
+];
+
+const WORKS_WITH = [
+  { name: "Solana", logo: "/logos/sol.png", href: "https://solana.com" },
+  { name: "Arcium", logo: "/logos/arcium.png", href: "https://arcium.com" },
+  { name: "Pyth Network", logo: "/logos/pyth.png", href: "https://pyth.network" },
+  { name: "Phantom", logo: "/logos/phantom.svg", href: "https://phantom.com" },
+  { name: "Solflare", logo: "/logos/solflare.svg", href: "https://solflare.com" },
+];
+
+function CopyAddress({ value }: { value: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex items-center gap-3 rounded-xl border border-black/[0.08] bg-white px-4 py-3">
+      <code className="min-w-0 flex-1 truncate font-mono text-[12px] sm:text-[13px] text-black/80">{value}</code>
+      <button
+        type="button"
+        onClick={async () => {
+          try {
+            await navigator.clipboard.writeText(value);
+            setCopied(true);
+            setTimeout(() => setCopied(false), 1500);
+          } catch {
+            /* clipboard unavailable: ignore */
+          }
+        }}
+        className="shrink-0 rounded-lg border border-black/[0.08] px-2.5 py-1 text-[11px] font-semibold text-black/70 hover:border-black/25 hover:text-black transition cursor-pointer"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    </div>
   );
 }
 
@@ -39,76 +111,75 @@ export function Footer() {
 
   return (
     <>
-      <footer className="border-t border-black/[0.08] bg-[#fbfbfb] pt-16 pb-0 text-xs text-black/70 overflow-hidden">
+      <footer className="border-t border-black/[0.08] bg-[#F5F3EF] pt-14 pb-0 text-xs text-black/70 overflow-hidden">
         <div className="mx-auto max-w-7xl px-6 md:px-10">
-          {/* 4 Focused Walnut-Native Columns */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-8 sm:gap-12 mb-16">
-            {/* Col 1: Protocol */}
-            <div>
-              <div className="font-bold text-black uppercase tracking-wider mb-3">Protocol</div>
-              <ul className="space-y-2">
-                <li><Link href={APP_HREF} className="hover:text-black transition">Launch App ↗</Link></li>
-                <li><a href="#developers" className="hover:text-black transition">TypeScript SDK</a></li>
-              </ul>
+          {/* Brand + link pills */}
+          <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+            <div className="lg:max-w-[260px]">
+              <div className="flex items-center gap-2.5">
+                <WalnutLogo size={32} />
+                <span className="text-lg font-bold text-black">Walnut</span>
+              </div>
+              <p className="mt-4 text-[15px] leading-relaxed text-black/60">
+                Lend and borrow on Solana without showing your balance sheet.
+              </p>
             </div>
-
-            {/* Col 2: Products */}
-            <div>
-              <div className="font-bold text-black uppercase tracking-wider mb-3">Products</div>
-              <ul className="space-y-2">
-                <li><Link href={APP_HREF} className="hover:text-black transition">Confidential Lending</Link></li>
-                <li><Link href={APP_HREF} className="hover:text-black transition">Shield & Unshield</Link></li>
-                <li><Link href={APP_HREF} className="hover:text-black transition">Private Positions</Link></li>
-              </ul>
-            </div>
-
-            {/* Col 3: Built with */}
-            <div>
-              <div className="font-bold text-black uppercase tracking-wider mb-3">Built with</div>
-              <ul className="space-y-2.5">
-                <li><FooterLink href="https://arcium.com" logo="/logos/arcium.png" name="Arcium">Arcium MPC</FooterLink></li>
-                <li><FooterLink href="https://pyth.network" logo="/logos/pyth.png" name="Pyth">Pyth Network</FooterLink></li>
-                <li><FooterLink href={GITHUB_HREF} logo="/logos/github.svg" name="GitHub">GitHub Repository</FooterLink></li>
-              </ul>
-            </div>
-
-            {/* Col 4: Community */}
-            <div>
-              <div className="font-bold text-black uppercase tracking-wider mb-3">Community</div>
-              <ul className="space-y-2.5">
-                <li><FooterLink href={X_HREF} logo="/logos/x.svg" name="X">X / Twitter</FooterLink></li>
-                <li><FooterLink href={TG_HREF} logo="/logos/telegram.svg" name="Telegram">Telegram</FooterLink></li>
-                <li><button type="button" onClick={() => setContactModalOpen(true)} className="hover:text-black transition text-left cursor-pointer">Contact Us ↗</button></li>
-              </ul>
+            <div className="flex flex-wrap gap-2.5 lg:max-w-[820px]">
+              {PILLS.map((item) => (
+                <Pill key={item.label} item={item} />
+              ))}
+              <button type="button" onClick={() => setContactModalOpen(true)} className={`${pill} cursor-pointer`}>
+                <Glyph d="M4 6h16v12H4zM4 7l8 6 8-6" />
+                Contact
+              </button>
             </div>
           </div>
 
-          {/* Social links */}
-          <div className="flex items-center justify-center gap-3 mb-5">
-            {[
-              { href: "https://arcium.com", logo: "/logos/arcium.png", name: "Arcium" },
-              { href: "https://pyth.network", logo: "/logos/pyth.png", name: "Pyth Network" },
-              { href: GITHUB_HREF, logo: "/logos/github.svg", name: "GitHub" },
-              { href: X_HREF, logo: "/logos/x.svg", name: "X" },
-              { href: TG_HREF, logo: "/logos/telegram.svg", name: "Telegram" },
-            ].map((item) => (
-              <a
-                key={item.name}
-                href={item.href}
-                target="_blank"
-                rel="noreferrer"
-                aria-label={item.name}
-                title={item.name}
-                className="flex h-9 w-9 items-center justify-center rounded-full border border-black/[0.08] bg-white hover:border-black/25 hover:-translate-y-0.5 transition"
-              >
-                <PartnerLogo src={item.logo} name={item.name} size={18} className="rounded-[4px]" />
-              </a>
-            ))}
+          {/* Products */}
+          <div className="mt-12">
+            <div className="text-[13px] text-black/50 mb-4">Products</div>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {PRODUCTS.map((p) => (
+                <Link
+                  key={p.title}
+                  href={APP_HREF}
+                  className="flex items-center gap-3 rounded-xl p-3 transition hover:bg-black/[0.04]"
+                >
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-black/[0.05] text-black/80">
+                    {p.icon}
+                  </span>
+                  <span>
+                    <span className="block text-[15px] font-semibold text-black">{p.title}</span>
+                    <span className="block text-[13px] text-black/55">{p.sub}</span>
+                  </span>
+                </Link>
+              ))}
+            </div>
           </div>
 
-          {/* Copyright centered matching Zama exact reference */}
-          <div className="text-center text-black/45 text-[12px] sm:text-[13px] font-normal mb-8 sm:mb-10 select-none">
-            © 2026 Walnut Protocol. Confidential Onchain Finance.
+          {/* Works with */}
+          <div className="mt-10">
+            <div className="text-[13px] text-black/50 mb-4">Works with</div>
+            <div className="flex flex-wrap gap-2.5">
+              {WORKS_WITH.map((w) => (
+                <a key={w.name} href={w.href} target="_blank" rel="noreferrer" className={pill}>
+                  <PartnerLogo src={w.logo} name={w.name} size={20} className="rounded-md" />
+                  {w.name}
+                </a>
+              ))}
+            </div>
+          </div>
+
+          {/* Program ID */}
+          <div className="mt-10">
+            <div className="text-[13px] text-black/50 mb-3">Program ID</div>
+            <CopyAddress value={PROGRAM_ID.toBase58()} />
+          </div>
+
+          {/* Bottom line */}
+          <div className="mt-8 mb-8 flex flex-col gap-2 text-[12px] text-black/45 sm:flex-row sm:items-center sm:justify-between select-none">
+            <span>© 2026 Walnut Protocol · Confidential onchain finance</span>
+            <span>Experimental software. Not financial advice.</span>
           </div>
         </div>
 
@@ -149,7 +220,7 @@ export function Footer() {
           <div
             className="pointer-events-none absolute inset-x-0 bottom-0 h-16 sm:h-24"
             style={{
-              background: "linear-gradient(to bottom, transparent 0%, #fbfbfb 100%)",
+              background: "linear-gradient(to bottom, transparent 0%, #F5F3EF 100%)",
             }}
           />
         </div>
@@ -174,8 +245,8 @@ export function Footer() {
             </p>
             <div className="space-y-3">
               <a
-                href="mailto:contact@walnut.so"
-                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#FFE052] hover:bg-[#FFE052]/10 transition group"
+                href={`mailto:${LINKS.email}`}
+                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#D8D4CB] hover:bg-[#D8D4CB]/10 transition group"
               >
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wider text-black/50">Email Us</div>
@@ -187,7 +258,7 @@ export function Footer() {
                 href="https://t.me/walnut_solana"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#FFE052] hover:bg-[#FFE052]/10 transition group"
+                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#D8D4CB] hover:bg-[#D8D4CB]/10 transition group"
               >
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wider text-black/50">Telegram Community</div>

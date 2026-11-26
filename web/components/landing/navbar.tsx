@@ -15,6 +15,7 @@ import {
   SdkIcon,
 } from "./icons.tsx";
 import { PartnerLogo } from "./partner-logo.tsx";
+import { WalnutLockup } from "../brand-logo.tsx";
 
 const APP_HREF = "/app";
 
@@ -120,7 +121,7 @@ function NavLeafLink({ item, onNavigate }: { item: NavLeaf; onNavigate: () => vo
           <PartnerLogo src={item.logo} name={item.label} size={18} className="rounded-[4px]" />
         </span>
       ) : (
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-[#FED022] shadow-xs transition-transform group-hover:scale-105">
+        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-[8px] bg-[#D8D4CB] shadow-xs transition-transform group-hover:scale-105">
           {item.icon}
         </span>
       )}
@@ -200,10 +201,10 @@ export function Navbar() {
           <div className="flex items-center">
             <Link
               href="/"
-              className="text-[21px] font-black tracking-tight text-black font-sans uppercase hover:opacity-85 transition select-none"
+              className="hover:opacity-85 transition select-none"
               aria-label="Walnut home"
             >
-              WALNUT
+              <WalnutLockup size={28} />
             </Link>
           </div>
 
@@ -267,18 +268,18 @@ export function Navbar() {
             )}
           </nav>
 
-          {/* Right Action Buttons matching Zama: Jet black Contact us + #FED022 Launch App */}
+          {/* Right Action Buttons matching Zama: Outline Contact us + ink Launch App */}
           <div className="hidden lg:flex items-center gap-2.5">
             <button
               type="button"
               onClick={() => setContactModalOpen(true)}
-              className="inline-flex items-center justify-center rounded-[6px] bg-black px-4 py-2 text-[13px] font-normal text-white transition hover:bg-neutral-800 cursor-pointer shadow-2xs"
+              className="inline-flex items-center justify-center rounded-[6px] border border-black/15 bg-transparent px-4 py-2 text-[13px] font-medium text-black transition hover:bg-black/[0.05] cursor-pointer"
             >
               Contact us
             </button>
             <Link
               href={APP_HREF}
-              className="inline-flex items-center justify-center gap-1 rounded-[6px] bg-[#FED022] hover:bg-[#fad01b] px-4 py-2 text-[13px] font-normal text-black transition cursor-pointer shadow-2xs"
+              className="inline-flex items-center justify-center gap-1 rounded-[6px] bg-[#111111] hover:bg-[#2B2B2B] px-4 py-2 text-[13px] font-medium text-white transition cursor-pointer shadow-2xs"
             >
               <span>Launch App</span>
               <span className="text-[12px] font-normal">↗</span>
@@ -289,7 +290,7 @@ export function Navbar() {
           <div className="flex lg:hidden items-center gap-2">
             <Link
               href={APP_HREF}
-              className="inline-flex items-center justify-center rounded-[6px] bg-[#FFE052] px-3.5 py-1.5 text-[13px] font-semibold text-black"
+              className="inline-flex items-center justify-center rounded-[6px] bg-[#111111] px-3.5 py-1.5 text-[13px] font-semibold text-white"
             >
               App ↗
             </Link>
@@ -344,13 +345,13 @@ export function Navbar() {
               <button
                 type="button"
                 onClick={() => { setMobileMenuOpen(false); setContactModalOpen(true); }}
-                className="w-1/2 rounded-[6px] bg-black py-2.5 text-center text-xs font-semibold text-white"
+                className="w-1/2 rounded-[6px] border border-black/15 py-2.5 text-center text-xs font-semibold text-black"
               >
                 Contact us
               </button>
               <Link
                 href={APP_HREF}
-                className="w-1/2 rounded-[6px] bg-[#FFE052] py-2.5 text-center text-xs font-semibold text-black flex items-center justify-center gap-1"
+                className="w-1/2 rounded-[6px] bg-[#111111] py-2.5 text-center text-xs font-semibold text-white flex items-center justify-center gap-1"
               >
                 Launch App ↗
               </Link>
@@ -379,7 +380,7 @@ export function Navbar() {
             <div className="space-y-3">
               <a
                 href="mailto:contact@walnut.so"
-                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#FFE052] hover:bg-[#FFE052]/10 transition group"
+                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#D8D4CB] hover:bg-[#D8D4CB]/10 transition group"
               >
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wider text-black/50">Email Us</div>
@@ -391,7 +392,7 @@ export function Navbar() {
                 href="https://t.me/walnut_solana"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#FFE052] hover:bg-[#FFE052]/10 transition group"
+                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#D8D4CB] hover:bg-[#D8D4CB]/10 transition group"
               >
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wider text-black/50">Telegram Community</div>

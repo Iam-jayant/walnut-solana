@@ -13,8 +13,8 @@ export function CodeTerminal() {
       className="relative py-24 md:py-36 bg-[#0B0B0D] text-white overflow-hidden"
       style={{
         backgroundImage: `
-          radial-gradient(ellipse 70% 60% at 30% 0%, rgba(255, 220, 80, 0.14) 0%, rgba(220, 160, 30, 0.04) 40%, transparent 70%),
-          radial-gradient(circle 500px at 75% 25%, rgba(255, 224, 82, 0.06) 0%, transparent 60%)
+          radial-gradient(ellipse 70% 60% at 30% 0%, rgba(216, 212, 203, 0.14) 0%, rgba(216, 212, 203, 0.04) 40%, transparent 70%),
+          radial-gradient(circle 500px at 75% 25%, rgba(216, 212, 203, 0.06) 0%, transparent 60%)
         `,
       }}
     >
@@ -22,7 +22,7 @@ export function CodeTerminal() {
       <div
         className="pointer-events-none absolute -top-24 left-1/4 h-[350px] w-[500px] -translate-x-1/2 rounded-full opacity-30 blur-[120px]"
         style={{
-          background: "radial-gradient(circle, #FFE052 0%, rgba(255, 180, 40, 0.4) 60%, transparent 100%)",
+          background: "radial-gradient(circle, #D8D4CB 0%, rgba(216, 212, 203, 0.4) 60%, transparent 100%)",
         }}
       />
 
@@ -36,7 +36,7 @@ export function CodeTerminal() {
               fontWeight: 200,
             }}
           >
-            <span className="bg-gradient-to-r from-[#FDE89C] via-[#FFF3D1] to-white bg-clip-text text-transparent">
+            <span className="bg-gradient-to-r from-[#CFCBC3] via-[#F1EFEA] to-white bg-clip-text text-transparent">
               Integrate confidentiality in a
             </span>
             <br />
@@ -83,7 +83,7 @@ export function CodeTerminal() {
               href={DOCS_HREF}
               target="_blank"
               rel="noreferrer"
-              className="inline-flex items-center gap-1 bg-[#FED022] hover:bg-[#ffda33] text-black text-xs font-semibold px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-[6px] transition cursor-pointer shadow-xs active:scale-[0.98]"
+              className="inline-flex items-center gap-1 bg-[#F4F2EE] hover:bg-white text-black text-xs font-semibold px-3 py-1 sm:px-3.5 sm:py-1.5 rounded-[6px] transition cursor-pointer shadow-xs active:scale-[0.98]"
             >
               <span>Docs</span>
               <span className="text-[11px]">↗</span>

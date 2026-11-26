@@ -16,7 +16,7 @@ function SolanaLogo({ className = "w-6 h-6" }: { className?: string }) {
 
 export function ArchitecturePillars() {
   return (
-    <section id="solana-spotlight" className="py-10 sm:py-16 bg-[#fbfbfb]">
+    <section id="solana-spotlight" className="py-10 sm:py-16 bg-[#F5F3EF]">
       {/* Standard 75px side margins */}
       <div className="w-full px-4 sm:px-8 lg:px-[75px]">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-7 items-stretch">
@@ -26,8 +26,8 @@ export function ArchitecturePillars() {
             style={{
               backgroundColor: "#F8F6F7",
               backgroundImage: `
-                radial-gradient(ellipse 75% 75% at 0% 65%, #FFDD48 0%, rgba(255, 221, 72, 0.45) 45%, transparent 75%),
-                radial-gradient(circle 500px at 15% 95%, #F7D042 0%, transparent 60%),
+                radial-gradient(ellipse 75% 75% at 0% 65%, #D8D4CB 0%, rgba(216, 212, 203, 0.45) 45%, transparent 75%),
+                radial-gradient(circle 500px at 15% 95%, #D8D4CB 0%, transparent 60%),
                 linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 246, 247, 0.7) 100%)
               `,
             }}

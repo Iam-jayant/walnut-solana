@@ -17,7 +17,7 @@ const DEVTOOLS: ReadonlyArray<{ name: string; logo: string; round?: boolean }> =
 
 export function EcosystemPartners() {
   return (
-    <section id="ecosystem" className="py-8 sm:py-12 bg-[#fbfbfb] overflow-hidden">
+    <section id="ecosystem" className="py-8 sm:py-12 bg-[#F5F3EF] overflow-hidden">
       <p className="mb-4 text-center text-[11px] font-medium uppercase tracking-[0.18em] text-black/40">
         Built with
       </p>

@@ -49,7 +49,7 @@ export function ProductShowcase() {
   const [swapRevealed, setSwapRevealed] = useState(false);
 
   return (
-    <section id="products" className="py-10 sm:py-16 bg-[#fbfbfb]">
+    <section id="products" className="py-10 sm:py-16 bg-[#F5F3EF]">
       {/* Outer Section Card: 75px side padding, soft rounded corners, warm yellow atmospheric glow on the right */}
       <div className="w-full px-4 sm:px-8 lg:px-[75px]">
         <div className="relative overflow-hidden rounded-[12px] sm:rounded-[14px] border border-black/[0.06] bg-[#fafafa] py-16 sm:py-20 lg:py-24 px-6 sm:px-10 lg:px-14 shadow-[0_4px_30px_rgba(0,0,0,0.02)]">
@@ -58,8 +58,8 @@ export function ProductShowcase() {
             className="pointer-events-none absolute inset-0 z-0"
             style={{
               background: `
-                radial-gradient(ellipse 65% 55% at 100% 10%, rgba(255, 224, 82, 0.52) 0%, rgba(255, 224, 82, 0.20) 45%, transparent 75%),
-                radial-gradient(circle 650px at 100% 90%, rgba(255, 224, 82, 0.30) 0%, transparent 65%),
+                radial-gradient(ellipse 65% 55% at 100% 10%, rgba(216, 212, 203, 0.52) 0%, rgba(216, 212, 203, 0.20) 45%, transparent 75%),
+                radial-gradient(circle 650px at 100% 90%, rgba(216, 212, 203, 0.30) 0%, transparent 65%),
                 radial-gradient(ellipse 55% 45% at 0% 0%, rgba(235, 240, 248, 0.5) 0%, transparent 60%),
                 linear-gradient(180deg, rgba(255, 255, 255, 0.7) 0%, rgba(250, 250, 250, 0.98) 100%)
               `,
@@ -106,7 +106,7 @@ export function ProductShowcase() {
 
                   {/* Center connector badge */}
                   <div className="relative my-[-10px] z-10 flex justify-center items-center">
-                    <div className="w-6 h-6 rounded-[6px] bg-[#FED022] border border-[#eec218] flex items-center justify-center shadow-xs">
+                    <div className="w-6 h-6 rounded-[6px] bg-[#D8D4CB] border border-[#C4BFB4] flex items-center justify-center shadow-xs">
                       <ShieldBadgeIcon />
                     </div>
                   </div>
@@ -148,7 +148,7 @@ export function ProductShowcase() {
                 {/* Content below Mockup */}
                 <Link
                   href={APP_HREF}
-                  className="inline-flex items-center gap-1 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[#BFA15C] mb-2 hover:text-[#9e8343] transition"
+                  className="inline-flex items-center gap-1 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[#8C8880] mb-2 hover:text-[#6B675F] transition"
                 >
                   <span>CONFIDENTIAL TOKENS</span>
                   <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
@@ -226,7 +226,7 @@ export function ProductShowcase() {
                 {/* Content below Mockup */}
                 <Link
                   href={APP_HREF}
-                  className="inline-flex items-center gap-1 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[#BFA15C] mb-2 hover:text-[#9e8343] transition"
+                  className="inline-flex items-center gap-1 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[#8C8880] mb-2 hover:text-[#6B675F] transition"
                 >
                   <span>CONFIDENTIAL VAULTS</span>
                   <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>
@@ -305,7 +305,7 @@ export function ProductShowcase() {
                 {/* Content below Mockup */}
                 <Link
                   href={APP_HREF}
-                  className="inline-flex items-center gap-1 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[#BFA15C] mb-2 hover:text-[#9e8343] transition"
+                  className="inline-flex items-center gap-1 text-[10.5px] font-medium tracking-[0.08em] uppercase text-[#8C8880] mb-2 hover:text-[#6B675F] transition"
                 >
                   <span>CONFIDENTIAL SWAPS</span>
                   <span className="inline-block transition-transform duration-200 group-hover:translate-x-1">→</span>

@@ -12,7 +12,7 @@ function ChevronRightIcon({ className = "w-3 h-3 text-black" }: { className?: st
 
 export function ConfidentialLedger() {
   return (
-    <section id="missing-piece" className="py-10 sm:py-16 bg-[#fbfbfb]">
+    <section id="missing-piece" className="py-10 sm:py-16 bg-[#F5F3EF]">
       {/* Outer Section Card: 75px side padding, soft rounded corners */}
       <div className="w-full px-4 sm:px-8 lg:px-[75px]">
         <div className="relative overflow-hidden rounded-[20px] sm:rounded-[24px] border border-black/[0.05] bg-[#F3EFEC] min-h-[520px] sm:min-h-[580px] lg:min-h-[620px] p-8 sm:p-12 lg:p-16 shadow-[0_4px_30px_rgba(0,0,0,0.02)] flex flex-col justify-between">
@@ -21,9 +21,9 @@ export function ConfidentialLedger() {
             className="pointer-events-none absolute inset-0 z-0"
             style={{
               background: `
-                radial-gradient(ellipse 65% 75% at 80% 50%, #FFE469 0%, #FDF2BC 42%, rgba(253, 242, 188, 0.4) 68%, transparent 100%),
+                radial-gradient(ellipse 65% 75% at 80% 50%, #D8D4CB 0%, #EAE7E0 42%, rgba(234, 231, 224, 0.4) 68%, transparent 100%),
                 radial-gradient(circle 500px at 90% 25%, rgba(255, 255, 255, 0.85) 0%, transparent 60%),
-                linear-gradient(90deg, #F3EFEC 0%, #F3EFEC 48%, rgba(255, 228, 105, 0.35) 68%, #FFE469 100%)
+                linear-gradient(90deg, #F3EFEC 0%, #F3EFEC 48%, rgba(216, 212, 203, 0.35) 68%, #D8D4CB 100%)
               `,
             }}
           />
@@ -63,7 +63,7 @@ export function ConfidentialLedger() {
                     <span className="text-[10px] text-black/40 block">From</span>
                     <span className="font-mono text-xs">7xKX..94mQ</span>
                   </div>
-                  <div className="w-5 h-5 rounded-full bg-[#FFE052]/70 flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-[#D8D4CB]/70 flex items-center justify-center">
                     <span className="text-[10px] text-black">›</span>
                   </div>
                   <div>
@@ -109,7 +109,7 @@ export function ConfidentialLedger() {
                   </div>
 
                   {/* Yellow Circle Action Button with Arrow */}
-                  <div className="w-7 h-7 rounded-full bg-[#FFE052] flex items-center justify-center text-black shadow-xs shrink-0 mx-1">
+                  <div className="w-7 h-7 rounded-full bg-[#D8D4CB] flex items-center justify-center text-black shadow-xs shrink-0 mx-1">
                     <ChevronRightIcon className="w-3.5 h-3.5 text-black" />
                   </div>
 
@@ -162,7 +162,7 @@ export function ConfidentialLedger() {
                     <span className="text-[10px] text-black/40 block">From</span>
                     <span className="font-mono text-xs">5Eun..Tcje</span>
                   </div>
-                  <div className="w-5 h-5 rounded-full bg-[#FFE052]/70 flex items-center justify-center">
+                  <div className="w-5 h-5 rounded-full bg-[#D8D4CB]/70 flex items-center justify-center">
                     <span className="text-[10px] text-black">›</span>
                   </div>
                   <div>

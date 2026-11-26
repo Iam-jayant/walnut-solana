@@ -8,7 +8,7 @@ export function FinalCta() {
 
   return (
     <>
-      <section id="cta" className="py-10 sm:py-16 bg-[#fbfbfb]">
+      <section id="cta" className="py-10 sm:py-16 bg-[#F5F3EF]">
         {/* Standard 75px side margins */}
         <div className="w-full px-4 sm:px-8 lg:px-[75px]">
           {/* Enclosed Linen Stone Card matching Zama CTA reference */}
@@ -61,7 +61,7 @@ export function FinalCta() {
             <div className="space-y-3">
               <a
                 href="mailto:contact@walnut.so"
-                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#FFE052] hover:bg-[#FFE052]/10 transition group"
+                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#D8D4CB] hover:bg-[#D8D4CB]/10 transition group"
               >
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wider text-black/50">Email Us</div>
@@ -73,7 +73,7 @@ export function FinalCta() {
                 href="https://t.me/walnut_solana"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#FFE052] hover:bg-[#FFE052]/10 transition group"
+                className="flex items-center justify-between p-3.5 rounded-xl border border-black/[0.08] hover:border-[#D8D4CB] hover:bg-[#D8D4CB]/10 transition group"
               >
                 <div>
                   <div className="text-xs font-semibold uppercase tracking-wider text-black/50">Telegram Community</div>

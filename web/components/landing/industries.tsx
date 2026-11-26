@@ -78,7 +78,7 @@ function ViewingKeyIcon() {
 
 export function Industries() {
   return (
-    <section id="industries" className="py-16 sm:py-24 bg-[#fbfbfb]">
+    <section id="industries" className="py-16 sm:py-24 bg-[#F5F3EF]">
       {/* Standard 75px side margins */}
       <div className="w-full px-4 sm:px-8 lg:px-[75px]">
         {/* Section Header: Left-aligned, two-line light grotesque headline */}
