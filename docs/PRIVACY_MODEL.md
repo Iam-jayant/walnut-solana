@@ -1,6 +1,6 @@
 # Walnut-Solana privacy model
 
-Status: baseline (Task 1.4). Source of truth: `.kiro/specs/walnut-solana/requirements.md` (Requirements 5, 7, 12, 13, 17) and `design.md`. The encrypted Position format is pending ADR-0003; see [Pending decision](#pending-decision-position-ciphertext-mode).
+Status: baseline (Task 1.4). Source of truth: `docs/specs/walnut-solana/requirements.md` (Requirements 5, 7, 12, 13, 17) and `design.md`. The encrypted Position format is pending ADR-0003; see [Pending decision](#pending-decision-position-ciphertext-mode).
 
 ## Summary
 

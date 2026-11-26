@@ -1,6 +1,6 @@
 # Walnut-Solana specification
 
-Status: baseline (Task 1.4). The authoritative requirements and design live in `.kiro/specs/walnut-solana/requirements.md` and `design.md`. This document summarizes them for readers of the repository. If the two disagree, the spec files win and this document must be corrected.
+Status: baseline (Task 1.4). The authoritative requirements and design live in `docs/specs/walnut-solana/requirements.md` and `design.md`. This document summarizes them for readers of the repository. If the two disagree, the spec files win and this document must be corrected.
 
 ## What Walnut is
 

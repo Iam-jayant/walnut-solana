@@ -4,7 +4,7 @@ Walnut-Lend extends the private loan product into a lending market on Solana dev
 
 - Program: `5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea` (unchanged, one program upgrade)
 - Cluster offset: 456, branch `v2`
-- Spec: `.kiro/specs/walnut-lend/`
+- Spec: `docs/specs/walnut-lend/`
 
 ## What is new
 

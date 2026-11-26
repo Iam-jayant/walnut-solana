@@ -56,4 +56,4 @@ The run started at about 12.2 SOL and ended at 25.9 SOL. The difference is the 1
 - Lender liquidity is test USDC minted by the deployer straight into the market vault.
 - The operation type and amount are public circuit arguments; balances, collateral and debt are private.
 
-See `.kiro/specs/walnut-diffn/` for the spec. Production rules remain in `.kiro/specs/walnut-solana/`.
+See `docs/specs/walnut-diffn/` for the spec. Production rules remain in `docs/specs/walnut-solana/`.
