@@ -201,8 +201,8 @@ function ToastCard({
       </svg>
     );
   } else if (type === "cancelled" || type === "warn") {
-    borderColor = "border-amber-300/80 bg-white shadow-[0_8px_30px_rgba(245,158,11,0.12)]";
-    iconBg = "bg-amber-100 text-amber-800";
+    borderColor = "border-[#D8D4CB] bg-white shadow-[0_8px_30px_rgba(17,17,17,0.04)]";
+    iconBg = "bg-[#EAE7E0] text-[#2B2926]";
     icon = (
       <svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
         <circle cx="12" cy="12" r="10" />
@@ -212,7 +212,7 @@ function ToastCard({
     );
   } else if (type === "pending") {
     borderColor = "border-black/[0.1] bg-white shadow-[0_8px_30px_rgba(0,0,0,0.08)]";
-    iconBg = "bg-[#FFD208] text-black";
+    iconBg = "bg-[#111111] text-white";
     icon = (
       <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />

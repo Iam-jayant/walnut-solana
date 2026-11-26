@@ -37,7 +37,7 @@ type Variant = "primary" | "dark" | "ghost";
 
 const VARIANTS: Record<Variant, string> = {
   primary:
-    "bg-walnut-yellow text-walnut-black hover:brightness-95 disabled:bg-walnut-mist disabled:text-walnut-ink/40",
+    "bg-walnut-black text-white hover:bg-walnut-ink disabled:bg-walnut-mist disabled:text-walnut-ink/40",
   dark: "bg-walnut-black text-walnut-white hover:bg-walnut-ink disabled:bg-walnut-mist disabled:text-walnut-ink/40",
   ghost:
     "bg-transparent text-walnut-black ring-1 ring-black/15 hover:bg-walnut-mist disabled:text-walnut-ink/40",
@@ -65,9 +65,9 @@ export function Badge({
 }) {
   const tones = {
     neutral: "bg-walnut-mist text-walnut-ink",
-    dark: "bg-walnut-black text-walnut-yellow",
+    dark: "bg-walnut-black text-walnut-bone",
     good: "bg-emerald-100 text-emerald-800",
-    warn: "bg-amber-100 text-amber-900",
+    warn: "bg-[#EAE7E0] text-[#2B2926]",
     bad: "bg-red-100 text-red-800",
   } as const;
   return (
@@ -118,7 +118,7 @@ export function Notice({
   children: ReactNode;
 }) {
   const tones = {
-    warn: "bg-amber-50 text-amber-900 ring-amber-200",
+    warn: "bg-[#F1EFEA] text-[#2B2926] ring-[#D8D4CB]",
     bad: "bg-red-50 text-red-800 ring-red-200",
     info: "bg-walnut-mist text-walnut-ink ring-black/5",
   } as const;
