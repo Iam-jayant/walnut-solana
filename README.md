@@ -1,13 +1,9 @@
 <div align="center">
 
-<pre>
-██╗    ██╗ █████╗ ██╗     ███╗   ██╗██╗   ██╗████████╗
-██║    ██║██╔══██╗██║     ████╗  ██║██║   ██║╚══██╔══╝
-██║ █╗ ██║███████║██║     ██╔██╗ ██║██║   ██║   ██║   
-██║███╗██║██╔══██║██║     ██║╚██╗██║██║   ██║   ██║   
-╚███╔███╔╝██║  ██║███████╗██║ ╚████║╚██████╔╝   ██║   
- ╚══╝╚══╝ ╚═╝  ╚═╝╚══════╝╚═╝  ╚═══╝ ╚═════╝    ╚═╝   
-</pre>
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="brand/logo/walnut-lockup-bone.png">
+  <img src="brand/logo/walnut-lockup-ink.png" alt="Walnut" width="360">
+</picture>
 
 # Walnut Protocol
 
@@ -22,7 +18,7 @@
 [![TypeScript SDK](https://img.shields.io/badge/%40walnut%2Fsdk-TypeScript-blue?logo=typescript)](packages/sdk)
 [![License: Apache-2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](#21-license)
 
-[Website](https://walnut.so) · [App](#17-run-locally) · [X](https://x.com/walnut_solana) · [Telegram](https://t.me/walnut_solana) · [GitHub](https://github.com/Iam-jayant/walnut-solana)
+[Website](https://walnut.so) · [App](#17-run-locally) · [X](https://x.com/walnut_solana) · [Telegram](https://t.me/walnut_solana) · [GitHub](https://github.com/Iam-jayant/walnut-solana) · [Brand kit](brand)
 
 </div>
 
@@ -335,7 +331,9 @@ sequenceDiagram
     end
 ```
 
-More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/PRIVACY_MODEL.md`](docs/PRIVACY_MODEL.md), [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and the decision records in [`docs/adr/`](docs/adr).
+More diagrams (operation lifecycle, callback decisions, intent states, Viewing Key flow, account map, interest flow): [`docs/DIAGRAMS.md`](docs/DIAGRAMS.md).
+
+All docs: [`docs/README.md`](docs/README.md). More detail: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md), [`docs/PRIVACY_MODEL.md`](docs/PRIVACY_MODEL.md), [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md) and the decision records in [`docs/adr/`](docs/adr).
 
 ---
 
@@ -473,7 +471,8 @@ CI ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)) runs JS checks, Rust
 ├── tests/                     # Anchor / Arcium integration tests
 ├── scripts/                   # Toolchain checks, devnet deploy, test harnesses
 ├── config/networks/           # Public network profiles (devnet)
-├── docs/                      # Architecture, privacy and threat models, runbooks, ADRs
+├── brand/                     # Logo, colours, X and social assets, usage rules
+├── docs/                      # Specs, architecture, privacy and threat models, runbooks, ADRs (index: docs/README.md)
 ├── security/                  # Advisory exceptions
 └── .github/workflows/         # CI
 ```
