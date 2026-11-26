@@ -24,7 +24,7 @@ function AppMain() {
   const { unlocked, lock } = useWalnut();
 
   return (
-    <div className="min-h-dvh flex bg-[#FAFAFA] bg-[radial-gradient(ellipse_55%_45%_at_0%_0%,_#FCF0B6_0%,_transparent_100%),radial-gradient(ellipse_35%_35%_at_100%_100%,_#E2E9F6_0%,_transparent_100%)] text-gray-900 font-app-sans antialiased relative overflow-x-hidden">
+    <div className="min-h-dvh flex bg-[#F4F2EE] bg-[radial-gradient(ellipse_50%_40%_at_0%_0%,_#E7E3D9_0%,_transparent_100%),radial-gradient(ellipse_40%_35%_at_100%_100%,_#E9E6DF_0%,_transparent_100%)] text-gray-900 font-app-sans antialiased relative overflow-x-hidden">
       {/* Mobile Backdrop Overlay when sidebar is open */}
       {sidebarOpen && (
         <div

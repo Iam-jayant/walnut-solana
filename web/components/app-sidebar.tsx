@@ -4,6 +4,7 @@ import React from "react";
 import type { PublicKey } from "@solana/web3.js";
 import { shortAddress } from "../lib/format.ts";
 import { WalletAvatar } from "./wallet-avatar.tsx";
+import { WalnutLogo, WalnutLockup } from "./brand-logo.tsx";
 
 export type AppTab =
   | "dashboard"
@@ -69,7 +70,7 @@ export function AppSidebar({
       label: "Dashboard",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -89,7 +90,7 @@ export function AppSidebar({
       label: "Deposit (Shield)",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -106,7 +107,7 @@ export function AppSidebar({
       label: "Withdraw (Unshield)",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -124,7 +125,7 @@ export function AppSidebar({
       label: "Collateral",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -143,7 +144,7 @@ export function AppSidebar({
       label: "Borrow & Repay",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -161,7 +162,7 @@ export function AppSidebar({
       label: "Supply & Earn",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -180,7 +181,7 @@ export function AppSidebar({
       label: "Activity",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -198,7 +199,7 @@ export function AppSidebar({
       label: "Liquidations",
       icon: (active) => (
         <svg
-          className={`h-4 w-4 shrink-0 ${active ? "text-black" : "text-[#555555]"}`}
+          className={`h-4 w-4 shrink-0 ${active ? "text-white" : "text-[#555555]"}`}
           viewBox="0 0 24 24"
           fill="none"
           stroke="currentColor"
@@ -218,7 +219,7 @@ export function AppSidebar({
 
   return (
     <aside
-      className={`fixed lg:sticky top-0 left-0 z-50 h-dvh bg-[#FAFAFA] lg:bg-transparent border-r border-black/[0.06] flex flex-col justify-between py-5 px-3 select-none font-app-sans transition-all duration-200 ease-in-out ${
+      className={`fixed lg:sticky top-0 left-0 z-50 h-dvh bg-[#F4F2EE] lg:bg-transparent border-r border-black/[0.06] flex flex-col justify-between py-5 px-3 select-none font-app-sans transition-all duration-200 ease-in-out ${
         isOpen
           ? "translate-x-0 shadow-2xl lg:shadow-none"
           : "-translate-x-full lg:translate-x-0"
@@ -237,12 +238,10 @@ export function AppSidebar({
             title="Return to Walnut Home"
           >
             {isCollapsed ? (
-              <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-[#FFD208] text-base font-extrabold text-black shadow-xs">
-                W
-              </span>
+              <WalnutLogo size={32} />
             ) : (
-              <span className="font-extrabold text-[22px] tracking-[0.02em] text-black group-hover:opacity-80 transition">
-                WALNUT
+              <span className="group-hover:opacity-80 transition">
+                <WalnutLockup size={30} />
               </span>
             )}
           </a>
@@ -315,7 +314,7 @@ export function AppSidebar({
                   isCollapsed ? "justify-center px-0" : ""
                 } ${
                   isActive
-                    ? "bg-[#EAEAE7] text-black font-medium"
+                    ? "bg-[#111111] text-white font-medium shadow-[0_1px_2px_rgba(0,0,0,0.12)]"
                     : "text-[#4A4A4A] font-normal hover:text-black hover:bg-black/[0.03]"
                 }`}
               >
@@ -409,12 +408,12 @@ export function AppSidebar({
               onClick={onConnect}
               disabled={connecting}
               title={isCollapsed ? "Connect wallet" : undefined}
-              className={`w-full flex items-center justify-center gap-2 rounded-lg bg-[#EAEAE7] hover:bg-[#DFDFDC] py-2.5 px-3 text-[13px] font-medium text-black transition cursor-pointer ${
+              className={`w-full flex items-center justify-center gap-2 rounded-lg bg-[#111111] hover:bg-[#2B2B2B] py-2.5 px-3 text-[13px] font-medium text-white transition cursor-pointer ${
                 isCollapsed ? "px-0" : ""
               }`}
             >
               <svg
-                className="w-3.5 h-3.5 text-black shrink-0"
+                className="w-3.5 h-3.5 text-white shrink-0"
                 viewBox="0 0 24 24"
                 fill="none"
                 stroke="currentColor"

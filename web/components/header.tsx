@@ -6,13 +6,12 @@ import { FAUCET_URL, NETWORK_LABEL } from "../lib/config.ts";
 import { shortAddress } from "../lib/format.ts";
 import { useWalnut } from "./walnut-provider.tsx";
 import { Button, LockIcon } from "./ui.tsx";
+import { WalnutLogo } from "./brand-logo.tsx";
 
 export function Logo() {
   return (
     <div className="flex items-center gap-2.5">
-      <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-walnut-yellow text-base font-[800] text-walnut-black">
-        W
-      </span>
+      <WalnutLogo size={32} />
       <span className="text-lead font-[800] tracking-tight">Walnut</span>
     </div>
   );
