@@ -215,7 +215,7 @@ function AmountForm(props: AmountFormProps) {
         <p className="text-xs text-red-600 px-1">Enter a valid amount.</p>
       ) : null}
       {warning !== null ? (
-        <p className="rounded-xl bg-amber-50 px-3.5 py-2 text-xs text-amber-900 border border-amber-200/60">
+        <p className="rounded-xl bg-[#F1EFEA] px-3.5 py-2 text-xs text-[#2B2926] border border-[#D8D4CB]">
           {warning}
           {props.strict === true ? "" : " You can still submit it."}
         </p>
@@ -244,7 +244,7 @@ function AmountForm(props: AmountFormProps) {
         className={`w-full py-3.5 rounded-xl font-semibold text-sm transition active:scale-[0.99] mt-3 flex items-center justify-center gap-2 ${
           !valid || blocked !== null || busy
             ? "bg-[#EEF0F2] text-[#9EA3A8] cursor-not-allowed"
-            : "bg-[#FFD208] hover:bg-[#F5C800] text-black shadow-xs cursor-pointer"
+            : "bg-[#111111] hover:bg-[#2B2B2B] text-white shadow-xs cursor-pointer"
         }`}
       >
         {busy ? <Spinner /> : null}

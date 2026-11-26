@@ -27,7 +27,7 @@ const HEALTH_STYLE: Record<
 > = {
   none: { label: "No debt", bar: "bg-emerald-500", tone: "neutral" },
   healthy: { label: "Healthy", bar: "bg-emerald-500", tone: "good" },
-  moderate: { label: "Moderate", bar: "bg-amber-400", tone: "warn" },
+  moderate: { label: "Moderate", bar: "bg-orange-500", tone: "warn" },
   high: { label: "High liquidation risk", bar: "bg-red-500", tone: "danger" },
 };
 import { ActionPanel } from "./action-panel.tsx";
@@ -108,16 +108,16 @@ export function SetupCard() {
   }
   if (accountState === "none") {
     return (
-      <div className="rounded-[24px] bg-gradient-to-r from-amber-50 to-yellow-50 border border-amber-200/60 p-6 shadow-sm mb-6">
+      <div className="rounded-[24px] bg-gradient-to-r from-[#F5F3EF] to-[#ECE9E3] border border-black/10 p-6 shadow-sm mb-6">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div>
-            <h2 className="text-lg font-bold text-amber-950 flex items-center gap-2">
-              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-200 text-amber-900 text-xs font-bold">
+            <h2 className="text-lg font-bold text-[#111111] flex items-center gap-2">
+              <span className="flex h-6 w-6 items-center justify-center rounded-full bg-[#111111] text-white text-xs font-bold">
                 !
               </span>
               Initialize your confidential account
             </h2>
-            <p className="mt-1 text-sm text-amber-900/80 max-w-xl">
+            <p className="mt-1 text-sm text-black/65 max-w-xl">
               Your account holds your encrypted balances, collateral and debt. You will sign a message to create your Viewing Key, then confirm one transaction. Setup takes a few seconds while the MPC network initializes your encrypted state.
             </p>
           </div>
@@ -125,7 +125,7 @@ export function SetupCard() {
             type="button"
             onClick={() => void createAccount()}
             disabled={busy || protocol === null}
-            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFD208] hover:bg-[#F5C800] px-5 py-2.5 font-medium text-sm text-black shadow-xs transition active:scale-[0.99] disabled:opacity-50 shrink-0 cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 rounded-xl bg-[#111111] hover:bg-[#2B2B2B] px-5 py-2.5 font-medium text-sm text-white shadow-xs transition active:scale-[0.99] disabled:opacity-50 shrink-0 cursor-pointer"
           >
             {busy ? <Spinner /> : null}
             {busy ? "Initializing..." : "Create Account"}
@@ -148,15 +148,15 @@ export function Notices() {
   return (
     <>
       {stuck !== null ? (
-        <div className="rounded-2xl bg-amber-50 border border-amber-200 p-4 mb-4">
-          <p className="font-bold text-amber-900 text-sm">
+        <div className="rounded-2xl bg-[#F1EFEA] border border-[#D8D4CB] p-4 mb-4">
+          <p className="font-bold text-[#2B2926] text-sm">
             Previous MPC computation was not settled on-chain.
           </p>
           <div className="mt-2 flex items-center gap-2">
             <button
               type="button"
               onClick={abandonStuck}
-              className="text-xs font-semibold text-amber-900 underline hover:no-underline"
+              className="text-xs font-semibold text-[#2B2926] underline hover:no-underline"
             >
               Clear state
             </button>
@@ -217,7 +217,7 @@ export function Overview({ onSelectTab }: { onSelectTab?: ((tab: AppTab) => void
       {!unlocked && (
         <div className="relative overflow-hidden rounded-2xl bg-white/70 backdrop-blur-xl border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-5 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ring-1 ring-black/[0.04] before:absolute before:inset-0 before:bg-linear-to-b before:from-white/50 before:to-transparent before:pointer-events-none">
           <div className="flex items-center gap-3.5 relative z-10">
-            <div className="h-10 w-10 rounded-xl bg-amber-500/10 backdrop-blur-md text-amber-700 flex items-center justify-center shrink-0 border border-amber-300/40 shadow-2xs">
+            <div className="h-10 w-10 rounded-xl bg-black/[0.06] backdrop-blur-md text-black/70 flex items-center justify-center shrink-0 border border-[#D8D4CB] shadow-2xs">
               <LockIcon />
             </div>
             <div>
@@ -232,7 +232,7 @@ export function Overview({ onSelectTab }: { onSelectTab?: ((tab: AppTab) => void
           <button
             type="button"
             onClick={() => void unlock()}
-            className="relative z-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFD208] hover:bg-[#F5C800] px-5 py-2.5 font-semibold text-xs text-black shadow-[0_2px_12px_rgba(255,210,8,0.25)] transition active:scale-[0.99] shrink-0 cursor-pointer"
+            className="relative z-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[#111111] hover:bg-[#2B2B2B] px-5 py-2.5 font-semibold text-xs text-white shadow-[0_2px_12px_rgba(0,0,0,0.18)] transition active:scale-[0.99] shrink-0 cursor-pointer"
           >
             <LockIcon /> Unlock private balances
           </button>
@@ -301,7 +301,7 @@ export function Overview({ onSelectTab }: { onSelectTab?: ((tab: AppTab) => void
             value={balances ? sol(balances.collateralSol) : <Hidden />}
             hint="Backs your private borrowing limit"
             badge={
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-amber-50 text-amber-700">
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-[#F1EFEA] text-[#3A3732]">
                 Locked
               </span>
             }
@@ -384,7 +384,7 @@ export function Overview({ onSelectTab }: { onSelectTab?: ((tab: AppTab) => void
                   health.tone === "good"
                     ? "bg-emerald-100 text-emerald-800"
                     : health.tone === "warn"
-                    ? "bg-amber-100 text-amber-800"
+                    ? "bg-[#EAE7E0] text-[#2B2926]"
                     : health.tone === "danger"
                     ? "bg-red-100 text-red-800"
                     : "bg-gray-100 text-gray-700"
@@ -449,7 +449,7 @@ export function Overview({ onSelectTab }: { onSelectTab?: ((tab: AppTab) => void
               <button
                 type="button"
                 onClick={() => onSelectTab("deposit")}
-                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#FFD208] hover:bg-[#F5C800] text-xs font-semibold text-black transition cursor-pointer"
+                className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-[#111111] hover:bg-[#2B2B2B] text-xs font-semibold text-white transition cursor-pointer"
               >
                 Shield assets →
               </button>
@@ -517,9 +517,9 @@ export function MarketCard() {
           Lending Market
         </h2>
         {lendingChecked && protocol !== null ? (
-          <div className="rounded-[18px] bg-amber-50/70 border border-amber-200/60 p-5 text-amber-900">
+          <div className="rounded-[18px] bg-black/[0.03] border border-black/[0.08] p-5 text-[#111111]">
             <p className="font-semibold text-sm">Lending market is being initialized</p>
-            <p className="mt-1 text-xs text-amber-800/80">
+            <p className="mt-1 text-xs text-black/60">
               Supplying and borrowing open as soon as the market is live. Deposits and withdrawals work now.
             </p>
           </div>
@@ -587,7 +587,7 @@ export function MarketCard() {
             unit=""
             value={
               <span className="inline-flex items-center gap-1.5 text-[20px] font-bold text-black">
-                <span className="text-amber-500 text-sm">🔒</span> Encrypted
+                <span className="text-black/45 text-sm">🔒</span> Encrypted
               </span>
             }
             hint="Confidential pool liquidity"
@@ -597,7 +597,7 @@ export function MarketCard() {
             unit=""
             value={
               <span className="inline-flex items-center gap-1.5 text-[20px] font-bold text-black">
-                <span className="text-amber-500 text-sm">🔒</span> Encrypted
+                <span className="text-black/45 text-sm">🔒</span> Encrypted
               </span>
             }
             hint="Confidential active loans"
@@ -612,8 +612,8 @@ export function MarketCard() {
                     Paused (stale)
                   </span>
                 ) : isNearing ? (
-                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200/50 px-2 py-0.5 rounded-full">
-                    <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+                  <span className="inline-flex items-center gap-1 text-[11px] font-medium text-[#3A3732] bg-[#F1EFEA] border border-[#D8D4CB] px-2 py-0.5 rounded-full">
+                    <span className="h-1.5 w-1.5 rounded-full bg-[#F1EFEA]0" />
                     Expiring soon
                   </span>
                 ) : (
@@ -708,7 +708,7 @@ export function MarketCard() {
           unit=""
           value={
             <span className="inline-flex items-center gap-1.5 text-[20px] font-bold text-black">
-              <span className="text-amber-500 text-sm">🔒</span> Encrypted
+              <span className="text-black/45 text-sm">🔒</span> Encrypted
             </span>
           }
           hint="Confidential pool liquidity"
@@ -718,7 +718,7 @@ export function MarketCard() {
           unit=""
           value={
             <span className="inline-flex items-center gap-1.5 text-[20px] font-bold text-black">
-              <span className="text-amber-500 text-sm">🔒</span> Encrypted
+              <span className="text-black/45 text-sm">🔒</span> Encrypted
             </span>
           }
           hint="Confidential active loans"

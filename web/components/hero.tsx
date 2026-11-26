@@ -31,14 +31,14 @@ export function Hero() {
           aria-hidden
           className="pointer-events-none absolute -right-24 -top-24 h-96 w-96 rounded-full bg-walnut-yellow/20 blur-3xl"
         />
-        <p className="inline-flex items-center gap-2 rounded-pill bg-white/10 px-3 py-1.5 text-caption font-[800] uppercase text-walnut-yellow">
+        <p className="inline-flex items-center gap-2 rounded-pill bg-white/10 px-3 py-1.5 text-caption font-[800] uppercase text-walnut-bone">
           <LockIcon /> Private lending on Solana
         </p>
         <h1
           className={`mt-6 max-w-4xl font-[200] ${connected ? "text-h1" : "text-display"}`}
         >
           Borrow against your SOL.
-          <span className="font-[800] text-walnut-yellow">
+          <span className="font-[800] text-walnut-bone">
             {" "}
             Keep it private.
           </span>
@@ -66,7 +66,7 @@ export function Hero() {
                 key={title}
                 className="rounded-card bg-white/5 p-5 ring-1 ring-white/10"
               >
-                <p className="text-small font-[800] text-walnut-yellow">
+                <p className="text-small font-[800] text-walnut-bone">
                   {title}
                 </p>
                 <p className="mt-2 text-small text-white/70">{text}</p>

@@ -131,7 +131,7 @@ export function LiquidationsPanel() {
       {privateMode && !unlocked && (
         <div className="relative overflow-hidden rounded-2xl bg-white/70 backdrop-blur-xl border border-white/80 shadow-[0_8px_30px_rgb(0,0,0,0.04)] p-5 md:p-6 flex flex-col sm:flex-row sm:items-center justify-between gap-4 ring-1 ring-black/[0.04] before:absolute before:inset-0 before:bg-linear-to-b before:from-white/50 before:to-transparent before:pointer-events-none">
           <div className="flex items-center gap-3.5 relative z-10">
-            <div className="h-10 w-10 rounded-xl bg-amber-500/10 backdrop-blur-md text-amber-700 flex items-center justify-center shrink-0 border border-amber-300/40 shadow-2xs">
+            <div className="h-10 w-10 rounded-xl bg-black/[0.06] backdrop-blur-md text-black/70 flex items-center justify-center shrink-0 border border-[#D8D4CB] shadow-2xs">
               <LockIcon />
             </div>
             <div>
@@ -146,7 +146,7 @@ export function LiquidationsPanel() {
           <button
             type="button"
             onClick={() => void unlock()}
-            className="relative z-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[#FFD208] hover:bg-[#F5C800] px-5 py-2.5 font-semibold text-xs text-black shadow-[0_2px_12px_rgba(255,210,8,0.25)] transition active:scale-[0.99] shrink-0 cursor-pointer"
+            className="relative z-10 inline-flex items-center justify-center gap-2 rounded-xl bg-[#111111] hover:bg-[#2B2B2B] px-5 py-2.5 font-semibold text-xs text-white shadow-[0_2px_12px_rgba(0,0,0,0.18)] transition active:scale-[0.99] shrink-0 cursor-pointer"
           >
             <LockIcon /> Unlock private balances
           </button>
@@ -155,23 +155,23 @@ export function LiquidationsPanel() {
 
       {/* Pending Liquidation Notice */}
       {w.pendingLiquidation !== null && (
-        <div className="rounded-xl bg-amber-50 border border-amber-200/80 p-4">
+        <div className="rounded-xl bg-[#F1EFEA] border border-[#D8D4CB] p-4">
           <div className="flex items-start gap-3">
-            <div className="h-6 w-6 rounded-full bg-amber-200/80 text-amber-800 flex items-center justify-center shrink-0 text-xs font-bold">
+            <div className="h-6 w-6 rounded-full bg-[#E2DED5] text-[#2B2926] flex items-center justify-center shrink-0 text-xs font-bold">
               !
             </div>
             <div className="flex-1">
-              <p className="font-semibold text-xs text-amber-900">
+              <p className="font-semibold text-xs text-[#2B2926]">
                 A liquidation is currently processing
               </p>
-              <p className="mt-0.5 text-xs text-amber-700">
+              <p className="mt-0.5 text-xs text-[#3A3732]">
                 If the operation does not conclude before the lock timeout, release it to reclaim your repaid USDC.
               </p>
               <button
                 type="button"
                 disabled={busy}
                 onClick={() => void w.abandonLiquidation()}
-                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-700 text-white text-xs font-medium transition cursor-pointer disabled:opacity-40"
+                className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-orange-600 hover:bg-orange-700 text-white text-xs font-medium transition cursor-pointer disabled:opacity-40"
               >
                 {busy ? <Spinner /> : null} Release liquidation
               </button>
@@ -277,8 +277,8 @@ export function LiquidationsPanel() {
                 <span>Healthy (Position is safely collateralized)</span>
               </div>
             ) : (
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-amber-50 text-amber-700 text-xs font-semibold border border-amber-200/80">
-                <span className="h-2 w-2 rounded-full bg-amber-500" />
+              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#F1EFEA] text-[#3A3732] text-xs font-semibold border border-[#D8D4CB]">
+                <span className="h-2 w-2 rounded-full bg-[#F1EFEA]0" />
                 <span>Health check inconclusive or account not found</span>
               </div>
             )}
@@ -422,7 +422,7 @@ export function LiquidationsPanel() {
             blocked ||
             (privateMode && (free === null || overFree))
               ? "bg-[#EEF0F2] text-[#9EA3A8] cursor-not-allowed"
-              : "bg-[#FFD208] hover:bg-[#F5C800] text-black shadow-xs cursor-pointer"
+              : "bg-[#111111] hover:bg-[#2B2B2B] text-white shadow-xs cursor-pointer"
           }`}
         >
           {busy ? <Spinner /> : null}

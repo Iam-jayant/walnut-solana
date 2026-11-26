@@ -24,7 +24,7 @@ const STAGE_CONFIG: Record<
   },
   computing: {
     label: "Computing (MPC)",
-    badgeClass: "bg-amber-50 text-amber-800 border border-amber-200/60",
+    badgeClass: "bg-[#F1EFEA] text-[#2B2926] border border-[#D8D4CB]",
     live: true,
   },
   applied: {
@@ -34,7 +34,7 @@ const STAGE_CONFIG: Record<
   },
   rejected: {
     label: "Refused (MPC)",
-    badgeClass: "bg-amber-50 text-amber-700 border border-amber-200/60",
+    badgeClass: "bg-[#F1EFEA] text-[#3A3732] border border-[#D8D4CB]",
     live: false,
   },
   failed: {
