@@ -1,5 +1,5 @@
-.kiro/
-semantic-review/
+docs/specs/
+docs/reviews/
 node_modules/
 target/
 build/

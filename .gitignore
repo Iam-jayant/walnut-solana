@@ -42,11 +42,28 @@ keys/
 .DS_Store
 Thumbs.db
 *.log
+*.swp
+desktop.ini
 .idea/
 .vscode/*
 !.vscode/extensions.json
+.claude/settings.local.json
+
+# Deployment
+.vercel/
+
+# Specs live in docs/specs; keep a local Kiro workspace out of git
+.kiro/
+
+# Generated deliverables (litepaper, brand exports). Publish-worthy copies
+# live in web/public/ and brand/.
+Claude outputs/
 
 # Local diagnostic / scratch scripts
+scripts/archive/
+debug-*.mts
+debug-*.sh
+check-resolve.sh
 check-*.mjs
 inspect-*.mjs
 compare-*.mjs
