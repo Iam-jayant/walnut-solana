@@ -36,6 +36,17 @@ export const metadata: Metadata = {
   title: "Walnut - Private lending on Solana",
   description:
     "Walnut is private lending on Solana powered by Arcium MPC. Balances, collateral and debt are encrypted, and only you can decrypt them with your Viewing Key.",
+  openGraph: {
+    title: "Walnut - Private lending on Solana",
+    description: "Private lending on Solana, powered by Arcium MPC.",
+    images: [{ url: "/og-image.png", width: 1200, height: 630 }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Walnut - Private lending on Solana",
+    description: "Private lending on Solana, powered by Arcium MPC.",
+    images: ["/og-image.png"],
+  },
 };
 
 export const viewport: Viewport = {
@@ -50,7 +61,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={telegraf.variable} suppressHydrationWarning>
       <body
-        className="bg-walnut-white font-sans text-walnut-black antialiased"
+        className="bg-[#F5F3EF] font-sans text-walnut-black antialiased"
         suppressHydrationWarning
       >
         {children}

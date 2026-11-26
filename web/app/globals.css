@@ -3,7 +3,7 @@
 /* Ensure browser and native scrollbars match the light/white background */
 html {
   color-scheme: light;
-  background-color: #fbfbfb;
+  background-color: #F5F3EF;
 }
 
 /* Custom scrollbar matching the white page background */
@@ -13,13 +13,13 @@ html {
 }
 
 ::-webkit-scrollbar-track {
-  background: #fbfbfb;
+  background: #F5F3EF;
 }
 
 ::-webkit-scrollbar-thumb {
   background: #e2e2e5;
   border-radius: 9999px;
-  border: 2px solid #fbfbfb;
+  border: 2px solid #F5F3EF;
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -29,7 +29,7 @@ html {
 /* Firefox scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #e2e2e5 #fbfbfb;
+  scrollbar-color: #e2e2e5 #F5F3EF;
 }
 
 /* Dedicated modern app typography matching reference */
@@ -40,8 +40,8 @@ html {
 /*
  * Walnut design tokens (Task 15.1).
  *
- * The palette follows the Zama.org brand style: Zama yellow (#FFE052) as the
- * primary accent, with black/#111111 text on white/#fbfbfb backgrounds. The
+ * The palette is the neutral Walnut brand (ink, bone, stone, sand); sand (#D8D4CB) is the
+ * primary accent, with black/#111111 text on white/#F5F3EF backgrounds. The
  * type scale, spacing rhythm, radii, and motion are a styling baseline modeled
  * on zama.org's structure; only styling is reused — all copy, the logo, and
  * imagery are Walnut's own. The same values are documented in
@@ -49,16 +49,18 @@ html {
  * generates the matching utilities (bg-walnut-blue, text-walnut-black, etc.).
  */
 @theme {
-  /* ---- Palette (Zama yellow #FFE052 primary) ---- */
-  --color-walnut-yellow: #FFE052;
-  --color-walnut-yellow-hover: #ffd426;
-  --color-walnut-yellow-light: #fffdf0;
-  --color-walnut-blue: #FFE052;
-  --color-walnut-blue-hover: #ffd426;
-  --color-walnut-blue-light: #fffdf0;
+  /* ---- Palette (neutral: ink, bone, stone, sand) ---- */
+  --color-walnut-yellow: #D8D4CB;
+  --color-walnut-yellow-hover: #CBC6BB;
+  --color-walnut-yellow-light: #F5F3EF;
+  --color-walnut-blue: #D8D4CB;
+  --color-walnut-blue-hover: #CBC6BB;
+  --color-walnut-blue-light: #F5F3EF;
   --color-walnut-black: #000000;
   --color-walnut-ink: #2d2d2d;
-  --color-walnut-mist: #f4f4f4;
+  --color-walnut-mist: #F1EFEA;
+  --color-walnut-bone: #F5F3EF;
+  --color-walnut-stone: #8C8880;
   --color-walnut-white: #ffffff;
 
   /* ---- Typefaces ---- */
