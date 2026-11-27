@@ -9,7 +9,7 @@
 // key is ever hard-coded; the only built-in default is the FREE public devnet
 // RPC and the standard Solana CLI keypair path.
 
-import * as anchor from "../src/anchor-shim.js";
+import * as anchor from "../src/anchor-shim.ts";
 import {
   Connection,
   Keypair,

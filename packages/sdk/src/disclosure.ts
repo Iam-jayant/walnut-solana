@@ -5,7 +5,7 @@
 // signer's `operation_counter.next_sequence`, passed here as `sequence` only
 // to derive the Intent PDA), and neither it nor `rotate_position_key` has a
 // `market` account. The `Disclosure` layout matches state/disclosure.rs.
-import type { Program } from "./anchor-shim.js";
+import type { Program } from "./anchor-shim.ts";
 import { PublicKey, type TransactionInstruction } from "@solana/web3.js";
 import { createSession, decryptOutput } from "./encryption.ts";
 import {

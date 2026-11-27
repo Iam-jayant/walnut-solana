@@ -9,13 +9,14 @@
 // programs/walnut/src/lib.rs (add_together, init_position,
 // apply_position_delta, and their comp-def initializers).
 
-import * as anchor from "../src/anchor-shim.js";
-import type { BN } from "../src/anchor-shim.js";
+import * as anchor from "../src/anchor-shim.ts";
+import type { BN } from "../src/anchor-shim.ts";
 import type { ConfirmOptions, Keypair, PublicKey } from "@solana/web3.js";
 import {
   getArciumAccountBaseSeed,
   getArciumProgram,
   getArciumProgramId,
+  getCircuitState,
   getCompDefAccOffset,
   getLookupTableAddress,
   getMXEAccAddress,
@@ -110,6 +111,23 @@ export async function fetchPosition(
  * already present, mirroring the skip-if-exists pattern used by the Task 2.2
  * and 2.4 tests. The circuit bytes are read from build/<name>.arcis.
  */
+async function isOffchain(
+  provider: anchor.AnchorProvider,
+  compDef: PublicKey,
+): Promise<boolean> {
+  const accounts = getArciumProgram(provider).account as unknown as Record<
+    string,
+    {
+      fetch(
+        a: PublicKey,
+      ): Promise<{ circuitSource: Parameters<typeof getCircuitState>[0] }>;
+    }
+  >;
+  const account =
+    await accounts["computationDefinitionAccount"]!.fetch(compDef);
+  return getCircuitState(account.circuitSource) === "Offchain";
+}
+
 export async function ensureCompDef(
   provider: anchor.AnchorProvider,
   programId: PublicKey,
@@ -128,6 +146,8 @@ export async function ensureCompDef(
   const circuitPath = path.join(repoRoot, "build", `${circuitName}.arcis`);
   const existing = await provider.connection.getAccountInfo(compDefPda);
   if (existing) {
+    // An off-chain comp def has nothing to upload.
+    if (await isOffchain(provider, compDefPda)) return "exists";
     // The comp def may exist while its circuit upload was interrupted
     // (the queue then fails with ComputationDefinitionNotCompleted).
     // uploadCircuit skips raw circuit accounts that are already complete,
@@ -158,6 +178,8 @@ export async function ensureCompDef(
     })
     .signers([payer])
     .rpc({ preflightCommitment: "confirmed", commitment: "confirmed" });
+
+  if (await isOffchain(provider, compDefPda)) return "created";
 
   const rawCircuit = fs.readFileSync(circuitPath);
   await uploadCircuit(provider, circuitName, programId, rawCircuit, true);

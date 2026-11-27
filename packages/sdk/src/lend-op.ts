@@ -5,7 +5,7 @@
 // Builders take the Anchor `Program` (IDL) from the caller and use
 // `program.methods.<name>(...)`; names, arguments and accounts follow
 // target/idl/walnut.json.
-import type { Program } from "./anchor-shim.js";
+import type { Program } from "./anchor-shim.ts";
 import {
   PublicKey,
   type AccountMeta,

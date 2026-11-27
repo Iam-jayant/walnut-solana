@@ -6,7 +6,9 @@
 //       Calls init_lending_pool once (idempotent: prints "exists" when the
 //       LendingPool PDA is already on chain).
 //   node packages/sdk/scripts/lend-deploy.ts comp-defs status
-//       Prints "<circuit> absent|pending|finalized" per new circuit.
+//       Prints "<circuit> absent|pending|finalized" per circuit. With
+//       WALNUT_ALL_CIRCUITS=1 (a fresh deployment, such as mainnet) both
+//       comp-defs commands also cover the four balance circuits.
 //   node packages/sdk/scripts/lend-deploy.ts comp-defs run
 //       Registers and uploads every circuit that is not finalized
 //       (ensureCompDef resumes interrupted uploads).
@@ -38,6 +40,19 @@ const NEW_CIRCUITS: ReadonlyArray<readonly [circuit: string, init: string]> = [
   ["liquidate_pool", "initLiquidatePoolCompDef"],
   ["pool_band", "initPoolBandCompDef"],
 ];
+
+/** The balance circuits an upgraded devnet deployment already has. */
+const BASE_CIRCUITS: typeof NEW_CIRCUITS = [
+  ["init_pool_state", "initPoolStateCompDef"],
+  ["init_position_state", "initPositionStateCompDef"],
+  ["shield_credit", "initShieldCreditCompDef"],
+  ["unshield", "initUnshieldCompDef"],
+];
+
+const CIRCUITS =
+  process.env["WALNUT_ALL_CIRCUITS"] === "1"
+    ? [...BASE_CIRCUITS, ...NEW_CIRCUITS]
+    : NEW_CIRCUITS;
 
 /** Pyth push-oracle program that owns the shard-0 sponsored feed PDAs. */
 const PUSH_ORACLE_PROGRAM_ID = new PublicKey(
@@ -201,13 +216,14 @@ async function compDefState(
   )["computationDefinitionAccount"]?.fetchNullable(address)) as
     { circuitSource: Parameters<typeof getCircuitState>[0] } | null | undefined;
   if (acc === null || acc === undefined) return "absent";
-  return getCircuitState(acc.circuitSource) === "OnchainFinalized"
-    ? "finalized"
-    : "pending";
+  // Off-chain comp defs are complete as soon as they are registered.
+  return getCircuitState(acc.circuitSource) === "OnchainPending"
+    ? "pending"
+    : "finalized";
 }
 
 async function compDefs(ctx: BenchContext, mode: string): Promise<void> {
-  for (const [circuit, initName] of NEW_CIRCUITS) {
+  for (const [circuit, initName] of CIRCUITS) {
     const state = await compDefState(ctx, circuit);
     if (mode === "status") {
       console.log(`${circuit} ${state}`);

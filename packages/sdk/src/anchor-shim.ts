@@ -2,7 +2,9 @@
 import * as anchorModule from "@anchor-lang/core";
 
 // When bundled or under Node/ESM, anchorModule might be { default: { BN, ... }, BN, ... }
-const anchor = (anchorModule as any).default?.BN ? (anchorModule as any).default : anchorModule;
+const anchor = (anchorModule as any).default?.BN
+  ? (anchorModule as any).default
+  : anchorModule;
 
 export const BN = anchor.BN;
 export type BN = InstanceType<typeof anchor.BN>;
@@ -17,4 +19,3 @@ export const getProvider = anchor.getProvider;
 export type { Idl } from "@anchor-lang/core";
 
 export default anchor;
-

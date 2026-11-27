@@ -35,8 +35,8 @@
 // terminal tag arrives within `eventGraceMs`, the outcome is TimedOut: the
 // Intent stays Queued for on-chain timeout recovery (Requirement 3.6).
 
-import { BN } from "./anchor-shim.js";
-import type { AnchorProvider } from "./anchor-shim.js";
+import { BN } from "./anchor-shim.ts";
+import type { AnchorProvider } from "./anchor-shim.ts";
 import { awaitComputationFinalization } from "@arcium-hq/client";
 import type { Finality, PublicKey } from "@solana/web3.js";
 import { randomBytes } from "./encryption.ts";

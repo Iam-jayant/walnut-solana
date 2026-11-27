@@ -10,8 +10,8 @@
 //
 // Builders take the Anchor `Program` (IDL) from the caller; names, arguments
 // and accounts follow target/idl/walnut.json.
-import type { Program } from "./anchor-shim.js";
-import { BN } from "./anchor-shim.js";
+import type { Program } from "./anchor-shim.ts";
+import { BN } from "./anchor-shim.ts";
 import { PublicKey, type TransactionInstruction } from "@solana/web3.js";
 import { createSession, encryptInputs } from "./encryption.ts";
 import { INDEX_SCALE } from "./lend-op.ts";
