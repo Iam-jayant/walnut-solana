@@ -10,7 +10,15 @@ crate-type = ["cdylib", "lib"]
 name = "walnut"
 
 [features]
-default = []
+# `legacy` holds the spike circuits, the public-amount lending path and the
+# retired v1 supply flows. Devnet, localnet, tests and CI build with it. The
+# mainnet build drops it (`--no-default-features`) and keeps only the
+# confidential path. See docs/MAINNET_DEPLOY.md.
+default = ["legacy"]
+legacy = []
+# Register computation definitions with a release URL and circuit hash instead
+# of uploading circuit bytes on chain. Used by the mainnet build.
+offchain-circuits = []
 cpi = ["no-entrypoint"]
 no-entrypoint = []
 no-idl = []

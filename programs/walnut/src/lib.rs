@@ -19,6 +19,9 @@
 // declaration (crate-root scope), so it must be allowed crate-wide here rather
 // than with an attribute on the module.
 #![allow(clippy::diverging_sub_expression)]
+// The slim build leaves the account structs and helpers of gated instructions
+// unused; the linker drops them from the binary.
+#![cfg_attr(not(feature = "legacy"), allow(dead_code, unused_imports))]
 
 use anchor_lang::prelude::*;
 use arcium_anchor::prelude::*;
@@ -156,16 +159,47 @@ const POSITION_SEED: &[u8] = b"spike_position";
 
 declare_id!("5EunnixqNofjZDMwZudttJCKq675d99dwjqR8jTcjea");
 
+/// Where Arx nodes read a circuit's bytes. By default `None`: the bytes are
+/// uploaded to on-chain accounts. With `offchain-circuits` the computation
+/// definition stores a public URL and the SHA-256 of `build/<name>.arcis`
+/// (read from `build/<name>.hash` at compile time). The URL cannot change
+/// after registration, so publish each circuit build under a new release tag.
+#[cfg(not(feature = "offchain-circuits"))]
+macro_rules! circuit_source {
+    ($name:tt) => {
+        None
+    };
+}
+
+#[cfg(feature = "offchain-circuits")]
+macro_rules! circuit_source {
+    ($name:tt) => {
+        Some(arcium_client::idl::arcium::types::CircuitSource::OffChain(
+            arcium_client::idl::arcium::types::OffChainCircuitSource {
+                source: concat!(
+                    "https://github.com/Iam-jayant/walnut-solana/releases/download/circuits-v1/",
+                    $name,
+                    ".arcis"
+                )
+                .to_string(),
+                hash: arcium_macros::circuit_hash!($name),
+            },
+        ))
+    };
+}
+
 #[arcium_program]
 pub mod walnut {
     use super::*;
 
+    #[cfg(feature = "legacy")]
     /// Registers the `add_together` computation definition with the MXE.
     pub fn init_add_together_comp_def(ctx: Context<InitAddTogetherCompDef>) -> Result<()> {
         init_computation_def(ctx.accounts, None)?;
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Queues `add_together` with two encrypted `u8` inputs.
     pub fn add_together(
         ctx: Context<AddTogether>,
@@ -202,6 +236,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Verifies the MPC output and emits the encrypted sum.
     #[arcium_callback(encrypted_ix = "add_together")]
     pub fn add_together_callback(
@@ -225,6 +260,7 @@ pub mod walnut {
 
     // ---- Task 2.4: callback compute-unit exhaustion -----------------------
 
+    #[cfg(feature = "legacy")]
     /// Queues `add_together` (reusing its circuit, accounts, and callback) but
     /// with a caller-supplied `callback_cu_limit`. A deliberately tiny non-zero
     /// limit makes the callback run out of compute units and the callback
@@ -270,12 +306,14 @@ pub mod walnut {
 
     // ---- Task 2.4: OutputTooLarge -----------------------------------------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `oversized_output` computation definition with the MXE.
     pub fn init_oversized_output_comp_def(ctx: Context<InitOversizedOutputCompDef>) -> Result<()> {
         init_computation_def(ctx.accounts, None)?;
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Queues `oversized_output`: one encrypted `u64` input, a 48-field output.
     /// The sealed output is too large for the node to fit in a single callback
     /// transaction, so the computation fails with `OutputTooLarge` and the
@@ -313,6 +351,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Success callback for `oversized_output`. It is expected never to run
     /// because the computation fails with `OutputTooLarge`; the localnet test
     /// asserts `OversizedOutputEmitted` is not observed. The oversized
@@ -338,18 +377,21 @@ pub mod walnut {
 
     // ---- Task 2.2: persistent encrypted Position state --------------------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `init_position` computation definition with the MXE.
     pub fn init_position_comp_def(ctx: Context<InitPositionCompDef>) -> Result<()> {
         init_computation_def(ctx.accounts, None)?;
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Registers the `apply_position_delta` computation definition with the MXE.
     pub fn apply_position_delta_comp_def(ctx: Context<ApplyPositionDeltaCompDef>) -> Result<()> {
         init_computation_def(ctx.accounts, None)?;
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Queues `init_position`: encrypts the complete Position payload once and
     /// persists the resulting ciphertext into a freshly created Position
     /// account via the callback. The five ciphertexts are the client-encrypted
@@ -405,6 +447,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Persists the output of `init_position` as the account's first encrypted
     /// Position revision.
     #[arcium_callback(encrypted_ix = "init_position")]
@@ -442,6 +485,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Queues `apply_position_delta`: reads the Position payload already stored
     /// in the account (the account-backed encrypted input), applies a
     /// caller-supplied per-field delta inside MPC, and persists the updated
@@ -509,6 +553,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Persists the updated Position payload produced by
     /// `apply_position_delta`, replacing the previous encrypted revision.
     #[arcium_callback(encrypted_ix = "apply_position_delta")]
@@ -548,6 +593,7 @@ pub mod walnut {
 
     // ---- Task 2.3: two-owner output and Viewing Key rotation --------------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `liquidation_receipts` computation definition with the MXE.
     pub fn init_liquidation_receipts_comp_def(
         ctx: Context<InitLiquidationReceiptsCompDef>,
@@ -556,6 +602,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Queues `liquidation_receipts`: one computation that reads a borrower and
     /// a liquidator encrypted input and seals an independent encrypted Receipt
     /// to each owner's Viewing Key. The callback emits both ciphertext groups so
@@ -605,6 +652,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Verifies the two-owner output and emits each owner's encrypted Receipt.
     /// The generated output wraps the returned tuple as `field_0`, whose
     /// `field_0` is the borrower's `SharedEncryptedStruct<2>` and `field_1` is
@@ -633,6 +681,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Registers the `rotate_viewing_key` computation definition with the MXE.
     pub fn init_rotate_viewing_key_comp_def(
         ctx: Context<InitRotateViewingKeyCompDef>,
@@ -641,6 +690,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Queues `rotate_viewing_key`: reads the Position payload stored under the
     /// current Viewing Key and re-encrypts it to `new_pub_key`. The Position PDA
     /// is seeded by the owner, so only the owner's signature can rotate the key
@@ -697,6 +747,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Atomically re-encrypts the Position to the new Viewing Key, writes the
     /// new public key, and increments `viewing_key_epoch` (Requirement 5.11).
     /// After this callback the stored payload decrypts under the new key only.
@@ -866,7 +917,7 @@ pub mod walnut {
 
     /// Registers the `init_pool_state` computation definition with the MXE.
     pub fn init_pool_state_comp_def(ctx: Context<InitPoolStateCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("init_pool_state"))?;
         Ok(())
     }
 
@@ -937,7 +988,7 @@ pub mod walnut {
 
     /// Registers the `init_position_state` computation definition with the MXE.
     pub fn init_position_state_comp_def(ctx: Context<InitPositionStateCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("init_position_state"))?;
         Ok(())
     }
 
@@ -1215,7 +1266,7 @@ pub mod walnut {
 
     /// Registers the `shield_credit` computation definition with the MXE.
     pub fn init_shield_credit_comp_def(ctx: Context<InitShieldCreditCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("shield_credit"))?;
         Ok(())
     }
 
@@ -1518,7 +1569,7 @@ pub mod walnut {
 
     /// Registers the `unshield` computation definition with the MXE.
     pub fn init_unshield_comp_def(ctx: Context<InitUnshieldCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("unshield"))?;
         Ok(())
     }
 
@@ -1749,12 +1800,14 @@ pub mod walnut {
 
     // ---- walnut-diffn: position_op -------------------------------------------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `position_op` computation definition with the MXE.
     pub fn init_position_op_comp_def(ctx: Context<InitPositionOpCompDef>) -> Result<()> {
         init_computation_def(ctx.accounts, None)?;
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Owner-signed demo operation on the encrypted Position: `op` 0 add
     /// collateral, 1 withdraw collateral, 2 borrow, 3 repay. `price` (USDC base
     /// units per SOL) is caller supplied (demo shortcut); the LTV comes from
@@ -1852,6 +1905,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Verifies the `position_op` output. `Applied` stores the new state,
     /// bumps the generation and releases the Lock. A refusal (`Zero`),
     /// `Stale`, and `Expired` release the Lock and store nothing.
@@ -1939,6 +1993,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Permissionless: abandons a queued position operation after Lock expiry.
     pub fn abandon_position_op(ctx: Context<AbandonPositionOp>) -> Result<()> {
         abandon_position_op_handler(ctx)
@@ -1950,7 +2005,7 @@ pub mod walnut {
     pub fn init_rotate_position_key_comp_def(
         ctx: Context<InitRotatePositionKeyCompDef>,
     ) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("rotate_position_key"))?;
         Ok(())
     }
 
@@ -2147,7 +2202,7 @@ pub mod walnut {
 
     /// Registers the `lend_op` computation definition with the MXE.
     pub fn init_lend_op_comp_def(ctx: Context<InitLendOpCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("lend_op"))?;
         Ok(())
     }
 
@@ -2155,10 +2210,11 @@ pub mod walnut {
     pub fn init_disclose_position_comp_def(
         ctx: Context<InitDisclosePositionCompDef>,
     ) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("disclose_position"))?;
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Owner-signed lending operation on the encrypted Position: `op` 0 add
     /// collateral, 1 withdraw collateral, 2 borrow, 3 repay, 4 supply, 5
     /// withdraw supply. `amount` is a public USDC amount (lamports for ops 0
@@ -2375,6 +2431,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Permissionless liquidation. The Liquidator pays `repay_amount` USDC into
     /// the vault now; the Program computes the debt burn and the wSOL seize
     /// publicly from the accrued index, the Pyth low-bound price and the
@@ -2903,6 +2960,7 @@ pub mod walnut {
     }
     // ---- Task 7.2: utilization band --------------------------------------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `update_utilization_band` computation definition.
     pub fn init_update_utilization_band_comp_def(
         ctx: Context<InitUpdateUtilizationBandCompDef>,
@@ -2911,6 +2969,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Permissionless: queues the read-only utilization-band computation. It
     /// reads the Pool's encrypted Cash and Debt Shares at the public
     /// accounting Borrow Index and reveals only the band index. It neither
@@ -3008,6 +3067,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Verifies the revealed band with the Task 3.3 helpers. `Applied` stores
     /// the band and the observation slot (the queue slot) on the Asset State
     /// only if the Pool generation, Asset State generation, rate epoch, and
@@ -3087,6 +3147,7 @@ pub mod walnut {
 
     // ---- Task 7.5: reserve withdrawal ---------------------------------------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `reserve_withdrawal` computation definition.
     pub fn init_reserve_withdrawal_comp_def(
         ctx: Context<InitReserveWithdrawalCompDef>,
@@ -3095,6 +3156,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Treasury-authority-signed: requests a public all-or-zero USDC `amount`
     /// from the Pool's Reserves to the configured treasury token account.
     /// Requires an `Active` Pool with a free Lock, the `WITHDRAW_SUPPLY` pause
@@ -3200,6 +3262,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Verifies the `reserve_withdrawal` output with the Task 3.3 helpers.
     /// `Applied` stores the new Pool payload, sets the accounted index, bumps
     /// the Pool generation, releases the Lock, and transfers exactly the
@@ -3316,12 +3379,14 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Permissionless: abandons a queued reserve withdrawal after Lock
     /// expiry. Nothing moved, so there is nothing to refund.
     pub fn abandon_reserve_withdrawal(ctx: Context<AbandonReserveWithdrawal>) -> Result<()> {
         abandon_reserve_withdrawal_handler(ctx)
     }
 
+    #[cfg(feature = "legacy")]
     /// Admin-signed: records the single treasury USDC token account (USDC
     /// mint, owned by the treasury authority).
     pub fn set_treasury_usdc_account(ctx: Context<SetTreasuryUsdcAccount>) -> Result<()> {
@@ -3330,12 +3395,14 @@ pub mod walnut {
 
     // ---- Task 8: supply and withdraw supply --------------------------------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `supply_flow` computation definition with the MXE.
     pub fn init_supply_flow_comp_def(ctx: Context<InitSupplyFlowCompDef>) -> Result<()> {
         init_computation_def(ctx.accounts, None)?;
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Owner-signed: supplies `requested` USDC units (`is_withdraw = false`)
     /// or withdraws `requested` supply shares (`is_withdraw = true`). Requires
     /// an `Active` Position and Pool with free Locks and the matching pause
@@ -3443,6 +3510,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Verifies the `supply_flow` output with the Task 3.3 helpers. `Applied`
     /// stores the Pool and Position payloads, advances the accounted index,
     /// bumps both generations, and releases both Locks. `Zero`, `Stale`, and
@@ -3530,6 +3598,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Permissionless: abandons a queued supply or withdrawal after Lock
     /// expiry. Nothing moved, so there is nothing to refund.
     pub fn abandon_supply_flow(ctx: Context<AbandonSupplyFlow>) -> Result<()> {
@@ -3540,19 +3609,19 @@ pub mod walnut {
 
     /// Registers the `pool_op` computation definition.
     pub fn init_pool_op_comp_def(ctx: Context<InitPoolOpCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("pool_op"))?;
         Ok(())
     }
 
     /// Registers the `position_private` computation definition.
     pub fn init_position_private_comp_def(ctx: Context<InitPositionPrivateCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("position_private"))?;
         Ok(())
     }
 
     /// Registers the `liquidate_pool` computation definition.
     pub fn init_liquidate_pool_comp_def(ctx: Context<InitLiquidatePoolCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("liquidate_pool"))?;
         Ok(())
     }
 
@@ -4169,7 +4238,7 @@ pub mod walnut {
 
     /// Registers the `pool_band` computation definition.
     pub fn init_pool_band_comp_def(ctx: Context<InitPoolBandCompDef>) -> Result<()> {
-        init_computation_def(ctx.accounts, None)?;
+        init_computation_def(ctx.accounts, circuit_source!("pool_band"))?;
         Ok(())
     }
 
@@ -4351,6 +4420,7 @@ pub mod walnut {
 
     // ---- Task 8.1: separately reviewed recovery of an empty Pool -----------
 
+    #[cfg(feature = "legacy")]
     /// Registers the `recover_empty_pool` computation definition.
     pub fn init_recover_empty_pool_comp_def(
         ctx: Context<InitRecoverEmptyPoolCompDef>,
@@ -4359,6 +4429,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Admin-signed: reclassifies an empty Pool's provable dust residue as
     /// Reserves so the treasury can withdraw it and supply can reopen. See
     /// `state::recovery` for the review notes. Locks the Pool, accrues the
@@ -4467,6 +4538,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Verifies the `recover_empty_pool` output. `Applied` stores the Pool
     /// payload, advances the accounted index, bumps the generation, and
     /// releases the Lock. `Zero`, `Stale`, and `Expired` release the Lock and
@@ -4541,6 +4613,7 @@ pub mod walnut {
         Ok(())
     }
 
+    #[cfg(feature = "legacy")]
     /// Permissionless: abandons a queued recovery after Lock expiry.
     pub fn abandon_recover_empty_pool(ctx: Context<AbandonRecoverEmptyPool>) -> Result<()> {
         abandon_recover_empty_pool_handler(ctx)
@@ -5075,6 +5148,7 @@ pub struct PositionOpQueue<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("position_op")]
 #[derive(Accounts)]
 pub struct PositionOpCallback<'info> {
@@ -5561,6 +5635,7 @@ pub struct AddTogether<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("add_together")]
 #[derive(Accounts)]
 pub struct AddTogetherCallback<'info> {
@@ -5646,6 +5721,7 @@ pub struct InitPosition<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("init_position")]
 #[derive(Accounts)]
 pub struct InitPositionCallback<'info> {
@@ -5712,6 +5788,7 @@ pub struct ApplyPositionDelta<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("apply_position_delta")]
 #[derive(Accounts)]
 pub struct ApplyPositionDeltaCallback<'info> {
@@ -5815,6 +5892,7 @@ pub struct LiquidationReceipts<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("liquidation_receipts")]
 #[derive(Accounts)]
 pub struct LiquidationReceiptsCallback<'info> {
@@ -5898,6 +5976,7 @@ pub struct RotateViewingKey<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("rotate_viewing_key")]
 #[derive(Accounts)]
 pub struct RotateViewingKeyCallback<'info> {
@@ -5981,6 +6060,7 @@ pub struct OversizedOutput<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("oversized_output")]
 #[derive(Accounts)]
 pub struct OversizedOutputCallback<'info> {
@@ -6106,6 +6186,7 @@ pub struct UpdateUtilizationBandQueue<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("update_utilization_band")]
 #[derive(Accounts)]
 pub struct UpdateUtilizationBandCallback<'info> {
@@ -6285,6 +6366,7 @@ pub struct ReserveWithdrawalQueue<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("reserve_withdrawal")]
 #[derive(Accounts)]
 pub struct ReserveWithdrawalCallback<'info> {
@@ -6489,6 +6571,7 @@ pub struct SupplyFlowQueue<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("supply_flow")]
 #[derive(Accounts)]
 pub struct SupplyFlowCallback<'info> {
@@ -6611,6 +6694,7 @@ pub struct RecoverEmptyPoolQueue<'info> {
     pub arcium_program: Program<'info, Arcium>,
 }
 
+#[cfg(feature = "legacy")]
 #[callback_accounts("recover_empty_pool")]
 #[derive(Accounts)]
 pub struct RecoverEmptyPoolCallback<'info> {
