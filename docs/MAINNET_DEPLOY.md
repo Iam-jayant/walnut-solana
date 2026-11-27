@@ -1,24 +1,25 @@
 # Mainnet Deployment Plan
 
-Status: plan, not yet executed. Covers the new mainnet program id and hosting the
-Arcium circuits off-chain on GitHub Releases. Read with
+Status: the build is implemented; nothing is deployed. Covers the new mainnet
+program id and hosting the Arcium circuits off-chain on GitHub Releases. Read with
 [`MAINNET_COST.md`](MAINNET_COST.md) and [`DEVNET_DEPLOY.md`](DEVNET_DEPLOY.md).
 
 ## 1. Decisions
 
-| Decision          | Choice                                                                                       |
-| ----------------- | -------------------------------------------------------------------------------------------- |
-| Program id        | New keypair for mainnet. Devnet keeps `5Eunnix…jTcjea`.                                      |
-| Circuit storage   | Off-chain: `CircuitSource::OffChain`, with the `.arcis` files hosted as GitHub Release assets |
-| Arcium cluster    | Mainnet cluster offset `2026` (see `Arcium.toml`)                                            |
-| Circuits deployed | Only the 7 active circuits. The legacy and spike circuits are not registered on mainnet.     |
+| Decision            | Choice                                                                                        |
+| ------------------- | --------------------------------------------------------------------------------------------- |
+| Program id          | New keypair for mainnet. Devnet keeps `5Eunnix…jTcjea`.                                       |
+| Circuit storage     | Off-chain: `CircuitSource::OffChain`, with the `.arcis` files hosted as GitHub Release assets |
+| Arcium cluster      | Mainnet cluster offset `2026` (see `Arcium.toml`)                                             |
+| Circuits registered | The 11 circuits of the confidential path (see [`MAINNET_COST.md`](MAINNET_COST.md))           |
+| Program build       | `scripts/build-mainnet.sh`: no `legacy` feature, size-optimized                               |
 
 ## 2. Can a comp def use only a hash? (Arcium docs, checked 2026-11-26)
 
 - **A hash alone is not enough.** `init_computation_def` takes an optional
   `CircuitSource`. `None` means the circuit bytes are uploaded to on-chain
-  `ComputationDefinitionRaw` accounts. That is what every `init_*_comp_def` in
-  `programs/walnut/src/lib.rs` does today.
+  `ComputationDefinitionRaw` accounts. That is the default build. The
+  `offchain-circuits` feature (section 3) switches the 11 live ones.
 - **`CircuitSource::OffChain` is the supported way to avoid on-chain bytes.** It
   takes a **public URL and the SHA-256 hash**. Arx nodes download the file and
   check it against the hash. Source:
@@ -41,35 +42,38 @@ Arcium circuits off-chain on GitHub Releases. Read with
      to `objects.githubusercontent.com`.
   3. Is there a maximum circuit file size, or a timeout for fetching one?
 
-## 3. Program change (not yet applied)
+## 3. The slim mainnet build
 
-Each active `init_*_comp_def` changes from `None` to an off-chain source:
-
-```rust
-use arcium_client::idl::arcium::types::{CircuitSource, OffChainCircuitSource};
-use arcium_macros::circuit_hash;
-
-const CIRCUITS_BASE_URL: &str =
-    "https://github.com/Iam-jayant/walnut-solana/releases/download/circuits-v1";
-
-pub fn init_lend_op_comp_def(ctx: Context<InitLendOpCompDef>) -> Result<()> {
-    init_computation_def(
-        ctx.accounts,
-        Some(CircuitSource::OffChain(OffChainCircuitSource {
-            source: format!("{CIRCUITS_BASE_URL}/lend_op.arcis"),
-            hash: circuit_hash!("lend_op"),
-        })),
-    )?;
-    Ok(())
-}
+```bash
+scripts/build-mainnet.sh                  # Linux or WSL2; builds, deploys nothing
 ```
 
-Put this behind a Cargo feature, for example `offchain-circuits`. Devnet, localnet
-and CI then keep the `None` path, which `arcium test` relies on.
+It writes `artifacts/mainnet/`: `walnut.so`, `walnut.json` (IDL) and
+`circuits/` with `SHA256SUMS`. It also overwrites `target/deploy/walnut.so`,
+so run `arcium build` again before devnet or localnet work.
 
-`circuit_hash!` reads `build/<name>.hash` at compile time. The program and the
-uploaded files must therefore come from **the same `arcium build`**. If you rebuild
-the circuits, you must also rebuild the program and upload to a new release tag.
+Cargo features in `programs/walnut/Cargo.toml`:
+
+- `legacy` (default): the spike circuits, `position_op`, the public-amount
+  `lend_op` and `liquidate`, the v1 supply flows, reserve withdrawal and empty
+  pool recovery. The mainnet build leaves it out (41 of 103 instructions).
+- `offchain-circuits`: each `init_*_comp_def` registers a release URL and
+  `circuit_hash!` instead of expecting an on-chain upload. The URL is set in the
+  `circuit_source!` macro in `programs/walnut/src/lib.rs`.
+
+Kept: governance and pause controls, the balance flows (shield and unshield), the
+private pool, collateral and liquidation flows, health check, disclosure, key
+rotation, and every retry, refund and abandon path.
+
+### What the slim build changes for users
+
+- **Private mode only.** The public-amount instructions are gone. The web app
+  still has that fallback UI and uses it when private mode is not detected, so
+  finish setup (all comp defs, Active pool, band rate source) before opening it.
+- **No protocol revenue withdrawal.** `reserve_withdrawal` reads the old
+  `reserves` field, which stays zero on the private path (ADR-0004). Reserves
+  accumulate inside the encrypted pool. Withdrawing them needs a new circuit and
+  a program upgrade. The devnet build has the same limit in private mode.
 
 ## 4. GitHub Release rules
 
@@ -87,10 +91,9 @@ the circuits, you must also rebuild the program and upload to a new release tag.
   about 1.2 MB.
 
 ```bash
-arcium build
-sha256sum build/{lend_op,disclose_position,rotate_position_key,pool_op,position_private,liquidate_pool,pool_band}.arcis > SHA256SUMS
-gh release create circuits-v1 --title "Walnut circuits v1" --notes "Arcium circuits for mainnet program <PROGRAM_ID>" \
-  build/{lend_op,disclose_position,rotate_position_key,pool_op,position_private,liquidate_pool,pool_band}.arcis SHA256SUMS
+scripts/build-mainnet.sh
+cd artifacts/mainnet/circuits
+gh release create circuits-v1 --title "Walnut circuits v1" --notes "Arcium circuits for mainnet program <PROGRAM_ID>" ./*.arcis SHA256SUMS
 # Check that the files download without authentication and match the hashes
 curl -sL https://github.com/Iam-jayant/walnut-solana/releases/download/circuits-v1/lend_op.arcis | sha256sum
 ```
@@ -113,23 +116,31 @@ curl -sL https://github.com/Iam-jayant/walnut-solana/releases/download/circuits-
 
 ## 6. Order of operations
 
-1. `arcium build` with `--features offchain-circuits` and the mainnet keypair.
-2. Create the `circuits-v1` GitHub Release and verify every hash over plain
-   HTTP.
-3. Run a dry run on devnet: deploy a throwaway program id with the same feature,
-   register one off-chain comp def, and run one computation end to end. This
-   answers the redirect question in practice.
-4. `arcium deploy --cluster-offset 2026 …` on mainnet.
-5. Call the 7 active `init_*_comp_def` instructions. Do not call the legacy ones.
-6. Initialize the market and pool, check MXE keygen, then open behind caps.
+1. Dry run on devnet with a throwaway program id: build, publish a test release,
+   deploy, register the comp defs and run
+   `pnpm --filter @walnut/sdk demo:private`. This is the first runtime test of
+   the size-optimized binary. Check that every queue and callback stays within
+   its compute limit, and that Arx nodes can fetch the circuits.
+2. `scripts/build-mainnet.sh` with the mainnet keypair in place.
+3. Create the `circuits-v1` GitHub Release and verify every hash over plain HTTP.
+4. `arcium deploy --cluster-offset 2026 …` on mainnet, then check that the
+   deployed program is the one in `artifacts/mainnet/`.
+5. Register the 11 comp defs, with the mainnet RPC and wallet configured:
+   `WALNUT_ALL_CIRCUITS=1 node packages/sdk/scripts/lend-deploy.ts comp-defs run`
+   (it reads the IDL from `target/idl/walnut.json`).
+6. Initialize the market, pool state and lending pool, then
+   `lend-deploy.ts private-setup`. Market initialization has no mainnet script
+   yet; today it lives in the devnet demo `balance-demo.ts`.
+7. Point the web app at mainnet (`web/lib/config.ts`, IDL, oracle, RPC), then
+   open behind caps.
 
-## 7. Further savings
+## 7. Verified so far (2026-11-26)
 
-- **Program size:** `walnut.so` is about 3.46 MB, so program rent is about 24
-  SOL. A deploy needs about the same again in a temporary, recoverable buffer.
-  Removing the spike and legacy instructions (`add_together`, `init_position`,
-  `apply_position_delta`, `liquidation_receipts`, `oversized_output`,
-  `rotate_viewing_key` and their accounts) from the mainnet build, behind a
-  feature flag, should shrink the program a lot.
-- Build with `overflow-checks` kept on and `opt-level = "z"` or `"s"` for the
-  program crate. Measure size against compute units before choosing.
+- The slim binary (1,684,552 bytes) deploys to a local `solana-test-validator`.
+- All 62 slim instructions match the web app's IDL (discriminators, arguments,
+  account names).
+- The default build is byte-for-byte the same size as before the change. Rust
+  format, clippy and tests, TypeScript type checks and unit tests, and the web
+  production build pass.
+- **Not verified:** any MPC computation against the slim binary, off-chain
+  circuit fetching, and compute usage under `opt-level = "z"`.
